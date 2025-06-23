@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Check, Download, Edit3, Image, PlusCircle, Save, Trash2, X } from 'lucide-react'
+import { AlertCircle, Check, CheckCircle, Clock, Download, Edit3, Image, ImageIcon, PlusCircle, Save, Trash2, X } from 'lucide-react'
 import React, { useState } from 'react'
 
 function App() {
@@ -23,6 +23,9 @@ function App() {
   const [isGeneratingContent, setIsGeneratingContent] = useState(false)
   const [isGeneratingImages, setIsGeneratingImages] = useState(false)
   const [generationProgress, setGenerationProgress] = useState(null)
+  const [imageProgress, setImageProgress] = useState(null)
+  const [currentImageTaskId, setCurrentImageTaskId] = useState(null) // 当前图片生成任务ID
+  const [globalImageRatio, setGlobalImageRatio] = useState('1:1') // 全局图片比例
   const [editingId, setEditingId] = useState(null)
   const [editingField, setEditingField] = useState('')
   const [editingValue, setEditingValue] = useState('')
@@ -100,10 +103,11 @@ function App() {
                   break
 
                 case 'theme_content':
-                  // 显示生成的主题
+                  // 显示生成的主题，添加默认图片比例
                   setContentList(prev => [...prev, {
                     ...data.content,
-                    imagePath: null
+                    imagePath: null,
+                    imageRatio: globalImageRatio // 使用当前全局比例作为默认值
                   }])
 
                   setGenerationProgress(prev => ({
@@ -270,7 +274,10 @@ function App() {
     }
 
     setIsGeneratingImages(true)
+    setImageProgress(null)
+
     try {
+      // 1. 创建图片生成任务
       const response = await fetch('http://localhost:3002/api/generate-images', {
         method: 'POST',
         headers: {
@@ -279,47 +286,163 @@ function App() {
         body: JSON.stringify({
           contents: contentList.map(item => ({
             id: item.id,
-            prompt: item.prompt
+            title: item.title,
+            prompt: item.prompt,
+            imageRatio: item.imageRatio || globalImageRatio // 使用项目特定比例或全局比例
           }))
         }),
       })
 
       if (!response.ok) {
-        throw new Error('生成图片失败')
+        throw new Error('创建图片生成任务失败')
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
+      const result = await response.json()
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'image') {
-                setContentList(prev => prev.map(item =>
-                  item.id === data.id
-                    ? { ...item, imagePath: data.imagePath }
-                    : item
-                ))
-              }
-            } catch (e) {
-              console.error('解析数据失败:', e)
-            }
-          }
-        }
+      if (!result.success) {
+        throw new Error(result.message || '创建任务失败')
       }
+
+      setCurrentImageTaskId(result.taskId)
+      console.log('图片生成任务已创建:', result.taskId)
+
+      // 2. 开始轮询进度
+      pollImageProgress(result.taskId)
+
+
+
     } catch (error) {
       console.error('生成图片失败:', error)
       alert('生成图片失败: ' + error.message)
-    } finally {
       setIsGeneratingImages(false)
+      setImageProgress(null)
+    }
+  }
+
+  // 轮询图片生成进度
+  const pollImageProgress = async (taskId) => {
+    const pollInterval = 2000 // 每2秒查询一次
+    let pollCount = 0
+    const maxPolls = 150 // 最多查询5分钟 (150 * 2秒)
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`http://localhost:3002/api/image-progress/${taskId}`)
+
+        if (!response.ok) {
+          throw new Error('查询进度失败')
+        }
+
+        const progress = await response.json()
+
+        // 更新进度显示
+        setImageProgress({
+          taskId: progress.taskId,
+          status: progress.status,
+          message: progress.message,
+          current: progress.completedImages,
+          total: progress.totalImages,
+          currentBatch: progress.currentBatch,
+          totalBatches: progress.totalBatches,
+          details: progress.images
+        })
+
+        // 更新内容列表中的图片路径
+        setContentList(prev => prev.map(item => {
+          const imageInfo = progress.images[item.id]
+          if (imageInfo && imageInfo.imagePath) {
+            return { ...item, imagePath: imageInfo.imagePath }
+          }
+          return item
+        }))
+
+        // 检查是否完成
+        if (progress.status === 'completed' || progress.status === 'error') {
+          setIsGeneratingImages(false)
+
+          // 3秒后清除进度显示
+          setTimeout(() => {
+            setImageProgress(null)
+            setCurrentImageTaskId(null)
+          }, 3000)
+
+          return
+        }
+
+        // 检查是否暂停
+        if (progress.status === 'paused') {
+          // 暂停时不继续轮询，等待恢复
+          console.log('任务已暂停，停止轮询')
+          return
+        }
+
+        // 继续轮询
+        pollCount++
+        if (pollCount < maxPolls) {
+          setTimeout(poll, pollInterval)
+        } else {
+          throw new Error('查询超时')
+        }
+
+      } catch (error) {
+        console.error('查询进度失败:', error)
+        setIsGeneratingImages(false)
+        setImageProgress(prev => prev ? {
+          ...prev,
+          status: 'error',
+          message: '查询进度失败: ' + error.message
+        } : null)
+      }
+    }
+
+    // 开始轮询
+    poll()
+  }
+
+  // 暂停图片生成
+  const pauseImageGeneration = async () => {
+    if (!currentImageTaskId) return
+
+    try {
+      const response = await fetch(`http://localhost:3002/api/pause-image-generation/${currentImageTaskId}`, {
+        method: 'POST'
+      })
+
+      if (!response.ok) {
+        throw new Error('暂停失败')
+      }
+
+      const result = await response.json()
+      console.log('任务已暂停:', result.message)
+
+    } catch (error) {
+      console.error('暂停失败:', error)
+      alert('暂停失败: ' + error.message)
+    }
+  }
+
+  // 恢复图片生成
+  const resumeImageGeneration = async () => {
+    if (!currentImageTaskId) return
+
+    try {
+      const response = await fetch(`http://localhost:3002/api/resume-image-generation/${currentImageTaskId}`, {
+        method: 'POST'
+      })
+
+      if (!response.ok) {
+        throw new Error('恢复失败')
+      }
+
+      const result = await response.json()
+      console.log('任务已恢复:', result.message)
+
+      // 恢复轮询
+      pollImageProgress(currentImageTaskId)
+
+    } catch (error) {
+      console.error('恢复失败:', error)
+      alert('恢复失败: ' + error.message)
     }
   }
 
@@ -479,6 +602,20 @@ function App() {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="globalImageRatio">图片比例（全局默认）</Label>
+                <Select value={globalImageRatio} onValueChange={setGlobalImageRatio}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1:1">正方形 (1:1)</SelectItem>
+                    <SelectItem value="3:2">横向 (3:2)</SelectItem>
+                    <SelectItem value="2:3">纵向 (2:3)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -497,8 +634,9 @@ function App() {
               <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
                 <div className="font-medium mb-1">生成流程：</div>
                 <div>1. 首先点击"生成主题"按钮，根据关键词生成多个主题和prompt</div>
-                <div>2. 查看并编辑生成的prompt（可选）</div>
-                <div>3. 点击"生成文案"按钮，根据主题和prompt生成详细的涂色文案</div>
+                <div>2. 点击"生成文案"按钮，根据主题和prompt生成详细的涂色文案</div>
+                <div>3. 点击"生成图片"按钮，根据prompt生成专业涂色页图片（支持实时进度显示）</div>
+                <div>4. 查看并编辑生成的内容（可选），然后保存或导出</div>
               </div>
 
               <div className="flex flex-wrap gap-4">
@@ -530,8 +668,33 @@ function App() {
                   className="flex items-center gap-2"
                 >
                   <Image className="w-4 h-4" />
-                  {isGeneratingImages ? '生成图片中...' : '生成图片'}
+                  {isGeneratingImages ? '生成图片中...' : '3. 生成图片'}
                 </Button>
+
+                {/* 暂停/恢复按钮 */}
+                {isGeneratingImages && currentImageTaskId && (
+                  <>
+                    {imageProgress?.status === 'paused' ? (
+                      <Button
+                        onClick={resumeImageGeneration}
+                        variant="outline"
+                        className="flex items-center gap-2"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        恢复生成
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={pauseImageGeneration}
+                        variant="outline"
+                        className="flex items-center gap-2"
+                      >
+                        <Clock className="w-4 h-4" />
+                        暂停生成
+                      </Button>
+                    )}
+                  </>
+                )}
 
                 <Button
                   onClick={saveContent}
@@ -597,6 +760,96 @@ function App() {
                 )}
               </div>
             )}
+
+            {/* 图片生成进度显示 */}
+            {imageProgress && (
+              <div className="mt-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-purple-900 flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4" />
+                    {imageProgress.message}
+                    {imageProgress.status === 'paused' && (
+                      <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">已暂停</span>
+                    )}
+                  </span>
+                  <span className="text-sm text-purple-700">
+                    {imageProgress.current}/{imageProgress.total}
+                    {imageProgress.currentBatch && imageProgress.totalBatches && (
+                      <span className="ml-2 text-xs">
+                        (批次: {imageProgress.currentBatch}/{imageProgress.totalBatches})
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="w-full bg-purple-200 rounded-full h-2">
+                  <div
+                    className="bg-purple-600 h-2 rounded-full transition-all duration-300 ease-out"
+                    style={{
+                      width: `${(imageProgress.current / imageProgress.total) * 100}%`
+                    }}
+                  ></div>
+                </div>
+
+                {/* 详细进度 - 每张图片的状态 */}
+                {imageProgress.details && Object.keys(imageProgress.details).length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <div className="text-xs font-medium text-purple-800">各图片生成状态：</div>
+                    {Object.entries(imageProgress.details).map(([itemId, detail]) => {
+                      const item = contentList.find(c => c.id === itemId)
+                      if (!item) return null
+
+                      return (
+                        <div key={itemId} className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-600">#{contentList.indexOf(item) + 1}</span>
+                            <span className="text-gray-500 truncate max-w-40">{detail.title}</span>
+                            <span className="text-gray-400 text-xs">({detail.imageRatio || '1:1'})</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {detail.status === 'pending' && (
+                              <>
+                                <div className="w-3 h-3 bg-gray-300 rounded-full" />
+                                <span className="text-gray-500">等待中</span>
+                              </>
+                            )}
+                            {detail.status === 'generating' && (
+                              <>
+                                <Clock className="w-3 h-3 text-yellow-500" />
+                                <div className="flex items-center gap-2">
+                                  <span className="text-yellow-700">
+                                    {detail.progress > 0 ? `${detail.progress}%` : '生成中'}
+                                  </span>
+                                  {detail.progress > 0 && (
+                                    <div className="w-12 bg-yellow-200 rounded-full h-1">
+                                      <div
+                                        className="bg-yellow-600 h-1 rounded-full transition-all duration-300"
+                                        style={{ width: `${detail.progress}%` }}
+                                      ></div>
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                            {detail.status === 'completed' && (
+                              <>
+                                <CheckCircle className="w-3 h-3 text-green-500" />
+                                <span className="text-green-700">已完成</span>
+                              </>
+                            )}
+                            {detail.status === 'error' && (
+                              <>
+                                <AlertCircle className="w-3 h-3 text-red-500" />
+                                <span className="text-red-700 truncate max-w-24" title={detail.error}>失败</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -614,15 +867,35 @@ function App() {
                       <div className="flex items-center gap-3">
                         <h3 className="text-lg font-semibold">内容 #{contentList.indexOf(item) + 1}</h3>
                         {/* 生成状态指示器 */}
-                        {item.content === null ? (
-                          <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
-                            仅主题 - 待生成文案
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
-                            ✓ 主题+文案完成
-                          </span>
-                        )}
+                        <div className="flex gap-2">
+                          {item.content === null ? (
+                            <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                              仅主题 - 待生成文案
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                              ✓ 主题+文案完成
+                            </span>
+                          )}
+
+                          {/* 图片状态指示器 */}
+                          {item.imagePath ? (
+                            <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full flex items-center gap-1">
+                              <ImageIcon className="w-3 h-3" />
+                              图片已生成
+                            </span>
+                          ) : imageProgress?.details?.[item.id]?.status === 'generating' ? (
+                            <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              图片生成中
+                            </span>
+                          ) : imageProgress?.details?.[item.id]?.status === 'error' ? (
+                            <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              图片生成失败
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                       <Button
                         variant="ghost"
@@ -738,11 +1011,73 @@ function App() {
                           )}
                         </div>
 
-                        {/* 图片路径 */}
+                        {/* 图片比例 */}
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <Label className="font-medium">图片比例</Label>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => startEdit(item.id, 'imageRatio', item.imageRatio || globalImageRatio)}
+                              className="h-6 w-6 p-0"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          {editingId === item.id && editingField === 'imageRatio' ? (
+                            <div className="flex gap-2">
+                              <Select value={editingValue} onValueChange={setEditingValue}>
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="1:1">正方形 (1:1)</SelectItem>
+                                  <SelectItem value="3:2">横向 (3:2)</SelectItem>
+                                  <SelectItem value="2:3">纵向 (2:3)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Button size="sm" onClick={saveEdit}>
+                                <Check className="w-4 h-4" />
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={cancelEdit}>
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-600 bg-gray-50 px-3 py-1 rounded">
+                                {item.imageRatio || globalImageRatio}
+                                {!item.imageRatio && (
+                                  <span className="text-xs text-gray-500 ml-1">(使用全局默认)</span>
+                                )}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 生成的图片 */}
                         {item.imagePath && (
                           <div>
-                            <Label className="font-medium">图片路径</Label>
-                            <p className="text-green-600 text-sm">{item.imagePath}</p>
+                            <Label className="font-medium">生成的图片</Label>
+                            <div className="mt-2 space-y-2">
+                              <div className="border rounded-lg p-2 bg-gray-50">
+                                <img
+                                  src={`http://localhost:3002/${item.imagePath}`}
+                                  alt={item.title}
+                                  className="w-full max-w-xs h-auto rounded border"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none'
+                                    e.target.nextSibling.style.display = 'block'
+                                  }}
+                                />
+                                <div className="hidden text-sm text-gray-500 p-4 text-center border-2 border-dashed border-gray-300 rounded">
+                                  图片加载失败
+                                  <br />
+                                  <span className="text-xs">{item.imagePath}</span>
+                                </div>
+                              </div>
+                              <p className="text-green-600 text-xs">路径: {item.imagePath}</p>
+                            </div>
                           </div>
                         )}
                       </div>
