@@ -1,0 +1,81 @@
+Table: users
+Columns:
+_id int AI PK 
+username varchar(50) 
+email varchar(100) 
+password_hash varchar(255) 
+avatar_id varchar(100) 
+useravailableScore int 
+role varchar(20) 
+membershipLevel varchar(20) 
+refreshToken varchar(255) 
+createdAt datetime 
+updatedAt datetime 
+balance decimal(10,2) 
+membershipExpiry datetime 
+resetPasswordToken varchar(255) 
+firstlogin_time datetime
+
+---------------------------------------------
+Table: recharges
+Columns:
+recharge_id int AI PK 
+user_id int 
+amount decimal(10,2) 
+status varchar(50) 
+created_at timestamp
+--------------------------
+Table: newtags
+Columns:
+tag_id int AI PK 
+tag_code varchar(255) 
+tag_alias varchar(255) 
+display_name_zh varchar(255) 
+display_name_en varchar(255)
+
+----------------------------
+Table: new_image_tags
+Columns:
+image_id char(36) PK 
+tag_id int PK
+
+---------------------------
+Table: images_ext
+Columns:
+id char(36) PK 
+name varchar(255) 
+defaultUrl varchar(255) 
+colorUrl varchar(255) 
+title varchar(255) 
+description text 
+type varchar(50) 
+ratio varchar(10) 
+isPublic tinyint(1) 
+createdAt datetime 
+prompt text 
+userId varchar(255) 
+size varchar(50) 
+additionalInfo json 
+crt_task_id varchar(255) 
+categoryId int
+------------------------------
+Table: image_reports
+Columns:
+report_id int AI PK 
+image_id varchar(255) 
+user_id int 
+content text 
+report_type varchar(50) 
+created_at datetime
+------------------------------
+Table: categories
+Columns:
+category_id int AI PK 
+category_code varchar(255) 
+category_alias varchar(255) 
+display_name_zh varchar(255) 
+display_name_en varchar(255) 
+description_zh text 
+description_en text 
+thumbnailUrl varchar(255)
+

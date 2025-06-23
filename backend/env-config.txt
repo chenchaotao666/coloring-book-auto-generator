@@ -1,0 +1,30 @@
+# 请将此文件内容复制到 backend/.env 文件中
+
+# 服务器端口
+PORT=5000
+
+# DeepSeek API配置
+DEEPSEEK_API_KEY=sk-43fc565dd627428db42a1325b24886bd
+
+# KIEAI图片生成API配置（需要申请真实的Token）
+KIEAI_API_URL=https://kieai.erweima.ai/api/v1
+KIEAI_AUTH_TOKEN=your_real_kieai_token_here
+
+# 其他可选API配置
+OPENAI_API_KEY=your_openai_api_key_here
+
+# 其他大模型API配置（可选）
+# CLAUDE_API_KEY=
+
+# 图片生成API配置（可选）
+# DALL_E_API_KEY=
+# MIDJOURNEY_API_KEY= 
+
+# 注意事项：
+# 1. 请将 your_real_kieai_token_here 替换为您从 KIEAI 获得的真实Token
+# 2. KIEAI API需要消耗积分，请确保账户有足够积分
+# 3. 如果没有配置真实Token，系统会自动降级使用占位符图片
+# 4. 图片生成可能需要几十秒到几分钟时间，请耐心等待
+
+# KIEAI API申请地址：
+# https://docs.kie.ai/zh-CN/4o-image-api/get-4-o-image-download-url 
