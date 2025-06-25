@@ -4,8 +4,16 @@ const fs = require('fs-extra')
 const path = require('path')
 const axios = require('axios')
 const { v4: uuidv4 } = require('uuid')
-const XLSX = require('xlsx')
 require('dotenv').config()
+
+// 数据库连接
+const { testConnection } = require('./database')
+
+// 路由导入
+const categoriesRouter = require('./routes/categories')
+const tagsRouter = require('./routes/tags')
+const imagesRouter = require('./routes/images')
+const internationalizationRouter = require('./routes/internationalization')
 
 // KIEAI图片生成API配置
 const KIEAI_API_URL = process.env.KIEAI_API_URL || 'https://kieai.erweima.ai/api/v1'
@@ -36,6 +44,13 @@ app.use(express.json())
 
 // 静态文件服务 - 提供图片访问
 app.use('/images', express.static(path.join(__dirname, '../images')))
+
+// 数据库API路由
+app.use('/api/categories', categoriesRouter)
+app.use('/api/tags', tagsRouter)
+app.use('/api/images', imagesRouter)
+app.use('/api/db-images', imagesRouter)
+app.use('/api/internationalization', internationalizationRouter)
 
 // 创建必要的目录
 const storageDir = path.join(__dirname, '../storage')
@@ -221,44 +236,6 @@ app.post('/api/generate-content', async (req, res) => {
       message: `生成文案出错: ${error.message}`
     })}\n\n`)
     res.end()
-  }
-})
-
-// 保存内容的API
-app.post('/api/save-content', async (req, res) => {
-  try {
-    const { keyword, description, model, contents } = req.body
-
-    if (!contents || contents.length === 0) {
-      return res.status(400).json({ error: '没有内容可保存' })
-    }
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    const filename = `content_${keyword}_${timestamp}.json`
-    const filepath = path.join(storageDir, filename)
-
-    const saveData = {
-      keyword,
-      description,
-      model,
-      generatedAt: new Date().toISOString(),
-      totalCount: contents.length,
-      successCount: contents.length,
-      contents: contents
-    }
-
-    await fs.writeFile(filepath, JSON.stringify(saveData, null, 2), 'utf8')
-    console.log(`📁 已保存内容到: ${filepath}`)
-
-    res.json({
-      success: true,
-      message: '内容保存成功',
-      filename: filename,
-      filepath: filepath
-    })
-  } catch (error) {
-    console.error('保存内容错误:', error)
-    res.status(500).json({ error: '保存内容失败: ' + error.message })
   }
 })
 
@@ -491,55 +468,6 @@ async function generateImagesConcurrently(taskId) {
     }
   }
 }
-
-// 导出Excel的API
-app.post('/api/export-excel', async (req, res) => {
-  const { contents } = req.body
-
-  try {
-    // 准备Excel数据
-    const excelData = contents.map((item, index) => ({
-      '序号': index + 1,
-      '标题': item.title || '',
-      '简要描述': item.description || '',
-      '图片生成Prompt': item.prompt || '',
-      '内容文案': item.content || '',
-      '图片路径': item.imagePath || '',
-      '创建时间': new Date().toLocaleString('zh-CN')
-    }))
-
-    // 创建工作簿
-    const workbook = XLSX.utils.book_new()
-    const worksheet = XLSX.utils.json_to_sheet(excelData)
-
-    // 设置列宽
-    const colWidths = [
-      { wch: 8 },   // 序号
-      { wch: 30 },  // 标题
-      { wch: 40 },  // 简要描述
-      { wch: 50 },  // Prompt
-      { wch: 80 },  // 内容文案
-      { wch: 30 },  // 图片路径
-      { wch: 20 }   // 创建时间
-    ]
-    worksheet['!cols'] = colWidths
-
-    // 添加工作表到工作簿
-    XLSX.utils.book_append_sheet(workbook, worksheet, '涂色书内容')
-
-    // 生成Excel buffer
-    const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
-
-    // 设置响应头
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    res.setHeader('Content-Disposition', `attachment; filename="涂色书内容_${new Date().toISOString().slice(0, 10)}.xlsx"`)
-
-    res.send(excelBuffer)
-  } catch (error) {
-    console.error('导出Excel错误:', error)
-    res.status(500).json({ error: error.message })
-  }
-})
 
 // 第一步：生成多个不同主题的标题和prompt
 async function generateThemes(keyword, description, count, model) {
@@ -1070,7 +998,7 @@ async function downloadAndSaveImage(imageUrl, filename) {
     return new Promise((resolve, reject) => {
       writer.on('finish', () => {
         console.log(`✅ 图片下载完成: ${filename}`)
-        resolve(`./images/${filename}`)
+        resolve(`images/${filename}`)
       })
       writer.on('error', reject)
     })
@@ -1138,6 +1066,7 @@ async function generateSingleImage(prompt, id, imageRatio, progressCallback) {
               }
 
             case 'GENERATING':
+              console.log('🔍 taskStatus.progress: ', taskStatus.progress)
               const apiProgress = parseFloat(taskStatus.progress || '0') * 100
               console.log(`⏳ 正在生成中... 进度: ${apiProgress}%`)
               if (progressCallback) progressCallback(Math.round(apiProgress))
@@ -1193,7 +1122,7 @@ async function generateSingleImage(prompt, id, imageRatio, progressCallback) {
 
   if (progressCallback) progressCallback(100)
 
-  return `./images/${filename}`
+  return `images/${filename}`
 }
 
 // 调用OpenAI API的函数（如果配置了API密钥）
@@ -1391,7 +1320,11 @@ app.get('/api/health', (req, res) => {
 })
 
 // 启动服务器
-app.listen(3002, () => {
-  console.log(`服务器运行在端口 3002`)
-  console.log(`健康检查: http://localhost:3002/api/health`)
+app.listen(PORT, async () => {
+  console.log(`服务器运行在端口 ${PORT}`)
+  console.log(`健康检查: http://localhost:${PORT}/api/health`)
+
+  // 测试数据库连接
+  console.log('正在测试数据库连接...')
+  await testConnection()
 })
