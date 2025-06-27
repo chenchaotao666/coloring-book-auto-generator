@@ -1,14 +1,27 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { AlertCircle, Check, CheckCircle, Clock, Edit3, Home, Image, ImageIcon, PlusCircle, Save, Settings, Tag, Trash2, X } from 'lucide-react'
+import { AlertCircle, Check, CheckCircle, Clock, Edit3, Home, Image, ImageIcon, Languages, Palette, PlusCircle, RefreshCw, Save, Settings, Tag, Trash2, X } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import CategoriesManager from './components/CategoriesManager'
+import ImageForm from './components/ImageForm'
 import ImagesManager from './components/ImagesManager'
 import TagsManager from './components/TagsManager'
+
+// 工具函数：从多语言对象中提取显示文本
+const getDisplayText = (field, preferredLang = 'zh') => {
+  if (!field) return ''
+  if (typeof field === 'string') return field
+  if (typeof field === 'object') {
+    return field[preferredLang] || field.zh || field.en || Object.values(field)[0] || ''
+  }
+  return ''
+}
 
 function App() {
   // 表单状态
@@ -25,6 +38,9 @@ function App() {
   const [isGeneratingThemes, setIsGeneratingThemes] = useState(false)
   const [isGeneratingContent, setIsGeneratingContent] = useState(false)
   const [isGeneratingImages, setIsGeneratingImages] = useState(false)
+  const [isGeneratingColoring, setIsGeneratingColoring] = useState(false) // 新增：上色状态
+  const [coloringProgress, setColoringProgress] = useState(null) // 新增：上色进度
+  const [coloringTasks, setColoringTasks] = useState(new Map()) // 新增：上色任务映射
   const [generationProgress, setGenerationProgress] = useState(null)
   const [imageProgress, setImageProgress] = useState(null)
   const [currentImageTaskId, setCurrentImageTaskId] = useState(null) // 当前图片生成任务ID
@@ -48,6 +64,13 @@ function App() {
   const [selectedLanguages, setSelectedLanguages] = useState([])
   const [isGeneratingInternationalization, setIsGeneratingInternationalization] = useState(false)
   const [internationalizationResults, setInternationalizationResults] = useState({})
+
+  // 查看详情相关状态
+  const [showDetailDialog, setShowDetailDialog] = useState(false)
+  const [viewingContent, setViewingContent] = useState(null)
+
+  // 单个图片上色状态
+  const [singleColoringTasks, setSingleColoringTasks] = useState(new Map()) // 存储单个图片的上色任务
 
   // 支持的语言配置
   const supportedLanguages = [
@@ -137,10 +160,12 @@ function App() {
                   break
 
                 case 'theme_content':
-                  // 显示生成的主题，添加默认图片比例
+                  // 显示生成的主题，添加默认图片比例和name字段
                   setContentList(prev => [...prev, {
                     ...data.content,
+                    name: data.content.name || data.content.title, // 初始化name字段
                     imagePath: null,
+                    coloringUrl: null, // 初始化上色URL字段
                     imageRatio: globalImageRatio // 使用当前全局比例作为默认值
                   }])
 
@@ -184,14 +209,21 @@ function App() {
   }
 
   // 第二步：生成文案
-  const generateContent = async () => {
+  const generateContent = async (forceRegenerate = false) => {
     if (contentList.length === 0) {
       alert('请先生成主题')
       return
     }
 
-    // 只为还没有文案的项目生成内容
-    const itemsToGenerate = contentList.filter(item => !item.content)
+    // 根据是否强制重新生成决定要处理的项目
+    let itemsToGenerate
+    if (forceRegenerate) {
+      // 强制重新生成：处理所有项目
+      itemsToGenerate = contentList
+    } else {
+      // 正常生成：只处理没有文案的项目
+      itemsToGenerate = contentList.filter(item => !item.content)
+    }
 
     if (itemsToGenerate.length === 0) {
       alert('所有主题都已生成文案！')
@@ -199,7 +231,8 @@ function App() {
     }
 
     setIsGeneratingContent(true)
-    setGenerationProgress({ current: 0, total: itemsToGenerate.length, message: `准备为${itemsToGenerate.length}个主题生成文案...` })
+    const actionText = forceRegenerate ? '重新生成' : '生成'
+    setGenerationProgress({ current: 0, total: itemsToGenerate.length, message: `准备为${itemsToGenerate.length}个主题${actionText}文案...` })
 
     try {
       const response = await fetch('/api/generate-content', {
@@ -320,8 +353,8 @@ function App() {
         body: JSON.stringify({
           contents: contentList.map(item => ({
             id: item.id,
-            title: item.title,
-            prompt: item.prompt,
+            title: getDisplayText(item.title),
+            prompt: getDisplayText(item.prompt),
             imageRatio: item.imageRatio || globalImageRatio // 使用项目特定比例或全局比例
           }))
         }),
@@ -478,6 +511,341 @@ function App() {
     }
   }
 
+  // 第四步：批量上色
+  const handleBatchColoring = async () => {
+    // 过滤出有图片的内容
+    const itemsWithImages = contentList.filter(item => item.imagePath)
+
+    if (itemsWithImages.length === 0) {
+      alert('没有可上色的图片！请先生成图片。')
+      return
+    }
+
+    // 检查哪些图片已有上色版本
+    const itemsWithoutColoring = itemsWithImages.filter(item => !item.coloringUrl)
+    if (itemsWithoutColoring.length === 0) {
+      alert('所有图片都已经上色完成！')
+      return
+    }
+
+    if (!confirm(`确认为 ${itemsWithoutColoring.length} 张图片生成上色版本？`)) {
+      return
+    }
+
+    setIsGeneratingColoring(true)
+    setColoringProgress({
+      current: 0,
+      total: itemsWithoutColoring.length,
+      message: '准备开始批量上色...',
+      details: {}
+    })
+
+    try {
+      // 先确保所有图片都保存到数据库
+      const itemsNeedSaving = itemsWithoutColoring.filter(item => !item.databaseId)
+      const databaseIdMap = new Map() // 存储新分配的databaseId
+
+      if (itemsNeedSaving.length > 0) {
+        setColoringProgress(prev => ({
+          ...prev,
+          message: `先保存 ${itemsNeedSaving.length} 张图片到数据库...`
+        }))
+
+        // 自动保存图片到数据库
+        for (const item of itemsNeedSaving) {
+          try {
+            const imageData = {
+              name: getDisplayText(item.title),
+              title: getDisplayText(item.title),
+              description: getDisplayText(item.prompt) || '自动生成的涂色页',
+              defaultUrl: item.imagePath,
+              type: 'text2image',
+              ratio: item.imageRatio || '1:1',
+              isPublic: true,
+              prompt: getDisplayText(item.prompt),
+              userId: 'frontend_user',
+              additionalInfo: {
+                frontendId: item.id,
+                autoGenerated: true
+              }
+            }
+
+            const response = await fetch('/api/db-images', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(imageData)
+            })
+
+            const result = await response.json()
+
+            if (result.success) {
+              // 存储到临时映射
+              databaseIdMap.set(item.id, result.data.id)
+              console.log(`图片已保存到数据库: ${item.id} -> ${result.data.id}`)
+            } else {
+              throw new Error(result.message || '保存失败')
+            }
+          } catch (error) {
+            console.error(`保存图片失败: ${getDisplayText(item.title)}`, error)
+            throw new Error(`保存图片"${getDisplayText(item.title)}"失败: ${error.message}`)
+          }
+        }
+
+        // 批量更新contentList
+        setContentList(prev => prev.map(prevItem => {
+          const newDatabaseId = databaseIdMap.get(prevItem.id)
+          return newDatabaseId
+            ? { ...prevItem, databaseId: newDatabaseId, savedToDatabase: true }
+            : prevItem
+        }))
+      }
+
+      const newTasks = new Map()
+
+      // 为每个需要上色的图片创建上色任务
+      for (let i = 0; i < itemsWithoutColoring.length; i++) {
+        const item = itemsWithoutColoring[i]
+
+        // 获取databaseId（优先使用新分配的，否则使用原有的）
+        const databaseId = databaseIdMap.get(item.id) || item.databaseId
+
+        if (!databaseId) {
+          throw new Error(`图片"${getDisplayText(item.title)}"缺少数据库ID`)
+        }
+
+        try {
+          setColoringProgress(prev => ({
+            ...prev,
+            current: i,
+            message: `正在创建上色任务 ${i + 1}/${itemsWithoutColoring.length}...`
+          }))
+
+          // 构造提示词
+          const prompt = getDisplayText(item.prompt) || getDisplayText(item.title) || '涂色页'
+
+          // 调用上色API
+          const response = await fetch('/api/images/color-generate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              imageId: databaseId, // 使用数据库ID
+              prompt: prompt,
+              options: {
+                ratio: item.imageRatio || '1:1',
+                isEnhance: false,
+                nVariants: 1
+              }
+            }),
+          })
+
+          const data = await response.json()
+
+          if (data.success && data.data.coloringResult?.taskId) {
+            // 记录任务ID与内容的映射
+            newTasks.set(data.data.coloringResult.taskId, {
+              itemId: item.id,
+              imageId: databaseId,
+              status: 'processing',
+              createdAt: new Date()
+            })
+
+            // 更新进度详情
+            setColoringProgress(prev => ({
+              ...prev,
+              details: {
+                ...prev.details,
+                [item.id]: {
+                  title: getDisplayText(item.title),
+                  status: 'processing',
+                  progress: 0,
+                  message: '上色任务已创建'
+                }
+              }
+            }))
+
+            console.log(`上色任务已创建: ${data.data.coloringResult.taskId} for ${getDisplayText(item.title)}`)
+          } else {
+            throw new Error(data.message || '创建上色任务失败')
+          }
+
+        } catch (error) {
+          console.error(`为 "${getDisplayText(item.title)}" 创建上色任务失败:`, error)
+
+          // 更新进度详情显示错误
+          setColoringProgress(prev => ({
+            ...prev,
+            details: {
+              ...prev.details,
+              [item.id]: {
+                title: getDisplayText(item.title),
+                status: 'error',
+                progress: 0,
+                message: `创建失败: ${error.message}`
+              }
+            }
+          }))
+        }
+
+        // 任务间延迟，避免过载
+        if (i < itemsWithoutColoring.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+      }
+
+      // 更新任务映射
+      setColoringTasks(newTasks)
+
+      // 开始轮询所有任务状态
+      if (newTasks.size > 0) {
+        setColoringProgress(prev => ({
+          ...prev,
+          current: itemsWithoutColoring.length,
+          message: `${newTasks.size} 个上色任务已创建，正在处理中...`
+        }))
+
+        pollColoringTasks(newTasks)
+      } else {
+        setColoringProgress(prev => ({
+          ...prev,
+          message: '所有上色任务创建失败'
+        }))
+        setTimeout(() => {
+          setIsGeneratingColoring(false)
+          setColoringProgress(null)
+        }, 3000)
+      }
+
+    } catch (error) {
+      console.error('批量上色失败:', error)
+      alert('批量上色失败: ' + error.message)
+      setIsGeneratingColoring(false)
+      setColoringProgress(null)
+    }
+  }
+
+  // 轮询上色任务状态
+  const pollColoringTasks = async (tasks) => {
+    const pollInterval = 3000 // 每3秒查询一次
+    let completedTasks = 0
+    let activeTasks = new Map(tasks)
+
+    const poll = async () => {
+      try {
+        const taskEntries = Array.from(activeTasks.entries())
+
+        for (const [taskId, taskInfo] of taskEntries) {
+          try {
+            const response = await fetch(`/api/images/color-task/${taskId}/${taskInfo.imageId}`)
+            const data = await response.json()
+
+            if (data.success) {
+              const status = data.data.status
+
+              if (status === 'completed' && data.data.coloringUrl) {
+                // 任务完成，更新contentList
+                setContentList(prev => prev.map(item =>
+                  item.id === taskInfo.itemId
+                    ? { ...item, coloringUrl: data.data.coloringUrl }
+                    : item
+                ))
+
+                // 更新进度详情
+                setColoringProgress(prev => ({
+                  ...prev,
+                  details: {
+                    ...prev.details,
+                    [taskInfo.itemId]: {
+                      ...prev.details[taskInfo.itemId],
+                      status: 'completed',
+                      progress: 100,
+                      message: '上色完成'
+                    }
+                  }
+                }))
+
+                activeTasks.delete(taskId)
+                completedTasks++
+
+                console.log(`上色完成: ${taskInfo.itemId}`)
+
+              } else if (status === 'failed') {
+                // 任务失败
+                setColoringProgress(prev => ({
+                  ...prev,
+                  details: {
+                    ...prev.details,
+                    [taskInfo.itemId]: {
+                      ...prev.details[taskInfo.itemId],
+                      status: 'error',
+                      progress: 0,
+                      message: `上色失败: ${data.data.message || '未知错误'}`
+                    }
+                  }
+                }))
+
+                activeTasks.delete(taskId)
+                completedTasks++
+
+              } else if (status === 'processing') {
+                // 更新进度
+                const progress = data.data.progress || 0
+                setColoringProgress(prev => ({
+                  ...prev,
+                  details: {
+                    ...prev.details,
+                    [taskInfo.itemId]: {
+                      ...prev.details[taskInfo.itemId],
+                      status: 'processing',
+                      progress: progress,
+                      message: `上色中... ${progress}%`
+                    }
+                  }
+                }))
+              }
+            }
+          } catch (error) {
+            console.error(`检查上色任务 ${taskId} 状态失败:`, error)
+          }
+        }
+
+        // 更新总体进度
+        setColoringProgress(prev => ({
+          ...prev,
+          current: completedTasks,
+          message: `上色进度: ${completedTasks}/${prev.total} 已完成`
+        }))
+
+        // 检查是否所有任务都完成了
+        if (activeTasks.size === 0) {
+          setColoringProgress(prev => ({
+            ...prev,
+            message: `上色完成！成功处理 ${completedTasks}/${prev.total} 张图片`
+          }))
+
+          setTimeout(() => {
+            setIsGeneratingColoring(false)
+            setColoringProgress(null)
+          }, 3000)
+          return
+        }
+
+        // 继续轮询
+        setTimeout(poll, pollInterval)
+
+      } catch (error) {
+        console.error('轮询上色任务状态失败:', error)
+        setTimeout(poll, pollInterval)
+      }
+    }
+
+    // 开始轮询
+    setTimeout(poll, 3000) // 3秒后开始第一次轮询
+  }
+
   // 获取保存选项（分类和标签）
   const loadSaveOptions = async () => {
     try {
@@ -504,60 +872,186 @@ function App() {
     setIsSaving(true)
 
     try {
-      const imagesToSave = contentList
-        .filter(item => selectedImages.has(item.id) && item.imagePath)
-        .map(item => {
-          const categoryId = imageCategorySelections.get(item.id) || null
-          const tagIds = Array.from(imageTagSelections.get(item.id) || [])
+      const selectedItems = contentList.filter(item => selectedImages.has(item.id))
 
-          return {
-            title: item.title,
-            description: item.description,
-            imagePath: item.imagePath,
-            prompt: item.prompt,
-            ratio: item.imageRatio || '1:1',
-            type: 'generated',
-            categoryId: categoryId,
-            tagIds: tagIds,
-            userId: 'frontend_user',
-            additionalInfo: {
-              source: 'frontend_generation',
-              keyword: formData.keyword,
-              originalIndex: item.index
-            }
-          }
-        })
-
-      if (imagesToSave.length === 0) {
-        alert('选中的项目中没有已生成的图片')
+      if (selectedItems.length === 0) {
+        alert('请先选择要保存的内容')
         return
       }
 
-      const response = await fetch('/api/db-images/save-generated', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ images: imagesToSave })
+      // 分别处理新增和更新的项目
+      const itemsToCreate = []
+      const itemsToUpdate = []
+
+      selectedItems.forEach(item => {
+        const categoryId = imageCategorySelections.get(item.id) || item.savedCategoryId || null
+        const tagIds = Array.from(imageTagSelections.get(item.id) || item.savedTagIds || [])
+
+        // 处理多语言字段，如果是字符串则转换为对象
+        const formatMultiLangField = (value) => {
+          if (!value) return { zh: '' }
+          if (typeof value === 'object') return value
+          return { zh: value }
+        }
+
+        const imageData = {
+          name: formatMultiLangField(item.name || item.title),
+          title: formatMultiLangField(item.title),
+          description: formatMultiLangField(item.description),
+          imagePath: item.imagePath,
+          prompt: formatMultiLangField(item.prompt),
+          ratio: item.imageRatio || '1:1',
+          type: item.type || 'text2image',
+          isPublic: item.isPublic !== undefined ? item.isPublic : false,
+          size: item.size || '',
+          categoryId: categoryId,
+          tagIds: tagIds,
+          userId: 'frontend_user',
+          additionalInfo: formatMultiLangField(item.content),
+          frontendId: item.id // 添加前端ID用于关联
+        }
+
+        if (item.databaseId) {
+          // 已保存过，需要更新
+          itemsToUpdate.push({
+            ...imageData,
+            id: item.databaseId
+          })
+        } else {
+          // 未保存过，需要新增
+          itemsToCreate.push(imageData)
+        }
       })
 
-      const result = await response.json()
+      let totalSaved = 0
+      let totalRequested = selectedItems.length
+      const errors = []
 
-      if (result.success) {
-        alert(`成功保存 ${result.data.totalSaved}/${result.data.totalRequested} 张图片到数据库`)
-        setSelectedImages(new Set()) // 清空选择
-        setImageCategorySelections(new Map()) // 清空分类选择
-        setImageTagSelections(new Map()) // 清空标签选择
+      // 处理新增
+      if (itemsToCreate.length > 0) {
+        try {
+          const createResponse = await fetch('/api/db-images/save-generated', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ images: itemsToCreate })
+          })
 
-        if (result.errors && result.errors.length > 0) {
-          console.warn('部分图片保存失败:', result.errors)
+          const createResult = await createResponse.json()
+
+          if (createResult.success) {
+            totalSaved += createResult.data.totalSaved
+
+            // 更新contentList，添加databaseId
+            setContentList(prevList =>
+              prevList.map(item => {
+                if (selectedImages.has(item.id) && !item.databaseId) {
+                  // 找到对应的已保存图片记录
+                  const savedImage = createResult.data.savedImages.find(saved =>
+                    saved.additionalInfo &&
+                    (saved.additionalInfo.frontendId === item.id || saved.name?.zh === getDisplayText(item.name || item.title))
+                  )
+
+                  if (savedImage) {
+                    return {
+                      ...item,
+                      databaseId: savedImage.id,
+                      savedCategoryId: imageCategorySelections.get(item.id) || null,
+                      savedTagIds: Array.from(imageTagSelections.get(item.id) || []),
+                      savedToDatabase: true
+                    }
+                  }
+                }
+                return item
+              })
+            )
+
+            if (createResult.errors) {
+              errors.push(...createResult.errors)
+            }
+          } else {
+            errors.push({ error: `新增失败: ${createResult.message}` })
+          }
+        } catch (error) {
+          console.error('新增内容失败:', error)
+          errors.push({ error: `新增失败: ${error.message}` })
         }
-      } else {
-        alert('保存失败: ' + result.message)
       }
+
+      // 处理更新
+      if (itemsToUpdate.length > 0) {
+        for (const imageData of itemsToUpdate) {
+          try {
+            const updateResponse = await fetch(`/api/db-images/${imageData.id}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(imageData)
+            })
+
+            const updateResult = await updateResponse.json()
+
+            if (updateResult.success) {
+              totalSaved += 1
+
+              // 更新contentList中的保存状态
+              setContentList(prevList =>
+                prevList.map(item => {
+                  if (item.databaseId === imageData.id) {
+                    return {
+                      ...item,
+                      savedCategoryId: imageData.categoryId,
+                      savedTagIds: imageData.tagIds,
+                      savedToDatabase: true
+                    }
+                  }
+                  return item
+                })
+              )
+            } else {
+              errors.push({ error: `更新失败 (ID: ${imageData.id}): ${updateResult.message}` })
+            }
+          } catch (error) {
+            console.error(`更新内容失败 (ID: ${imageData.id}):`, error)
+            errors.push({ error: `更新失败 (ID: ${imageData.id}): ${error.message}` })
+          }
+        }
+      }
+
+      // 显示结果
+      const message = itemsToCreate.length > 0 && itemsToUpdate.length > 0
+        ? `成功保存 ${totalSaved}/${totalRequested} 条内容 (新增 ${itemsToCreate.length}, 更新 ${itemsToUpdate.length})`
+        : itemsToCreate.length > 0
+          ? `成功新增 ${totalSaved}/${totalRequested} 条内容到数据库`
+          : `成功更新 ${totalSaved}/${totalRequested} 条内容`
+
+      alert(message)
+
+      setSelectedImages(new Set()) // 清空选择
+
+      // 只清除已保存项目的分类和标签选择状态，因为它们现在使用savedCategoryId和savedTagIds
+      const savedImageIds = Array.from(selectedImages)
+      setImageCategorySelections(prev => {
+        const newMap = new Map(prev)
+        savedImageIds.forEach(id => newMap.delete(id))
+        return newMap
+      })
+      setImageTagSelections(prev => {
+        const newMap = new Map(prev)
+        savedImageIds.forEach(id => newMap.delete(id))
+        return newMap
+      })
+
+      if (errors.length > 0) {
+        console.warn('部分内容保存失败:', errors)
+        alert(`保存完成，但有 ${errors.length} 个错误，请查看控制台`)
+      }
+
     } catch (error) {
-      console.error('保存图片时出错:', error)
-      alert('保存图片时出错: ' + error.message)
+      console.error('保存内容时出错:', error)
+      alert('保存内容时出错: ' + error.message)
     } finally {
       setIsSaving(false)
     }
@@ -613,18 +1107,17 @@ function App() {
 
   // 全选/取消全选
   const toggleSelectAll = () => {
-    const imagesWithPath = contentList.filter(item => item.imagePath)
-    if (selectedImages.size === imagesWithPath.length) {
+    if (selectedImages.size === contentList.length) {
       setSelectedImages(new Set()) // 取消全选
     } else {
-      setSelectedImages(new Set(imagesWithPath.map(item => item.id))) // 全选
+      setSelectedImages(new Set(contentList.map(item => item.id))) // 全选
     }
   }
 
   // 直接保存选中的图片
   const handleSaveImages = async () => {
     if (selectedImages.size === 0) {
-      alert('请先选择要保存的图片')
+      alert('请先选择要保存的内容')
       return
     }
 
@@ -716,6 +1209,427 @@ function App() {
     } finally {
       setIsGeneratingInternationalization(false)
     }
+  }
+
+  // 查看内容详情
+  const viewContentDetails = (item) => {
+    // 转换数据格式以适配 ImageForm
+    const formattedContent = {
+      name: { zh: item.name || item.title || '' },
+      title: { zh: item.title || '' },
+      description: { zh: item.content || '' },
+      prompt: { zh: item.prompt || '' },
+      defaultUrl: item.imagePath ? `/${item.imagePath}` : '',
+      colorUrl: '',
+      coloringUrl: '',
+      type: 'text2image',
+      ratio: item.imageRatio || '1:1',
+      isPublic: false,
+      categoryId: null,
+      size: '',
+      tagIds: []
+    }
+
+    setViewingContent(formattedContent)
+    setShowDetailDialog(true)
+  }
+
+  // 关闭详情对话框
+  const closeDetailDialog = () => {
+    setShowDetailDialog(false)
+    setViewingContent(null)
+  }
+
+  // 获取所有已有的语言版本
+  const getExistingLanguages = (formData) => {
+    const allLanguages = new Set(['zh']) // 中文是必须的
+
+      // 检查各个多语言字段中存在的语言
+      ;['name', 'title', 'description', 'prompt'].forEach(field => {
+        if (formData[field] && typeof formData[field] === 'object') {
+          Object.keys(formData[field]).forEach(lang => {
+            if (formData[field][lang]) {
+              allLanguages.add(lang)
+            }
+          })
+        }
+      })
+
+    return Array.from(allLanguages)
+  }
+
+  // 格式化多语言字段
+  const formatMultiLangField = (field) => {
+    if (!field) return ''
+
+    if (typeof field === 'string') {
+      try {
+        const parsed = JSON.parse(field)
+        return parsed.zh || parsed.en || Object.values(parsed)[0] || ''
+      } catch {
+        return field
+      }
+    }
+
+    if (typeof field === 'object') {
+      return field.zh || field.en || Object.values(field)[0] || ''
+    }
+
+    return String(field)
+  }
+
+  // 将生成的内容项转换为ImageForm格式
+  const convertItemToFormData = (item) => {
+    // 优先使用已保存的分类和标签信息，如果没有则使用当前选择状态
+    let categoryId, tagIds
+
+    if (item.savedToDatabase) {
+      // 如果已保存到数据库，优先使用保存的信息
+      categoryId = item.savedCategoryId || null
+      tagIds = item.savedTagIds || []
+    } else {
+      // 如果未保存，使用当前选择状态
+      categoryId = imageCategorySelections.get(item.id) || null
+      tagIds = Array.from(imageTagSelections.get(item.id) || [])
+    }
+
+    // 处理多语言字段的辅助函数
+    const extractMultiLangField = (field, fallback = '') => {
+      if (!field) return { zh: fallback }
+      if (typeof field === 'object') return field
+      return { zh: field }
+    }
+
+    return {
+      name: extractMultiLangField(item.name || item.title),
+      title: extractMultiLangField(item.title),
+      description: extractMultiLangField(item.description),
+      prompt: extractMultiLangField(item.prompt),
+      additionalInfo: extractMultiLangField(item.content), // 将content作为additionalInfo（文案内容）
+      defaultUrl: item.imagePath ? `/${item.imagePath}` : '',
+      colorUrl: '',
+      coloringUrl: '',
+      type: item.type || 'text2image',
+      ratio: item.imageRatio || '1:1',
+      isPublic: item.isPublic !== undefined ? item.isPublic : false,
+      categoryId: categoryId,
+      size: item.size || '',
+      tagIds: tagIds
+    }
+  }
+
+  // 处理生成内容的表单编辑
+  const handleContentFormChange = (itemId, field, lang, value) => {
+    setContentList(prevList =>
+      prevList.map(item => {
+        if (item.id === itemId) {
+          switch (field) {
+            case 'name':
+              return {
+                ...item,
+                name: typeof item.name === 'object'
+                  ? { ...item.name, [lang]: value }
+                  : { [lang]: value }
+              }
+            case 'title':
+              return {
+                ...item,
+                title: typeof item.title === 'object'
+                  ? { ...item.title, [lang]: value }
+                  : { [lang]: value }
+              }
+            case 'description':
+              return {
+                ...item,
+                description: typeof item.description === 'object'
+                  ? { ...item.description, [lang]: value }
+                  : { [lang]: value }
+              }
+            case 'additionalInfo':
+              return {
+                ...item,
+                content: typeof item.content === 'object'
+                  ? { ...item.content, [lang]: value }
+                  : { [lang]: value }
+              } // additionalInfo对应content字段
+            case 'prompt':
+              return {
+                ...item,
+                prompt: typeof item.prompt === 'object'
+                  ? { ...item.prompt, [lang]: value }
+                  : { [lang]: value }
+              }
+            case 'ratio':
+              return { ...item, imageRatio: value }
+            case 'type':
+              return { ...item, type: value }
+            case 'size':
+              return { ...item, size: value }
+            case 'isPublic':
+              return { ...item, isPublic: value }
+            case 'categoryId':
+              // 如果是已保存的项目，直接更新保存的分类信息
+              if (item.savedToDatabase) {
+                return { ...item, savedCategoryId: value }
+              } else {
+                // 未保存的项目，更新分类选择状态
+                setImageCategory(itemId, value)
+              }
+              return item
+            case 'tagIds':
+              // 如果是已保存的项目，直接更新保存的标签信息
+              if (item.savedToDatabase) {
+                return { ...item, savedTagIds: value }
+              } else {
+                // 未保存的项目，更新标签选择状态
+                const newTagSelections = new Map(imageTagSelections)
+                newTagSelections.set(itemId, new Set(value))
+                setImageTagSelections(newTagSelections)
+              }
+              return item
+            default:
+              return item
+          }
+        }
+        return item
+      })
+    )
+  }
+
+  // 单个图片上色功能
+  const handleSingleImageColoring = async (formData) => {
+    if (!formData.defaultUrl) {
+      alert('请先确保有默认图片URL')
+      return
+    }
+
+    // 检查是否有数据库ID
+    const imageItem = contentList.find(item =>
+      item.imagePath === formData.defaultUrl ||
+      (item.databaseId && item.databaseId.toString() === formData.id?.toString())
+    )
+
+    let imageId = formData.id || imageItem?.databaseId
+
+    try {
+      // 如果没有数据库ID，先保存图片到数据库
+      if (!imageId) {
+        console.log('图片未保存到数据库，正在自动保存...')
+
+        const saveData = {
+          name: formData.name?.zh || formData.title?.zh || '单个上色图片',
+          title: formData.title?.zh || '单个上色图片',
+          description: formData.description?.zh || '手动上色的图片',
+          defaultUrl: formData.defaultUrl,
+          type: formData.type || 'text2image',
+          ratio: formData.ratio || '1:1',
+          isPublic: formData.isPublic !== undefined ? formData.isPublic : true,
+          prompt: formData.prompt?.zh || '涂色页',
+          userId: 'frontend_user',
+          additionalInfo: {
+            frontendId: imageItem?.id,
+            singleColoring: true
+          }
+        }
+
+        const saveResponse = await fetch('/api/db-images', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(saveData)
+        })
+
+        const saveResult = await saveResponse.json()
+
+        if (!saveResult.success) {
+          throw new Error(saveResult.message || '保存图片到数据库失败')
+        }
+
+        imageId = saveResult.data.id
+
+        // 更新contentList中的databaseId
+        if (imageItem) {
+          setContentList(prev => prev.map(item =>
+            item.id === imageItem.id
+              ? { ...item, databaseId: imageId, savedToDatabase: true }
+              : item
+          ))
+        }
+
+        console.log(`图片已保存到数据库: ${imageId}`)
+      }
+
+      // 构造提示词
+      const prompt = formData.prompt?.zh || formData.title?.zh || '涂色页'
+
+      // 调用上色API
+      const response = await fetch('/api/images/color-generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageId: imageId,
+          prompt: prompt,
+          options: {
+            ratio: formData.ratio || '1:1',
+            isEnhance: false,
+            nVariants: 1
+          }
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success && data.data.coloringResult?.taskId) {
+        const taskId = data.data.coloringResult.taskId
+
+        // 记录单个上色任务
+        setSingleColoringTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.set(taskId, {
+            imageId: imageId,
+            formDataId: formData.id,
+            frontendItemId: imageItem?.id,
+            status: 'processing',
+            createdAt: new Date()
+          })
+          return newMap
+        })
+
+        console.log(`单个图片上色任务已创建: ${taskId}`)
+
+        // 开始轮询单个上色任务状态
+        pollSingleColoringTask(taskId, imageId)
+
+        return true
+      } else {
+        throw new Error(data.message || '创建上色任务失败')
+      }
+
+    } catch (error) {
+      console.error('单个图片上色失败:', error)
+      alert('上色失败: ' + error.message)
+      return false
+    }
+  }
+
+  // 轮询单个上色任务状态
+  const pollSingleColoringTask = async (taskId, imageId) => {
+    const pollInterval = 3000 // 每3秒查询一次
+    let pollCount = 0
+    const maxPolls = 180 // 最多查询9分钟
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/images/color-task/${taskId}/${imageId}`)
+        const data = await response.json()
+
+        if (data.success) {
+          const status = data.data.status
+
+          if (status === 'completed' && data.data.coloringUrl) {
+            // 任务完成，更新相关状态
+            const taskInfo = singleColoringTasks.get(taskId)
+
+            if (taskInfo) {
+              // 如果有对应的前端item，更新contentList
+              if (taskInfo.frontendItemId) {
+                setContentList(prev => prev.map(item =>
+                  item.id === taskInfo.frontendItemId
+                    ? { ...item, coloringUrl: data.data.coloringUrl }
+                    : item
+                ))
+              }
+
+              // 更新查看详情弹框的数据
+              if (viewingContent && viewingContent.id === taskInfo.formDataId) {
+                setViewingContent(prev => ({
+                  ...prev,
+                  coloringUrl: data.data.coloringUrl
+                }))
+              }
+
+              // 清除任务记录
+              setSingleColoringTasks(prev => {
+                const newMap = new Map(prev)
+                newMap.delete(taskId)
+                return newMap
+              })
+
+              console.log(`单个图片上色完成: ${taskId}`)
+            }
+
+            return
+
+          } else if (status === 'failed') {
+            // 任务失败
+            console.error(`单个图片上色失败: ${taskId}`)
+
+            // 清除任务记录
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskId)
+              return newMap
+            })
+
+            alert('图片上色失败，请重试')
+            return
+
+          } else {
+            // 任务仍在进行中，继续轮询
+            console.log(`单个图片上色进行中: ${taskId}, 状态: ${status}`)
+          }
+        }
+
+        // 继续轮询
+        pollCount++
+        if (pollCount < maxPolls) {
+          setTimeout(poll, pollInterval)
+        } else {
+          console.warn(`单个图片上色任务轮询超时: ${taskId}`)
+
+          // 清除任务记录
+          setSingleColoringTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(taskId)
+            return newMap
+          })
+
+          alert('上色任务查询超时，请稍后检查结果')
+        }
+
+      } catch (error) {
+        console.error(`查询单个上色任务状态失败: ${taskId}`, error)
+
+        // 继续重试
+        pollCount++
+        if (pollCount < maxPolls) {
+          setTimeout(poll, pollInterval)
+        } else {
+          // 清除任务记录
+          setSingleColoringTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(taskId)
+            return newMap
+          })
+        }
+      }
+    }
+
+    // 开始轮询
+    poll()
+  }
+
+  // 检查是否有正在进行的单个上色任务
+  const isGeneratingSingleColoring = (formData) => {
+    return Array.from(singleColoringTasks.values()).some(task =>
+      task.formDataId === formData.id ||
+      task.frontendItemId === contentList.find(item =>
+        item.imagePath === formData.defaultUrl
+      )?.id
+    )
   }
 
   return (
@@ -898,24 +1812,9 @@ function App() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {/* 流程说明 */}
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="font-medium text-amber-800 mb-2">操作流程说明</div>
-                        <div className="text-sm text-amber-700 space-y-1">
-                          <div>• <strong>第一步：</strong>生成主题 - 根据关键词创建多个不同的涂色主题和AI绘图指令</div>
-                          <div>• <strong>第二步：</strong>生成文案 - 为每个主题创建详细的涂色指导内容</div>
-                          <div>• <strong>第三步：</strong>生成图片 - 使用AI根据指令生成专业涂色页图片</div>
-                          <div>• <strong>最后：</strong>保存数据 - 选择需要的内容保存到数据库中</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
 
                   {/* 步骤按钮 */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     {/* 第一步：生成主题 */}
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                       <div className="text-center">
@@ -943,15 +1842,43 @@ function App() {
                         </div>
                         <h3 className="font-medium text-green-900 mb-2">生成文案</h3>
                         <p className="text-sm text-green-700 mb-4">为主题创建详细的涂色指导</p>
-                        <Button
-                          onClick={generateContent}
-                          disabled={isGeneratingContent || contentList.length === 0}
-                          variant="outline"
-                          className="w-full border-green-300 text-green-700 hover:bg-green-50"
-                          size="sm"
-                        >
-                          {isGeneratingContent ? '生成中...' : '生成文案'}
-                        </Button>
+
+                        {/* 检查是否有已生成的文案 */}
+                        {contentList.some(item => item.content) ? (
+                          <div className="space-y-2">
+                            <Button
+                              onClick={() => generateContent(false)}
+                              disabled={isGeneratingContent || contentList.filter(item => !item.content).length === 0}
+                              variant="outline"
+                              className="w-full border-green-300 text-green-700 hover:bg-green-50 flex items-center gap-2"
+                              size="sm"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                              {isGeneratingContent ? '生成中...' : `生成剩余文案 (${contentList.filter(item => !item.content).length})`}
+                            </Button>
+                            <Button
+                              onClick={() => generateContent(true)}
+                              disabled={isGeneratingContent}
+                              variant="outline"
+                              className="w-full border-orange-300 text-orange-700 hover:bg-orange-50 flex items-center gap-2"
+                              size="sm"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                              {isGeneratingContent ? '生成中...' : '重新生成所有文案'}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={() => generateContent(false)}
+                            disabled={isGeneratingContent || contentList.length === 0}
+                            variant="outline"
+                            className="w-full border-green-300 text-green-700 hover:bg-green-50 flex items-center gap-2"
+                            size="sm"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                            {isGeneratingContent ? '生成中...' : '生成文案'}
+                          </Button>
+                        )}
                       </div>
                     </div>
 
@@ -971,6 +1898,26 @@ function App() {
                           size="sm"
                         >
                           {isGeneratingImages ? '生成中...' : '生成图片'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* 第四步：图片上色 */}
+                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                      <div className="text-center">
+                        <div className="w-12 h-12 mx-auto mb-3 bg-orange-100 rounded-full flex items-center justify-center">
+                          <Palette className="w-6 h-6 text-orange-600" />
+                        </div>
+                        <h3 className="font-medium text-orange-900 mb-2">图片上色</h3>
+                        <p className="text-sm text-orange-700 mb-4">为线稿图生成马克笔上色版本</p>
+                        <Button
+                          onClick={handleBatchColoring}
+                          disabled={!contentList.some(item => item.imagePath && !item.coloringUrl) || isGeneratingColoring}
+                          variant="outline"
+                          className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
+                          size="sm"
+                        >
+                          {isGeneratingColoring ? '上色中...' : '开始上色'}
                         </Button>
                       </div>
                     </div>
@@ -1031,7 +1978,7 @@ function App() {
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium text-purple-900 flex items-center gap-2">
                           <ImageIcon className="w-4 h-4" />
-                          {imageProgress.message}
+                          {getDisplayText(imageProgress.message)}
                           {imageProgress.status === 'paused' && (
                             <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">已暂停</span>
                           )}
@@ -1066,7 +2013,7 @@ function App() {
                               <div key={itemId} className="flex items-center justify-between text-xs">
                                 <div className="flex items-center gap-2">
                                   <span className="text-gray-600">#{contentList.indexOf(item) + 1}</span>
-                                  <span className="text-gray-500 truncate max-w-40">{detail.title}</span>
+                                  <span className="text-gray-500 truncate max-w-40">{getDisplayText(detail.title)}</span>
                                   <span className="text-gray-400 text-xs">({detail.imageRatio || '1:1'})</span>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -1114,11 +2061,86 @@ function App() {
                       )}
                     </div>
                   )}
+
+                  {/* 上色进度显示 */}
+                  {coloringProgress && (
+                    <div className="mt-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-orange-900 flex items-center gap-2">
+                          <Palette className="w-4 h-4" />
+                          {coloringProgress.message}
+                        </span>
+                        <span className="text-sm text-orange-700">
+                          {coloringProgress.current}/{coloringProgress.total}
+                        </span>
+                      </div>
+                      <div className="w-full bg-orange-200 rounded-full h-2">
+                        <div
+                          className="bg-orange-600 h-2 rounded-full transition-all duration-300 ease-out"
+                          style={{
+                            width: `${(coloringProgress.current / coloringProgress.total) * 100}%`
+                          }}
+                        ></div>
+                      </div>
+
+                      {/* 详细进度 - 每张图片的上色状态 */}
+                      {coloringProgress.details && Object.keys(coloringProgress.details).length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          <div className="text-xs font-medium text-orange-800">各图片上色状态：</div>
+                          {Object.entries(coloringProgress.details).map(([itemId, detail]) => {
+                            const item = contentList.find(c => c.id === itemId)
+                            if (!item) return null
+
+                            return (
+                              <div key={itemId} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-gray-600">#{contentList.indexOf(item) + 1}</span>
+                                  <span className="text-gray-500 truncate max-w-40">{detail.title}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {detail.status === 'processing' && (
+                                    <>
+                                      <Palette className="w-3 h-3 text-orange-500" />
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-orange-700">
+                                          {detail.progress > 0 ? `${detail.progress}%` : '上色中'}
+                                        </span>
+                                        {detail.progress > 0 && (
+                                          <div className="w-12 bg-orange-200 rounded-full h-1">
+                                            <div
+                                              className="bg-orange-600 h-1 rounded-full transition-all duration-300"
+                                              style={{ width: `${detail.progress}%` }}
+                                            ></div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </>
+                                  )}
+                                  {detail.status === 'completed' && (
+                                    <>
+                                      <CheckCircle className="w-3 h-3 text-green-500" />
+                                      <span className="text-green-700">上色完成</span>
+                                    </>
+                                  )}
+                                  {detail.status === 'error' && (
+                                    <>
+                                      <AlertCircle className="w-3 h-3 text-red-500" />
+                                      <span className="text-red-700 truncate max-w-24" title={detail.message}>上色失败</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
-              {/* 步骤3：保存设置（只在有图片时显示） */}
-              {contentList.some(item => item.imagePath) && (
+              {/* 步骤3：保存设置（有内容时显示） */}
+              {contentList.length > 0 && (
                 <Card className="mb-6">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -1135,7 +2157,7 @@ function App() {
                         size="sm"
                       >
                         <CheckCircle className="w-4 h-4" />
-                        {selectedImages.size === contentList.filter(item => item.imagePath).length ? '取消全选' : '全选图片'}
+                        {selectedImages.size === contentList.length ? '取消全选' : '全选'}
                       </Button>
 
                       <Button
@@ -1145,7 +2167,21 @@ function App() {
                         size="sm"
                       >
                         <Save className="w-4 h-4" />
-                        {isSaving ? '保存中...' : `保存到数据库 (${selectedImages.size})`}
+                        {isSaving ? '保存中...' : (() => {
+                          const selectedItems = contentList.filter(item => selectedImages.has(item.id))
+                          const newItems = selectedItems.filter(item => !item.databaseId).length
+                          const updateItems = selectedItems.filter(item => item.databaseId).length
+
+                          if (newItems > 0 && updateItems > 0) {
+                            return `保存 (${selectedImages.size}) - 新增${newItems},更新${updateItems}`
+                          } else if (newItems > 0) {
+                            return `新增到数据库 (${newItems})`
+                          } else if (updateItems > 0) {
+                            return `更新数据库 (${updateItems})`
+                          } else {
+                            return `保存到数据库 (${selectedImages.size})`
+                          }
+                        })()}
                       </Button>
                     </div>
                   </CardContent>
@@ -1201,15 +2237,9 @@ function App() {
                                   </div>
                                 ) : (
                                   <div className="flex items-center gap-2">
-                                    <h3 className="font-medium text-gray-900 truncate">{item.title}</h3>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => startEdit(item.id, 'title', item.title)}
-                                      className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                                    >
-                                      <Edit3 className="w-3 h-3" />
-                                    </Button>
+                                    <h3 className="font-medium text-gray-900 truncate">
+                                      {getDisplayText(item.name || item.title)}
+                                    </h3>
                                   </div>
                                 )}
                               </div>
@@ -1245,6 +2275,18 @@ function App() {
                                 </span>
                               ) : null}
 
+                              {/* 数据库保存状态 */}
+                              {item.databaseId ? (
+                                <span className="inline-flex items-center px-2 py-1 text-xs bg-emerald-100 text-emerald-800 rounded-full">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  已保存
+                                </span>
+                              ) : item.savedToDatabase ? (
+                                <span className="inline-flex items-center px-2 py-1 text-xs bg-emerald-100 text-emerald-800 rounded-full">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  已保存
+                                </span>
+                              ) : null}
                               {/* 删除按钮 */}
                               <Button
                                 variant="ghost"
@@ -1257,286 +2299,42 @@ function App() {
                             </div>
                           </div>
 
-                          {/* 分类和标签选择 - 简化样式 */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                            <div>
-                              <Label className="text-sm text-gray-600 mb-1 block">分类</Label>
-                              <Select
-                                value={imageCategorySelections.get(item.id) || ''}
-                                onValueChange={(value) => setImageCategory(item.id, value)}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="选择分类" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {saveOptions.categories.map(category => (
-                                    <SelectItem key={category.id} value={category.id.toString()}>
-                                      {typeof category.name === 'string'
-                                        ? category.name
-                                        : category.name?.zh || category.name?.en || '未知分类'}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
 
-                            <div>
-                              <Label className="text-sm text-gray-600 mb-1 block">标签</Label>
-                              <div className="relative">
-                                <Select
-                                  value="" // 不需要设置value，因为是多选
-                                  onValueChange={(tagId) => toggleImageTag(item.id, parseInt(tagId))}
-                                >
-                                  <SelectTrigger className="h-8 text-sm">
-                                    <SelectValue>
-                                      {(() => {
-                                        const selectedTags = imageTagSelections.get(item.id) || new Set()
-                                        if (selectedTags.size === 0) {
-                                          return <span className="text-gray-500">选择标签</span>
-                                        }
-                                        const selectedTagNames = saveOptions.tags
-                                          .filter(tag => selectedTags.has(tag.id))
-                                          .map(tag => typeof tag.name === 'string' ? tag.name : tag.name?.zh || tag.name?.en || '未知')
 
-                                        if (selectedTagNames.length <= 2) {
-                                          return selectedTagNames.join(', ')
-                                        } else {
-                                          return `${selectedTagNames.slice(0, 2).join(', ')} +${selectedTagNames.length - 2}`
-                                        }
-                                      })()}
-                                    </SelectValue>
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {saveOptions.tags.map(tag => {
-                                      const isSelected = imageTagSelections.get(item.id)?.has(tag.id) || false
-                                      const tagName = typeof tag.name === 'string' ? tag.name : tag.name?.zh || tag.name?.en || '未知标签'
-
-                                      return (
-                                        <SelectItem key={tag.id} value={tag.id.toString()}>
-                                          <div className="flex items-center gap-2">
-                                            <div className={`w-4 h-4 border rounded flex items-center justify-center ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'
-                                              }`}>
-                                              {isSelected && <Check className="w-3 h-3 text-white" />}
-                                            </div>
-                                            <span>{tagName}</span>
-                                          </div>
-                                        </SelectItem>
-                                      )
-                                    })}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              {/* 显示已选标签 */}
-                              {(() => {
-                                const selectedTags = imageTagSelections.get(item.id) || new Set()
-                                if (selectedTags.size === 0) return null
-
-                                return (
-                                  <div className="mt-2 flex flex-wrap gap-1">
-                                    {saveOptions.tags
-                                      .filter(tag => selectedTags.has(tag.id))
-                                      .map(tag => (
-                                        <span
-                                          key={tag.id}
-                                          className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded"
-                                        >
-                                          {typeof tag.name === 'string' ? tag.name : tag.name?.zh || tag.name?.en || '未知'}
-                                          <button
-                                            onClick={(e) => {
-                                              e.preventDefault()
-                                              e.stopPropagation()
-                                              toggleImageTag(item.id, tag.id)
-                                            }}
-                                            className="hover:bg-blue-200 rounded p-0.5"
-                                          >
-                                            <X className="w-3 h-3" />
-                                          </button>
-                                        </span>
-                                      ))
-                                    }
-                                  </div>
-                                )
-                              })()}
-                            </div>
-                          </div>
-
-                          {/* 详细信息区域 - 可展开 */}
-                          <div className="space-y-3">
-                            {/* 基本信息行 */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                              {/* 描述 */}
-                              <div>
-                                <div className="flex items-center gap-1 mb-1">
-                                  <Label className="text-xs text-gray-600">描述</Label>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => startEdit(item.id, 'description', item.description)}
-                                    className="h-4 w-4 p-0 text-gray-400 hover:text-gray-600"
-                                  >
-                                    <Edit3 className="w-2.5 h-2.5" />
-                                  </Button>
-                                </div>
-                                {editingId === item.id && editingField === 'description' ? (
-                                  <div className="flex gap-1">
-                                    <Textarea
-                                      value={editingValue}
-                                      onChange={(e) => setEditingValue(e.target.value)}
-                                      className="flex-1 text-xs"
-                                      rows={2}
-                                    />
-                                    <div className="flex flex-col gap-1">
-                                      <Button size="sm" onClick={saveEdit} className="h-5 w-5 p-0">
-                                        <Check className="w-3 h-3" />
-                                      </Button>
-                                      <Button size="sm" variant="ghost" onClick={cancelEdit} className="h-5 w-5 p-0">
-                                        <X className="w-3 h-3" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-gray-700 line-clamp-2">{item.description}</p>
-                                )}
-                              </div>
-
-                              {/* 图片比例 */}
-                              <div>
-                                <div className="flex items-center gap-1 mb-1">
-                                  <Label className="text-xs text-gray-600">图片比例</Label>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => startEdit(item.id, 'imageRatio', item.imageRatio || globalImageRatio)}
-                                    className="h-4 w-4 p-0 text-gray-400 hover:text-gray-600"
-                                  >
-                                    <Edit3 className="w-2.5 h-2.5" />
-                                  </Button>
-                                </div>
-                                {editingId === item.id && editingField === 'imageRatio' ? (
-                                  <div className="flex gap-1">
-                                    <Select value={editingValue} onValueChange={setEditingValue}>
-                                      <SelectTrigger className="h-7 text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="1:1">正方形 (1:1)</SelectItem>
-                                        <SelectItem value="3:2">横向 (3:2)</SelectItem>
-                                        <SelectItem value="2:3">纵向 (2:3)</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <Button size="sm" onClick={saveEdit} className="h-7 w-7 p-0">
-                                      <Check className="w-3 h-3" />
-                                    </Button>
-                                    <Button size="sm" variant="ghost" onClick={cancelEdit} className="h-7 w-7 p-0">
-                                      <X className="w-3 h-3" />
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <span className="text-xs text-gray-700">
-                                    {item.imageRatio || globalImageRatio}
-                                    {!item.imageRatio && <span className="text-gray-400 ml-1">(默认)</span>}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* 生成的图片 */}
-                              <div>
-                                {item.imagePath && (
-                                  <>
-                                    <Label className="text-xs text-gray-600 block mb-1">生成的图片</Label>
-                                    <div className="w-16 h-16 rounded border border-gray-200 overflow-hidden">
-                                      <img
-                                        src={`/${item.imagePath}`}
-                                        alt={item.title}
-                                        className="w-full h-full object-cover"
-                                        onError={(e) => {
-                                          e.target.style.display = 'none'
-                                          e.target.nextSibling.style.display = 'flex'
-                                        }}
-                                      />
-                                      <div className="hidden w-full h-full items-center justify-center text-xs text-gray-400 bg-gray-50">
-                                        加载失败
-                                      </div>
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* AI提示词 */}
-                            <div>
-                              <div className="flex items-center gap-1 mb-1">
-                                <Label className="text-xs text-gray-600">AI提示词</Label>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => startEdit(item.id, 'prompt', item.prompt)}
-                                  className="h-4 w-4 p-0 text-gray-400 hover:text-gray-600"
-                                >
-                                  <Edit3 className="w-2.5 h-2.5" />
-                                </Button>
-                              </div>
-                              {editingId === item.id && editingField === 'prompt' ? (
-                                <div className="flex gap-1">
-                                  <Textarea
-                                    value={editingValue}
-                                    onChange={(e) => setEditingValue(e.target.value)}
-                                    className="flex-1 text-xs"
-                                    rows={2}
-                                  />
-                                  <div className="flex flex-col gap-1">
-                                    <Button size="sm" onClick={saveEdit} className="h-5 w-5 p-0">
-                                      <Check className="w-3 h-3" />
-                                    </Button>
-                                    <Button size="sm" variant="ghost" onClick={cancelEdit} className="h-5 w-5 p-0">
-                                      <X className="w-3 h-3" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-xs text-gray-600 font-mono bg-gray-50 p-2 rounded border line-clamp-2">{item.prompt}</p>
-                              )}
-                            </div>
-
-                            {/* 内容文案 */}
-                            <div>
-                              <div className="flex items-center gap-1 mb-1">
-                                <Label className="text-xs text-gray-600">内容文案</Label>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => startEdit(item.id, 'content', item.content)}
-                                  className="h-4 w-4 p-0 text-gray-400 hover:text-gray-600"
-                                >
-                                  <Edit3 className="w-2.5 h-2.5" />
-                                </Button>
-                              </div>
-                              {editingId === item.id && editingField === 'content' ? (
-                                <div className="flex gap-1">
-                                  <Textarea
-                                    value={editingValue}
-                                    onChange={(e) => setEditingValue(e.target.value)}
-                                    className="flex-1 text-xs"
-                                    rows={6}
-                                  />
-                                  <div className="flex flex-col gap-1">
-                                    <Button size="sm" onClick={saveEdit} className="h-5 w-5 p-0">
-                                      <Check className="w-3 h-3" />
-                                    </Button>
-                                    <Button size="sm" variant="ghost" onClick={cancelEdit} className="h-5 w-5 p-0">
-                                      <X className="w-3 h-3" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="text-xs text-gray-700 bg-gray-50 p-2 rounded border max-h-20 overflow-y-auto whitespace-pre-wrap">
-                                  {item.content || (
-                                    <span className="text-gray-400 italic">暂无文案内容</span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
+                          {/* 详细信息区域 - 使用ImageForm组件 */}
+                          <div className="mt-4 border-t pt-4">
+                            <ImageForm
+                              formData={convertItemToFormData(item)}
+                              editingLanguages={['zh']} // 只显示中文
+                              supportedLanguages={supportedLanguages}
+                              categories={saveOptions.categories}
+                              tags={saveOptions.tags}
+                              typeOptions={[
+                                { value: 'text2image', label: '文字生成图片' },
+                                { value: 'image2image', label: '图片转图片' },
+                                { value: 'image2coloring', label: '图片转涂色' }
+                              ]}
+                              ratioOptions={[
+                                { value: '1:1', label: '正方形 (1:1)' },
+                                { value: '3:2', label: '横向 (3:2)' },
+                                { value: '2:3', label: '纵向 (2:3)' },
+                                { value: '4:3', label: '横向 (4:3)' },
+                                { value: '3:4', label: '纵向 (3:4)' },
+                                { value: '16:9', label: '宽屏 (16:9)' }
+                              ]}
+                              loading={false}
+                              onInputChange={(field, lang, value) => handleContentFormChange(item.id, field, lang, value)}
+                              onAddLanguage={() => { }} // 暂时不支持添加语言
+                              onRemoveLanguage={() => { }} // 暂时不支持移除语言
+                              onSubmit={() => { }} // 不显示提交按钮
+                              onCancel={() => { }} // 不显示取消按钮
+                              formatMultiLangField={formatMultiLangField}
+                              showButtons={false} // 不显示操作按钮
+                              readOnly={false} // 设置为可编辑模式
+                              className="scale-90 origin-top" // 缩小以适应卡片
+                              onGenerateColoring={handleSingleImageColoring} // 添加上色回调
+                              isGeneratingColoring={isGeneratingSingleColoring(convertItemToFormData(item))} // 添加上色状态
+                            />
                           </div>
                         </div>
                       ))}
@@ -1563,7 +2361,9 @@ function App() {
                         return (
                           <div key={itemId} className="border border-gray-200 rounded-lg p-4">
                             <div className="mb-3">
-                              <h3 className="font-medium text-gray-900">{item.title}</h3>
+                              <h3 className="font-medium text-gray-900">
+                                {getDisplayText(item.title)}
+                              </h3>
                               <p className="text-sm text-gray-500">原始内容</p>
                             </div>
 
@@ -1584,14 +2384,14 @@ function App() {
                                       <div>
                                         <Label className="text-xs text-gray-600">标题</Label>
                                         <p className="text-sm text-gray-900 bg-white p-2 rounded border">
-                                          {translation.name || '未翻译'}
+                                          {getDisplayText(translation.name) || '未翻译'}
                                         </p>
                                       </div>
 
                                       <div>
                                         <Label className="text-xs text-gray-600">内容</Label>
                                         <div className="text-sm text-gray-900 bg-white p-2 rounded border max-h-32 overflow-y-auto whitespace-pre-wrap">
-                                          {translation.description || '未翻译'}
+                                          {getDisplayText(translation.description) || '未翻译'}
                                         </div>
                                       </div>
                                     </div>
@@ -1636,6 +2436,55 @@ function App() {
             <ImagesManager />
           ) : null}
         </div>
+
+        {/* 查看详情对话框 */}
+        {showDetailDialog && viewingContent && (
+          <Dialog
+            isOpen={showDetailDialog}
+            onClose={closeDetailDialog}
+            title="查看生成内容详情"
+            maxWidth="max-w-6xl"
+          >
+            <DialogContent>
+              <ImageForm
+                formData={viewingContent}
+                editingLanguages={getExistingLanguages(viewingContent)}
+                supportedLanguages={supportedLanguages}
+                categories={[]} // 生成内容查看时不需要分类列表
+                tags={[]} // 生成内容查看时不需要标签列表
+                typeOptions={[
+                  { value: 'text2image', label: '文字生成图片' },
+                  { value: 'image2image', label: '图片转图片' },
+                  { value: 'image2coloring', label: '图片转涂色' }
+                ]}
+                ratioOptions={[
+                  { value: '1:1', label: '正方形 (1:1)' },
+                  { value: '3:2', label: '横向 (3:2)' },
+                  { value: '2:3', label: '纵向 (2:3)' },
+                  { value: '4:3', label: '横向 (4:3)' },
+                  { value: '3:4', label: '纵向 (3:4)' },
+                  { value: '16:9', label: '宽屏 (16:9)' }
+                ]}
+                loading={false}
+                onInputChange={() => { }} // 查看模式，不允许编辑
+                onAddLanguage={() => { }} // 查看模式，不允许编辑
+                onRemoveLanguage={() => { }} // 查看模式，不允许编辑
+                onSubmit={() => { }} // 查看模式，不允许提交
+                onCancel={closeDetailDialog}
+                formatMultiLangField={formatMultiLangField}
+                showButtons={false} // 查看模式，不显示提交按钮
+                readOnly={true} // 设置为只读模式
+                onGenerateColoring={handleSingleImageColoring} // 添加上色回调
+                isGeneratingColoring={isGeneratingSingleColoring(viewingContent)} // 添加上色状态
+              />
+              <div className="flex justify-end mt-6 pt-6 border-t">
+                <Button onClick={closeDetailDialog}>
+                  关闭
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </div>
   )

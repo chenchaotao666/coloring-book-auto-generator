@@ -111,13 +111,11 @@ class ImageModel {
     return image
   }
 
-
-
   // 创建新图片
   static async create(imageData) {
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, prompt, userId, category_id, size, additionalInfo, tagIds
+      type, ratio, isPublic, prompt, userId, categoryId, size, additionalInfo, tagIds
     } = imageData
 
     const imageId = uuidv4() // 使用UUID作为主键
@@ -133,20 +131,20 @@ class ImageModel {
     `
     const insertImageParams = [
       imageId,
-      JSON.stringify(name),
-      defaultUrl,
-      colorUrl,
-      coloringUrl,
-      JSON.stringify(title),
-      JSON.stringify(description),
-      type,
-      ratio,
-      isPublic,
-      JSON.stringify(prompt),
-      userId,
-      category_id,
-      size,
-      JSON.stringify(additionalInfo)
+      JSON.stringify(name || {}),
+      defaultUrl || null,
+      colorUrl || null,
+      coloringUrl || null,
+      JSON.stringify(title || {}),
+      JSON.stringify(description || {}),
+      type || null,
+      ratio || null,
+      isPublic !== undefined ? isPublic : null,
+      JSON.stringify(prompt || {}),
+      userId || null,
+      categoryId || null,
+      size || null,
+      JSON.stringify(additionalInfo || {})
     ]
 
     queries.push({ sql: insertImageSql, params: insertImageParams })
@@ -163,40 +161,86 @@ class ImageModel {
 
   // 更新图片
   static async update(imageId, imageData) {
-    const {
-      name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, prompt, userId, category_id, size, additionalInfo, tagIds
-    } = imageData
+    // 首先获取现有图片数据
+    const existingImage = await this.getById(imageId)
+    if (!existingImage) {
+      throw new Error('图片不存在')
+    }
 
-    const sql = `
-      UPDATE images SET
-        name = ?, defaultUrl = ?, colorUrl = ?, coloringUrl = ?, title = ?, description = ?,
-        type = ?, ratio = ?, isPublic = ?, prompt = ?, userId = ?, categoryId = ?, size = ?, additionalInfo = ?
-      WHERE id = ?
-    `
-    const params = [
-      JSON.stringify(name),
-      defaultUrl,
-      colorUrl,
-      coloringUrl,
-      JSON.stringify(title),
-      JSON.stringify(description),
-      type,
-      ratio,
-      isPublic,
-      JSON.stringify(prompt),
-      userId,
-      category_id,
-      size,
-      JSON.stringify(additionalInfo),
-      imageId
-    ]
+    // 构建动态更新字段
+    const updateFields = []
+    const params = []
 
-    await executeQuery(sql, params)
+    // 只更新传入的字段
+    if (imageData.name !== undefined) {
+      updateFields.push('name = ?')
+      params.push(JSON.stringify(imageData.name))
+    }
+    if (imageData.defaultUrl !== undefined) {
+      updateFields.push('defaultUrl = ?')
+      params.push(imageData.defaultUrl)
+    }
+    if (imageData.colorUrl !== undefined) {
+      updateFields.push('colorUrl = ?')
+      params.push(imageData.colorUrl)
+    }
+    if (imageData.coloringUrl !== undefined) {
+      updateFields.push('coloringUrl = ?')
+      params.push(imageData.coloringUrl)
+    }
+    if (imageData.title !== undefined) {
+      updateFields.push('title = ?')
+      params.push(JSON.stringify(imageData.title))
+    }
+    if (imageData.description !== undefined) {
+      updateFields.push('description = ?')
+      params.push(JSON.stringify(imageData.description))
+    }
+    if (imageData.type !== undefined) {
+      updateFields.push('type = ?')
+      params.push(imageData.type)
+    }
+    if (imageData.ratio !== undefined) {
+      updateFields.push('ratio = ?')
+      params.push(imageData.ratio)
+    }
+    if (imageData.isPublic !== undefined) {
+      updateFields.push('isPublic = ?')
+      params.push(imageData.isPublic)
+    }
+    if (imageData.prompt !== undefined) {
+      updateFields.push('prompt = ?')
+      params.push(JSON.stringify(imageData.prompt))
+    }
+    if (imageData.userId !== undefined) {
+      updateFields.push('userId = ?')
+      params.push(imageData.userId)
+    }
+    if (imageData.categoryId !== undefined) {
+      updateFields.push('categoryId = ?')
+      params.push(imageData.categoryId)
+    }
+    if (imageData.size !== undefined) {
+      updateFields.push('size = ?')
+      params.push(imageData.size)
+    }
+    if (imageData.additionalInfo !== undefined) {
+      updateFields.push('additionalInfo = ?')
+      params.push(JSON.stringify(imageData.additionalInfo))
+    }
+
+    // 如果有字段需要更新
+    if (updateFields.length > 0) {
+      const sql = `UPDATE images SET ${updateFields.join(', ')} WHERE id = ?`
+      params.push(imageId)
+
+      await executeQuery(sql, params)
+      console.log(`图片更新成功: ${imageId}, 更新字段: ${updateFields.join(', ')}`)
+    }
 
     // 更新标签关联
-    if (tagIds !== undefined) {
-      await this.updateImageTags(imageId, tagIds)
+    if (imageData.tagIds !== undefined) {
+      await this.updateImageTags(imageId, imageData.tagIds)
     }
 
     return this.getById(imageId)

@@ -1030,7 +1030,7 @@ async function generateSingleImage(prompt, id, imageRatio, progressCallback) {
       if (progressCallback) progressCallback(0)
 
       // 3. 轮询任务状态（最多等待5分钟，因为图片生成可能需要较长时间）
-      const maxAttempts = 60 // 每5秒查询一次，最多5分钟
+      const maxAttempts = 100 // 每5秒查询一次
       let attempts = 0
 
       while (attempts < maxAttempts) {

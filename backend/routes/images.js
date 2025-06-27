@@ -3,6 +3,7 @@ const router = express.Router()
 const ImageModel = require('../models/imageModel')
 const CategoryModel = require('../models/categoryModel')
 const TagModel = require('../models/tagModel')
+const ImageColoringService = require('../services/imageColoringService')
 
 // 获取所有图片（支持分页和筛选）
 router.get('/', async (req, res) => {
@@ -122,25 +123,30 @@ router.post('/save-generated', async (req, res) => {
       try {
         // 构建数据库图片数据
         const dbImageData = {
-          name: imageData.name || { zh: imageData.title || `图片${i + 1}`, en: imageData.title || `Image ${i + 1}` },
-          title: imageData.title ? { zh: imageData.title, en: imageData.title } : { zh: `生成的图片${i + 1}`, en: `Generated Image ${i + 1}` },
-          description: imageData.description ? { zh: imageData.description, en: imageData.description } : { zh: '从前端生成的图片', en: 'Generated from frontend' },
-          defaultUrl: imageData.imagePath || imageData.defaultUrl,
+          name: imageData.name ?
+            (typeof imageData.name === 'object' ? imageData.name : { zh: imageData.name }) :
+            { zh: imageData.title || `图片${i + 1}` },
+          title: imageData.title ?
+            (typeof imageData.title === 'object' ? imageData.title : { zh: imageData.title }) :
+            { zh: `生成的图片${i + 1}` },
+          description: imageData.description ?
+            (typeof imageData.description === 'object' ? imageData.description : { zh: imageData.description }) :
+            { zh: '从前端生成的图片' },
+          defaultUrl: imageData.imagePath || imageData.defaultUrl || null,
           colorUrl: imageData.colorUrl || null,
           coloringUrl: imageData.coloringUrl || null,
-          type: imageData.type || 'generated',
+          type: imageData.type || 'text2image',
           ratio: imageData.imageRatio || imageData.ratio || '1:1',
           isPublic: imageData.isPublic !== undefined ? imageData.isPublic : true,
-          prompt: imageData.prompt ? { zh: imageData.prompt, en: imageData.prompt } : { zh: '前端生成', en: 'Frontend generated' },
+          prompt: imageData.prompt ?
+            (typeof imageData.prompt === 'object' ? imageData.prompt : { zh: imageData.prompt }) :
+            { zh: '前端生成' },
           userId: imageData.userId || 'frontend_user',
-          category_id: imageData.categoryId || imageData.category_id || null,
+          categoryId: imageData.categoryId || imageData.category_id || null,
           size: imageData.size || null,
-          additionalInfo: {
-            source: 'frontend_generation',
-            generatedAt: new Date().toISOString(),
-            originalData: imageData,
-            ...imageData.additionalInfo
-          },
+          additionalInfo: typeof imageData.additionalInfo === 'object' ?
+            imageData.additionalInfo :
+            (imageData.additionalInfo || {}),
           tagIds: imageData.tagIds || []
         }
 
@@ -201,25 +207,30 @@ router.post('/save-selected', async (req, res) => {
 
     // 构建数据库图片数据
     const dbImageData = {
-      name: imageData.name || { zh: imageData.title, en: imageData.title },
-      title: imageData.title ? { zh: imageData.title, en: imageData.title } : { zh: '选中的图片', en: 'Selected Image' },
-      description: imageData.description ? { zh: imageData.description, en: imageData.description } : { zh: '从前端选中保存的图片', en: 'Selected and saved from frontend' },
-      defaultUrl: imageData.imagePath || imageData.defaultUrl,
+      name: imageData.name ?
+        (typeof imageData.name === 'object' ? imageData.name : { zh: imageData.name }) :
+        { zh: imageData.title || '选中的图片' },
+      title: imageData.title ?
+        (typeof imageData.title === 'object' ? imageData.title : { zh: imageData.title }) :
+        { zh: '选中的图片' },
+      description: imageData.description ?
+        (typeof imageData.description === 'object' ? imageData.description : { zh: imageData.description }) :
+        { zh: '从前端选中保存的图片' },
+      defaultUrl: imageData.imagePath || imageData.defaultUrl || null,
       colorUrl: imageData.colorUrl || null,
       coloringUrl: imageData.coloringUrl || null,
-      type: imageData.type || 'selected',
+      type: imageData.type || 'text2image',
       ratio: imageData.imageRatio || imageData.ratio || '1:1',
       isPublic: imageData.isPublic !== undefined ? imageData.isPublic : true,
-      prompt: imageData.prompt ? { zh: imageData.prompt, en: imageData.prompt } : { zh: '前端选中', en: 'Frontend selected' },
+      prompt: imageData.prompt ?
+        (typeof imageData.prompt === 'object' ? imageData.prompt : { zh: imageData.prompt }) :
+        { zh: '前端选中' },
       userId: imageData.userId || 'frontend_user',
-      category_id: imageData.categoryId || imageData.category_id || null,
+      categoryId: imageData.categoryId || imageData.category_id || null,
       size: imageData.size || null,
-      additionalInfo: {
-        source: 'frontend_selection',
-        selectedAt: new Date().toISOString(),
-        originalData: imageData,
-        ...imageData.additionalInfo
-      },
+      additionalInfo: typeof imageData.additionalInfo === 'object' ?
+        imageData.additionalInfo :
+        (imageData.additionalInfo || {}),
       tagIds: imageData.tagIds || []
     }
 
@@ -259,18 +270,18 @@ router.post('/', async (req, res) => {
 
     const imageData = {
       name: name || {},
-      defaultUrl,
-      colorUrl,
-      coloringUrl,
+      defaultUrl: defaultUrl || null,
+      colorUrl: colorUrl || null,
+      coloringUrl: coloringUrl || null,
       title,
       description: description || {},
       type,
       ratio: ratio || '1:1',
-      isPublic: isPublic || false,
+      isPublic: isPublic !== undefined ? isPublic : false,
       prompt: prompt || {},
-      userId,
-      category_id,
-      size,
+      userId: userId || null,
+      categoryId: category_id || null,
+      size: size || null,
       additionalInfo: additionalInfo || {},
       tagIds: tagIds || []
     }
@@ -298,7 +309,7 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, prompt, userId, category_id, size, additionalInfo, tagIds
+      type, ratio, isPublic, prompt, userId, categoryId, size, additionalInfo, tagIds
     } = req.body
 
     // 检查图片是否存在
@@ -319,21 +330,31 @@ router.put('/:id', async (req, res) => {
     }
 
     const imageData = {
-      name: name || {},
-      defaultUrl,
-      colorUrl,
-      coloringUrl,
-      title,
-      description: description || {},
+      name: name ?
+        (typeof name === 'object' ? name : { zh: name }) :
+        {},
+      defaultUrl: defaultUrl || existingImage.defaultUrl,
+      colorUrl: colorUrl || existingImage.colorUrl,
+      coloringUrl: coloringUrl || existingImage.coloringUrl,
+      title: title ?
+        (typeof title === 'object' ? title : { zh: title }) :
+        existingImage.title,
+      description: description ?
+        (typeof description === 'object' ? description : { zh: description }) :
+        (existingImage.description || {}),
       type,
       ratio: ratio || '1:1',
-      isPublic: isPublic || false,
-      prompt: prompt || {},
-      userId,
-      category_id,
-      size,
-      additionalInfo: additionalInfo || {},
-      tagIds
+      isPublic: isPublic !== undefined ? isPublic : false,
+      prompt: prompt ?
+        (typeof prompt === 'object' ? prompt : { zh: prompt }) :
+        (existingImage.prompt || {}),
+      userId: userId || existingImage.userId,
+      categoryId: categoryId !== undefined ? categoryId : existingImage.categoryId,
+      size: size !== undefined ? size : existingImage.size,
+      additionalInfo: typeof additionalInfo === 'object' ?
+        additionalInfo :
+        (additionalInfo !== undefined ? additionalInfo : existingImage.additionalInfo),
+      tagIds: tagIds !== undefined ? tagIds : []
     }
 
     const updatedImage = await ImageModel.update(id, imageData)
@@ -394,7 +415,7 @@ router.delete('/:id', async (req, res) => {
 router.patch('/:id/category', async (req, res) => {
   try {
     const { id } = req.params
-    const { category_id } = req.body
+    const { categoryId } = req.body
 
     // 检查图片是否存在
     const existingImage = await ImageModel.getById(id)
@@ -405,7 +426,7 @@ router.patch('/:id/category', async (req, res) => {
       })
     }
 
-    const updatedImage = await ImageModel.updateCategory(id, category_id)
+    const updatedImage = await ImageModel.updateCategory(id, categoryId)
 
     res.json({
       success: true,
@@ -539,5 +560,103 @@ router.get('/:id/tags', async (req, res) => {
     })
   }
 })
+
+// 图片上色生成
+router.post('/color-generate', async (req, res) => {
+  try {
+    console.log('图片上色生成开始');
+    const { imageId, prompt, options = {} } = req.body;
+
+    // 验证必要参数
+    if (!imageId) {
+      return res.status(400).json({
+        success: false,
+        message: '请提供图片ID'
+      });
+    }
+
+    // 获取原始图片信息
+    const originalImage = await ImageModel.getById(imageId);
+    if (!originalImage) {
+      return res.status(404).json({
+        success: false,
+        message: '原始图片不存在'
+      });
+    }
+
+    // 构造上色prompt
+    const colorPrompt = prompt ?
+      `${prompt},用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明` :
+      '用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明';
+
+    // 调用图片上色服务
+    const coloringResult = await ImageColoringService.generateColoredImage({
+      imageUrl: originalImage.defaultUrl,
+      prompt: colorPrompt,
+      options: {
+        ratio: originalImage.ratio || '1:1',
+        isEnhance: options.isEnhance || false,
+        nVariants: options.nVariants || 1,
+        ...options
+      }
+    });
+
+    res.json({
+      success: true,
+      message: '图片上色任务已创建',
+      data: {
+        imageId,
+        originalImage,
+        coloringResult
+      }
+    });
+
+  } catch (error) {
+    console.error('图片上色生成失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '图片上色生成失败',
+      error: error.message
+    });
+  }
+});
+
+// 检查上色任务状态并更新图片
+router.get('/color-task/:taskId/:imageId', async (req, res) => {
+  try {
+    const { taskId, imageId } = req.params;
+    console.log(`检查上色任务状态: taskId=${taskId}, imageId=${imageId}`);
+
+    const taskStatus = await ImageColoringService.checkColoringTaskStatus(taskId);
+    console.log('任务状态检查结果:', taskStatus);
+
+    // 如果任务完成，更新图片记录
+    if (taskStatus.status === 'completed' && taskStatus.coloringUrl) {
+      console.log('任务已完成，更新数据库图片记录');
+      console.log('最终彩色图片URL:', taskStatus.coloringUrl);
+      console.log('原始AI生成URL:', taskStatus.originalColoringUrl);
+
+      const updatedImage = await ImageModel.update(imageId, {
+        coloringUrl: taskStatus.coloringUrl
+      });
+
+      console.log('数据库更新成功:', updatedImage?.id);
+      taskStatus.updatedImage = updatedImage;
+    }
+
+    res.json({
+      success: true,
+      data: taskStatus
+    });
+
+  } catch (error) {
+    console.error('检查上色任务状态失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '检查上色任务状态失败',
+      error: error.message
+    });
+  }
+});
 
 module.exports = router 

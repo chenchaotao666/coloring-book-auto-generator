@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MultiSelect } from '@/components/ui/multi-select'
@@ -13,6 +14,7 @@ import {
   Eye,
   Image as ImageIcon,
   Languages,
+  Palette,
   Plus,
   RefreshCw,
   Save,
@@ -21,6 +23,7 @@ import {
   Trash2
 } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
+import ImageForm from './ImageForm'
 
 const ImagesManager = () => {
   // 状态管理
@@ -32,6 +35,9 @@ const ImagesManager = () => {
   const [selectedLanguages, setSelectedLanguages] = useState([])
   const [internationalizationLoading, setInternationalizationLoading] = useState(false)
   const [internationalizationResults, setInternationalizationResults] = useState({})
+
+  // 单个图片上色状态
+  const [singleColoringTasks, setSingleColoringTasks] = useState(new Map()) // 存储单个图片的上色任务
 
   // 分类和标签数据
   const [categories, setCategories] = useState([])
@@ -55,6 +61,9 @@ const ImagesManager = () => {
     size: '',
     tagIds: []
   })
+
+  // 多语言编辑状态
+  const [editingLanguages, setEditingLanguages] = useState(['zh']) // 默认编辑中文
 
   // 筛选状态
   const [filters, setFilters] = useState({
@@ -110,6 +119,60 @@ const ImagesManager = () => {
     { value: '3:4', label: '纵向 (3:4)' },
     { value: '16:9', label: '宽屏 (16:9)' }
   ]
+
+  // 获取所有已有的语言版本
+  const getExistingLanguages = (formData) => {
+    const allLanguages = new Set(['zh']) // 中文是必须的
+
+      // 检查各个多语言字段中存在的语言
+      ;['name', 'title', 'description', 'prompt'].forEach(field => {
+        if (formData[field] && typeof formData[field] === 'object') {
+          Object.keys(formData[field]).forEach(lang => {
+            if (formData[field][lang]) {
+              allLanguages.add(lang)
+            }
+          })
+        }
+      })
+
+    return Array.from(allLanguages)
+  }
+
+  // 添加语言版本
+  const addLanguage = (langCode) => {
+    if (!editingLanguages.includes(langCode)) {
+      setEditingLanguages([...editingLanguages, langCode])
+
+      // 初始化该语言的字段
+      setFormData(prev => ({
+        ...prev,
+        name: { ...prev.name, [langCode]: '' },
+        title: { ...prev.title, [langCode]: '' },
+        description: { ...prev.description, [langCode]: '' },
+        prompt: { ...prev.prompt, [langCode]: '' }
+      }))
+    }
+  }
+
+  // 移除语言版本
+  const removeLanguage = (langCode) => {
+    if (langCode !== 'zh' && editingLanguages.includes(langCode)) {
+      setEditingLanguages(editingLanguages.filter(lang => lang !== langCode))
+
+      // 移除该语言的字段
+      setFormData(prev => {
+        const newData = { ...prev }
+          ;['name', 'title', 'description', 'prompt', 'additionalInfo'].forEach(field => {
+            if (newData[field] && newData[field][langCode] !== undefined) {
+              const newField = { ...newData[field] }
+              delete newField[langCode]
+              newData[field] = newField
+            }
+          })
+        return newData
+      })
+    }
+  }
 
   // 加载图片列表
   const loadImages = async () => {
@@ -200,6 +263,7 @@ const ImagesManager = () => {
       title: { zh: '' },
       description: { zh: '' },
       prompt: { zh: '' },
+      additionalInfo: { zh: '' },
       defaultUrl: '',
       colorUrl: '',
       coloringUrl: '',
@@ -210,6 +274,7 @@ const ImagesManager = () => {
       size: '',
       tagIds: []
     })
+    setEditingLanguages(['zh']) // 重置为只编辑中文
     setEditingId(null)
     setShowForm(false)
   }
@@ -280,11 +345,12 @@ const ImagesManager = () => {
       return field || { zh: '' }
     }
 
-    setFormData({
+    const parsedFormData = {
       name: parseField(image.name),
       title: parseField(image.title),
       description: parseField(image.description),
       prompt: parseField(image.prompt),
+      additionalInfo: parseField(image.additionalInfo),
       defaultUrl: image.defaultUrl || '',
       colorUrl: image.colorUrl || '',
       coloringUrl: image.coloringUrl || '',
@@ -294,7 +360,14 @@ const ImagesManager = () => {
       categoryId: image.categoryId || null,
       size: image.size || '',
       tagIds: image.tags ? image.tags.map(tag => tag.tag_id) : []
-    })
+    }
+
+    setFormData(parsedFormData)
+
+    // 设置编辑的语言版本
+    const existingLangs = getExistingLanguages(parsedFormData)
+    setEditingLanguages(existingLangs.length > 0 ? existingLangs : ['zh'])
+
     setEditingId(image.id)
     setShowForm(true)
   }
@@ -306,10 +379,10 @@ const ImagesManager = () => {
   }
 
   // 提交表单
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const handleSubmit = async (e, silent = false) => {
+    if (e) e.preventDefault()
     setLoading(true)
-    setError('')
+    if (!silent) setError('')
 
     try {
       const url = editingId ? `/api/images/${editingId}` : '/api/images'
@@ -334,17 +407,275 @@ const ImagesManager = () => {
       const data = await response.json()
 
       if (data.success) {
-        setSuccess(editingId ? '图片更新成功' : '图片创建成功')
-        resetForm()
+        if (!silent) {
+          setSuccess(editingId ? '图片更新成功' : '图片创建成功')
+        }
+
+        // 如果是新建图片，设置editingId
+        if (!editingId && data.data && data.data.id) {
+          setEditingId(data.data.id)
+        }
+
+        if (!silent) {
+          resetForm()
+        }
         loadImages()
+
+        return data.data // 返回创建/更新的数据
       } else {
-        setError(data.message || '操作失败')
+        if (!silent) {
+          setError(data.message || '操作失败')
+        }
+        return false
+      }
+    } catch (err) {
+      if (!silent) {
+        setError('网络错误：' + err.message)
+      }
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 手动上色功能
+  const handleManualColoring = async (imageId, imageData) => {
+    if (!confirm('确认为此图片生成上色版本？')) {
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const prompt = imageData.prompt ?
+        (typeof imageData.prompt === 'object' ? imageData.prompt.zh || imageData.prompt.en || '' : imageData.prompt) :
+        ''
+
+      const response = await fetch('/api/images/color-generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageId: imageId,
+          prompt: prompt,
+          options: {
+            isEnhance: false,
+            nVariants: 1
+          }
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setSuccess('上色任务已创建，正在处理中，请稍后刷新查看结果...')
+
+        // 3秒后自动刷新图片列表
+        setTimeout(() => {
+          loadImages()
+        }, 3000)
+      } else {
+        setError(data.message || '上色失败')
       }
     } catch (err) {
       setError('网络错误：' + err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  // 单个图片上色功能（用于ImageForm）
+  const handleSingleImageColoring = async (formData) => {
+    if (!formData.defaultUrl) {
+      alert('请先确保有默认图片URL')
+      return
+    }
+
+    let imageId = formData.id || editingId
+
+    try {
+      // 如果是新建图片（没有ID），先保存到数据库
+      if (!imageId) {
+        console.log('图片未保存到数据库，正在自动保存...')
+
+        // 先提交表单保存图片
+        const saveResult = await handleSubmit(null, true) // 添加一个静默保存参数
+
+        if (!saveResult) {
+          throw new Error('保存图片到数据库失败')
+        }
+
+        imageId = editingId // 保存后应该会设置editingId
+
+        if (!imageId) {
+          throw new Error('无法获取图片ID')
+        }
+      }
+
+      // 构造提示词
+      const prompt = formData.prompt?.zh || formData.title?.zh || '涂色页'
+
+      // 调用上色API
+      const response = await fetch('/api/images/color-generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageId: imageId,
+          prompt: prompt,
+          options: {
+            ratio: formData.ratio || '1:1',
+            isEnhance: false,
+            nVariants: 1
+          }
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success && data.data.coloringResult?.taskId) {
+        const taskId = data.data.coloringResult.taskId
+
+        // 记录单个上色任务
+        setSingleColoringTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.set(taskId, {
+            imageId: imageId,
+            formDataId: formData.id,
+            status: 'processing',
+            createdAt: new Date()
+          })
+          return newMap
+        })
+
+        console.log(`单个图片上色任务已创建: ${taskId}`)
+
+        // 开始轮询单个上色任务状态
+        pollSingleColoringTask(taskId, imageId)
+
+        return true
+      } else {
+        throw new Error(data.message || '创建上色任务失败')
+      }
+
+    } catch (error) {
+      console.error('单个图片上色失败:', error)
+      alert('上色失败: ' + error.message)
+      return false
+    }
+  }
+
+  // 轮询单个上色任务状态
+  const pollSingleColoringTask = async (taskId, imageId) => {
+    const pollInterval = 3000 // 每3秒查询一次
+    let pollCount = 0
+    const maxPolls = 60 // 最多查询3分钟
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/images/color-task/${taskId}/${imageId}`)
+        const data = await response.json()
+
+        if (data.success) {
+          const status = data.data.status
+
+          if (status === 'completed' && data.data.coloringUrl) {
+            // 任务完成，更新相关状态
+            const taskInfo = singleColoringTasks.get(taskId)
+
+            if (taskInfo) {
+              // 更新当前编辑表单的数据
+              if (editingId && editingId.toString() === imageId.toString()) {
+                setFormData(prev => ({
+                  ...prev,
+                  coloringUrl: data.data.coloringUrl
+                }))
+              }
+
+              // 重新加载图片列表
+              loadImages()
+
+              // 清除任务记录
+              setSingleColoringTasks(prev => {
+                const newMap = new Map(prev)
+                newMap.delete(taskId)
+                return newMap
+              })
+
+              setSuccess('图片上色完成！')
+              console.log(`单个图片上色完成: ${taskId}`)
+            }
+
+            return
+
+          } else if (status === 'failed') {
+            // 任务失败
+            console.error(`单个图片上色失败: ${taskId}`)
+
+            // 清除任务记录
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskId)
+              return newMap
+            })
+
+            setError('图片上色失败，请重试')
+            return
+
+          } else {
+            // 任务仍在进行中，继续轮询
+            console.log(`单个图片上色进行中: ${taskId}, 状态: ${status}`)
+          }
+        }
+
+        // 继续轮询
+        pollCount++
+        if (pollCount < maxPolls) {
+          setTimeout(poll, pollInterval)
+        } else {
+          console.warn(`单个图片上色任务轮询超时: ${taskId}`)
+
+          // 清除任务记录
+          setSingleColoringTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(taskId)
+            return newMap
+          })
+
+          setError('上色任务查询超时，请稍后检查结果')
+        }
+
+      } catch (error) {
+        console.error(`查询单个上色任务状态失败: ${taskId}`, error)
+
+        // 继续重试
+        pollCount++
+        if (pollCount < maxPolls) {
+          setTimeout(poll, pollInterval)
+        } else {
+          // 清除任务记录
+          setSingleColoringTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(taskId)
+            return newMap
+          })
+        }
+      }
+    }
+
+    // 开始轮询
+    poll()
+  }
+
+  // 检查是否有正在进行的单个上色任务
+  const isGeneratingSingleColoring = (formData) => {
+    const imageId = formData.id || editingId
+    return Array.from(singleColoringTasks.values()).some(task =>
+      task.imageId?.toString() === imageId?.toString()
+    )
   }
 
   // 删除图片
@@ -562,7 +893,6 @@ const ImagesManager = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">图片管理</h2>
-            <p className="text-gray-600 mt-1">管理所有图片内容，支持多语言和批量操作</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -583,48 +913,6 @@ const ImagesManager = () => {
             </Button>
           </div>
         </div>
-
-        {/* 国际化操作栏 */}
-        {selectedItems.size > 0 && (
-          <div className="flex items-center gap-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center gap-2 text-blue-700">
-              <Languages className="w-4 h-4" />
-              <span className="font-medium">已选择 {selectedItems.size} 个图片</span>
-            </div>
-            <div className="flex items-center gap-2 flex-1">
-              <label className="text-sm font-medium text-blue-700">选择目标语言：</label>
-              <div className="min-w-64">
-                <MultiSelect
-                  options={languageOptions}
-                  value={selectedLanguages}
-                  onChange={setSelectedLanguages}
-                  placeholder="请选择要翻译的语言"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={handleInternationalization}
-                disabled={internationalizationLoading || selectedLanguages.length === 0}
-                className="flex items-center gap-2"
-              >
-                <Languages className="w-4 h-4" />
-                {internationalizationLoading ? '生成中...' : '生成国际化内容'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSelectedItems(new Set())
-                  setSelectedLanguages([])
-                  setInternationalizationResults({})
-                }}
-                className="flex items-center gap-2"
-              >
-                取消选择
-              </Button>
-            </div>
-          </div>
-        )}
 
         {/* 筛选栏 */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg">
@@ -705,189 +993,34 @@ const ImagesManager = () => {
         </div>
       )}
 
-      {/* 图片表单 */}
-      {showForm && tags.length >= 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{editingId ? '编辑图片' : '新增图片'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* 基础信息 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <Label>名称（中文）*</Label>
-                    <Input
-                      value={formData.name.zh}
-                      onChange={(e) => handleInputChange('name', 'zh', e.target.value)}
-                      placeholder="输入图片名称"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label>标题（中文）*</Label>
-                    <Input
-                      value={formData.title.zh}
-                      onChange={(e) => handleInputChange('title', 'zh', e.target.value)}
-                      placeholder="输入图片标题"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label>类型</Label>
-                    <Select value={formData.type} onValueChange={(value) => handleInputChange('type', null, value)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {typeOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>比例</Label>
-                    <Select value={formData.ratio} onValueChange={(value) => handleInputChange('ratio', null, value)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ratioOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <Label>分类</Label>
-                    <Select value={formData.categoryId ? formData.categoryId.toString() : 'none'} onValueChange={(value) => handleInputChange('categoryId', null, value === 'none' ? null : parseInt(value))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="选择分类" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">无分类</SelectItem>
-                        {categories.map(category => (
-                          <SelectItem key={category.category_id} value={category.category_id.toString()}>
-                            {formatMultiLangField(category.display_name)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>标签</Label>
-                    <MultiSelect
-                      options={(tags || []).map(tag => ({
-                        value: tag.tag_id.toString(),
-                        label: formatMultiLangField(tag.display_name)
-                      }))}
-                      value={(formData.tagIds || []).map(id => id.toString())}
-                      onChange={(values) => handleInputChange('tagIds', null, (values || []).map(v => parseInt(v)))}
-                      placeholder="选择标签"
-                    />
-                  </div>
-                  <div>
-                    <Label>尺寸</Label>
-                    <Input
-                      value={formData.size}
-                      onChange={(e) => handleInputChange('size', null, e.target.value)}
-                      placeholder="如：512,512"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 mt-6">
-                    <input
-                      type="checkbox"
-                      id="isPublic"
-                      checked={formData.isPublic}
-                      onChange={(e) => handleInputChange('isPublic', null, e.target.checked)}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <Label htmlFor="isPublic" className="text-sm font-medium text-gray-700">
-                      公开图片
-                    </Label>
-                  </div>
-                </div>
-              </div>
-
-              {/* 图片URL */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">图片地址</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label>默认图片URL</Label>
-                    <Input
-                      value={formData.defaultUrl}
-                      onChange={(e) => handleInputChange('defaultUrl', null, e.target.value)}
-                      placeholder="黑白涂色图URL"
-                    />
-                  </div>
-                  <div>
-                    <Label>彩色图片URL</Label>
-                    <Input
-                      value={formData.colorUrl}
-                      onChange={(e) => handleInputChange('colorUrl', null, e.target.value)}
-                      placeholder="用户上传的彩色图URL"
-                    />
-                  </div>
-                  <div>
-                    <Label>上色结果URL</Label>
-                    <Input
-                      value={formData.coloringUrl}
-                      onChange={(e) => handleInputChange('coloringUrl', null, e.target.value)}
-                      placeholder="AI上色后的图片URL"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 多语言内容 */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">内容描述</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>描述（中文）</Label>
-                    <Textarea
-                      value={formData.description.zh}
-                      onChange={(e) => handleInputChange('description', 'zh', e.target.value)}
-                      placeholder="输入图片描述"
-                      rows={3}
-                    />
-                  </div>
-                  <div>
-                    <Label>AI提示词（中文）</Label>
-                    <Textarea
-                      value={formData.prompt.zh}
-                      onChange={(e) => handleInputChange('prompt', 'zh', e.target.value)}
-                      placeholder="用于生成图片的AI提示词"
-                      rows={3}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 表单按钮 */}
-              <div className="flex gap-2">
-                <Button type="submit" disabled={loading}>
-                  <Save className="w-4 h-4 mr-2" />
-                  {loading ? '保存中...' : (editingId ? '更新' : '创建')}
-                </Button>
-                <Button type="button" variant="outline" onClick={resetForm}>
-                  取消
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      {/* 图片表单弹窗 */}
+      <Dialog
+        isOpen={showForm && tags.length >= 0}
+        onClose={resetForm}
+        title={editingId ? '编辑图片' : '新增图片'}
+        maxWidth="max-w-6xl"
+      >
+        <DialogContent>
+          <ImageForm
+            formData={formData}
+            editingLanguages={editingLanguages}
+            supportedLanguages={supportedLanguages}
+            categories={categories}
+            tags={tags}
+            typeOptions={typeOptions}
+            ratioOptions={ratioOptions}
+            loading={loading}
+            onInputChange={handleInputChange}
+            onAddLanguage={addLanguage}
+            onRemoveLanguage={removeLanguage}
+            onSubmit={handleSubmit}
+            onCancel={resetForm}
+            formatMultiLangField={formatMultiLangField}
+            onGenerateColoring={handleSingleImageColoring} // 添加上色回调
+            isGeneratingColoring={isGeneratingSingleColoring(formData)} // 添加上色状态
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* 国际化结果展示 */}
       {Object.keys(internationalizationResults).length > 0 && (
@@ -990,30 +1123,81 @@ const ImagesManager = () => {
       {/* 图片列表 */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <ImageIcon className="w-5 h-5" />
-              图片列表
-              {pagination.total > 0 && (
-                <span className="text-sm font-normal text-gray-500">
-                  ({pagination.total} 个图片)
-                </span>
-              )}
-            </CardTitle>
-            {images.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleSelectAll}
-                className="flex items-center gap-2"
-              >
-                {selectedItems.size === images.length ? (
-                  <CheckSquare className="w-4 h-4" />
-                ) : (
-                  <Square className="w-4 h-4" />
+          <div className="space-y-3">
+            <p className="text-gray-600">管理所有图片内容，支持多语言和批量操作</p>
+
+            {/* 第一行：标题和全选按钮 */}
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <ImageIcon className="w-5 h-5" />
+                图片列表
+                {pagination.total > 0 && (
+                  <span className="text-sm font-normal text-gray-500">
+                    ({pagination.total} 个图片)
+                  </span>
                 )}
-                全选
-              </Button>
+              </CardTitle>
+              {images.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2"
+                >
+                  {selectedItems.size === images.length ? (
+                    <CheckSquare className="w-4 h-4" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                  全选
+                </Button>
+              )}
+            </div>
+
+            {/* 第二行：国际化操作栏 */}
+            {selectedItems.size > 0 && (
+              <div className="flex items-center justify-between gap-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-4 flex-1">
+                  <div className="flex items-center gap-2 text-blue-700">
+                    <Languages className="w-4 h-4" />
+                    <span className="font-medium">已选择 {selectedItems.size} 个图片</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium text-blue-700">选择目标语言：</label>
+                    <div className="w-64">
+                      <MultiSelect
+                        options={languageOptions}
+                        value={selectedLanguages}
+                        onChange={setSelectedLanguages}
+                        placeholder="请选择要翻译的语言"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={handleInternationalization}
+                    disabled={internationalizationLoading || selectedLanguages.length === 0}
+                    size="sm"
+                    className="flex items-center gap-2"
+                  >
+                    <Languages className="w-4 h-4" />
+                    {internationalizationLoading ? '生成中...' : '生成国际化内容'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedItems(new Set())
+                      setSelectedLanguages([])
+                      setInternationalizationResults({})
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    取消选择
+                  </Button>
+                </div>
+              </div>
             )}
           </div>
         </CardHeader>
@@ -1089,6 +1273,9 @@ const ImagesManager = () => {
                         <span>分类: {getCategoryName(image.categoryId)}</span>
                         <span>比例: {image.ratio}</span>
                         {image.size && <span>尺寸: {image.size}</span>}
+                        {image.coloringUrl && (
+                          <span className="text-orange-600 font-medium">已上色</span>
+                        )}
                         {image.tags && image.tags.length > 0 && (
                           <span>标签: {image.tags.map(tag => formatMultiLangField(tag.display_name)).join(', ')}</span>
                         )}
@@ -1103,8 +1290,8 @@ const ImagesManager = () => {
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            // 简单的图片预览逻辑
-                            const urls = [image.defaultUrl, image.colorUrl, image.coloringUrl].filter(Boolean)
+                            // 优先显示上色版本，然后是彩色版本，最后是线稿版本
+                            const urls = [image.coloringUrl, image.colorUrl, image.defaultUrl].filter(Boolean)
                             if (urls.length > 0) {
                               window.open(urls[0], '_blank')
                             }
@@ -1114,6 +1301,20 @@ const ImagesManager = () => {
                           <Eye className="w-4 h-4" />
                         </Button>
                       )}
+
+                      {/* 上色按钮 */}
+                      {image.defaultUrl && !image.coloringUrl && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleManualColoring(image.id, image)}
+                          className="flex items-center gap-1 text-orange-600 hover:text-orange-700"
+                          title="为图片生成上色版本"
+                        >
+                          <Palette className="w-4 h-4" />
+                        </Button>
+                      )}
+
                       <Button
                         variant="ghost"
                         size="sm"
