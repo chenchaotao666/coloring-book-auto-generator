@@ -9,17 +9,18 @@ USE image_processing_db;
 
 -- 创建 categories 表（先创建被引用的表）
 CREATE TABLE categories (
-  category_id INT AUTO_INCREMENT PRIMARY KEY,
+  category_id VARCHAR(36) PRIMARY KEY,
   display_name JSON,                            -- 多语言显示名称 { "en": "Animals", "zh": "动物" }
   description JSON,                             -- 多语言描述 { "en": "description", "zh": "描述" }
-  image_id VARCHAR(255),
+  image_id VARCHAR(36),
+  hotness INT DEFAULT 0,                        -- 热度值，范围 0-1000
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 -- 创建 tags 表
 CREATE TABLE tags (
-  tag_id INT AUTO_INCREMENT PRIMARY KEY,
+  tag_id VARCHAR(36) PRIMARY KEY,
   display_name JSON,                           -- 多语言显示名称 { "en": "Easy", "zh": "简单" }
   description JSON,                            -- 多语言描述 { "en": "description", "zh": "描述" }
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -28,7 +29,7 @@ CREATE TABLE tags (
 
 -- 创建 images 表（包含正确的外键约束）
 CREATE TABLE images (
-    id VARCHAR(255) PRIMARY KEY,                -- 主键
+    id VARCHAR(36) PRIMARY KEY,                -- 主键
     name JSON,                                  -- 多语言名称 { "en": "name", "zh": "名称" }
     defaultUrl VARCHAR(255),                    -- 黑白图片URL
     colorUrl VARCHAR(255),                      -- image to image 时用户上传的图片URL
@@ -38,23 +39,21 @@ CREATE TABLE images (
     type VARCHAR(50),                           -- 图片类型：'text2image/image2image/image2coloring'
     ratio VARCHAR(10),                          -- 图片比例：'1:1', '4:3', '16:9'
     isPublic BOOLEAN DEFAULT FALSE,             -- 是否公开
+    hotness INT DEFAULT 0,                      -- 热度值，范围 0-1000
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     prompt JSON,                                -- 多语言生成提示词 { "en": "prompt", "zh": "提示词" }
     userId VARCHAR(255),                        -- 用户ID
-    categoryId INT,                             -- 分类ID
+    categoryId VARCHAR(255),                    -- 分类ID
     size VARCHAR(50),                           -- 图片尺寸信息
     additionalInfo JSON,                        -- 额外信息
-    -- 外键约束
-    CONSTRAINT fk_category
-        FOREIGN KEY (categoryId) REFERENCES categories(category_id)
-        ON DELETE SET NULL ON UPDATE CASCADE
+    taskId VARCHAR(255)
 );
 
 -- 创建 image_tags 关联表（多对多关系，替代images表中的tags JSON字段）
 CREATE TABLE image_tags (
-  image_id VARCHAR(255),                        -- 匹配images表主键类型
-  tag_id INT,
+  image_id VARCHAR(36),                        -- 匹配images表主键类型
+  tag_id VARCHAR(36),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (image_id, tag_id),
   -- 外键约束
@@ -72,3 +71,5 @@ CREATE INDEX idx_images_user ON images(userId);
 CREATE INDEX idx_images_type ON images(type);
 CREATE INDEX idx_images_public ON images(isPublic);
 CREATE INDEX idx_images_created ON images(createdAt);
+CREATE INDEX idx_images_hotness ON images(hotness);
+CREATE INDEX idx_categories_hotness ON categories(hotness);

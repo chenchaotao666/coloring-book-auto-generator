@@ -128,7 +128,8 @@ const CategoriesManager = () => {
     setFormData({
       displayName: { zh: '' },
       description: { zh: '' },
-      imageId: ''
+      imageId: '',
+      hotness: 0
     })
     setEditingId(null)
     setShowForm(false)
@@ -200,10 +201,12 @@ const CategoriesManager = () => {
     }
 
     const imageId = category.image_id || ''
+    const hotness = category.hotness || 0
     setFormData({
       displayName: displayName || { zh: '' },
       description: description || { zh: '' },
-      imageId: imageId
+      imageId: imageId,
+      hotness: hotness
     })
 
     // 设置选中的图片
@@ -254,7 +257,8 @@ const CategoriesManager = () => {
       const requestData = {
         displayName: formData.displayName,
         description: formData.description,
-        imageId: formData.imageId.trim()
+        imageId: formData.imageId.trim(),
+        hotness: parseInt(formData.hotness) || 0
       }
 
       let response
@@ -767,6 +771,20 @@ const CategoriesManager = () => {
               })()}
 
               <div>
+                <Label htmlFor="hotness">热度值</Label>
+                <Input
+                  id="hotness"
+                  type="number"
+                  min="0"
+                  max="1000"
+                  value={formData.hotness || 0}
+                  onChange={(e) => setFormData(prev => ({ ...prev, hotness: parseInt(e.target.value) || 0 }))}
+                  placeholder="请输入热度值（0-1000）"
+                />
+                <p className="text-sm text-gray-500 mt-1">热度值范围：0-1000，数值越高表示越热门</p>
+              </div>
+
+              <div>
                 <Label htmlFor="imageId">关联图片</Label>
                 <Select value={formData.imageId || "none"} onValueChange={(value) => handleImageSelect(value === "none" ? "" : value)}>
                   <SelectTrigger>
@@ -946,6 +964,7 @@ const CategoriesManager = () => {
                     <th className="border border-gray-200 px-4 py-2 text-left">ID</th>
                     <th className="border border-gray-200 px-4 py-2 text-left">名称</th>
                     <th className="border border-gray-200 px-4 py-2 text-left">描述</th>
+                    <th className="border border-gray-200 px-4 py-2 text-left">热度</th>
                     <th className="border border-gray-200 px-4 py-2 text-left">语言</th>
                     <th className="border border-gray-200 px-4 py-2 text-left">关联图片</th>
                     <th className="border border-gray-200 px-4 py-2 text-left">创建时间</th>
@@ -982,6 +1001,17 @@ const CategoriesManager = () => {
                         <td className="border border-gray-200 px-4 py-2 max-w-xs">
                           <div className="truncate" title={formatDescription(category.description)}>
                             {formatDescription(category.description) || '暂无描述'}
+                          </div>
+                        </td>
+                        <td className="border border-gray-200 px-4 py-2 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <span className="text-sm font-medium">{category.hotness || 0}</span>
+                            <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-blue-400 to-red-500 rounded-full"
+                                style={{ width: `${Math.min(100, (category.hotness || 0) / 10)}%` }}
+                              ></div>
+                            </div>
                           </div>
                         </td>
                         <td className="border border-gray-200 px-4 py-2">

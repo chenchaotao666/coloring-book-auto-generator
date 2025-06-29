@@ -77,7 +77,7 @@ const ImageForm = ({
           </div>
           <div>
             <Label>分类</Label>
-            <Select value={formData.categoryId ? formData.categoryId.toString() : 'none'} onValueChange={readOnly ? undefined : (value) => onInputChange('categoryId', null, value === 'none' ? null : parseInt(value))} disabled={readOnly}>
+            <Select value={formData.categoryId ? formData.categoryId.toString() : 'none'} onValueChange={readOnly ? undefined : (value) => onInputChange('categoryId', null, value === 'none' ? null : value)} disabled={readOnly}>
               <SelectTrigger>
                 <SelectValue placeholder="选择分类" />
               </SelectTrigger>
@@ -107,7 +107,7 @@ const ImageForm = ({
                 }
               })}
               value={(formData.tagIds || []).map(id => id.toString())}
-              onChange={readOnly ? undefined : (values) => onInputChange('tagIds', null, (values || []).map(v => parseInt(v)))}
+              onChange={readOnly ? undefined : (values) => onInputChange('tagIds', null, values || [])}
               placeholder="选择标签"
               disabled={readOnly}
             />
@@ -120,6 +120,19 @@ const ImageForm = ({
               placeholder="如：512,512"
               readOnly={readOnly}
             />
+          </div>
+          <div>
+            <Label>热度值</Label>
+            <Input
+              type="number"
+              min="0"
+              max="1000"
+              value={formData.hotness || 0}
+              onChange={readOnly ? undefined : (e) => onInputChange('hotness', null, parseInt(e.target.value) || 0)}
+              placeholder="0-1000"
+              readOnly={readOnly}
+            />
+            <p className="text-xs text-gray-500 mt-1">热度值范围：0-1000</p>
           </div>
           <div className="flex items-center gap-2 mt-6">
             <input

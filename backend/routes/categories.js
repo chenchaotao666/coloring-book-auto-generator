@@ -50,7 +50,7 @@ router.get('/:id', async (req, res) => {
 // 创建新分类
 router.post('/', async (req, res) => {
   try {
-    const { displayName, description, imageId } = req.body
+    const { displayName, description, imageId, hotness } = req.body
 
     // 验证必填字段
     if (!displayName) {
@@ -63,7 +63,8 @@ router.post('/', async (req, res) => {
     const categoryData = {
       display_name: displayName,
       description: description || {},
-      image_id: imageId
+      image_id: imageId,
+      hotness: hotness || 0
     }
 
     const newCategory = await CategoryModel.create(categoryData)
@@ -87,7 +88,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { displayName, description, imageId } = req.body
+    const { displayName, description, imageId, hotness } = req.body
 
     // 验证必填字段
     if (!displayName) {
@@ -109,7 +110,8 @@ router.put('/:id', async (req, res) => {
     const categoryData = {
       display_name: displayName,
       description: description || {},
-      image_id: imageId
+      image_id: imageId,
+      hotness: hotness !== undefined ? hotness : existingCategory.hotness
     }
 
     const updatedCategory = await CategoryModel.update(id, categoryData)

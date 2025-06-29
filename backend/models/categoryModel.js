@@ -1,10 +1,11 @@
 const { executeQuery } = require('../database')
+const { v4: uuidv4 } = require('uuid')
 
 class CategoryModel {
   // 获取所有分类
   static async getAll() {
     const sql = `
-      SELECT category_id, display_name, description, image_id, 
+      SELECT category_id, display_name, description, image_id, hotness,
              created_at, updated_at 
       FROM categories 
       ORDER BY created_at DESC
@@ -15,7 +16,7 @@ class CategoryModel {
   // 根据ID获取分类
   static async getById(categoryId) {
     const sql = `
-      SELECT category_id, display_name, description, image_id, 
+      SELECT category_id, display_name, description, image_id, hotness,
              created_at, updated_at 
       FROM categories 
       WHERE category_id = ?
@@ -24,44 +25,47 @@ class CategoryModel {
     return results[0] || null
   }
 
-
-
   // 创建新分类
   static async create(categoryData) {
-    const { display_name, description, image_id } = categoryData
+    const { display_name, description, image_id, hotness } = categoryData
+    const categoryId = uuidv4() // 生成UUID作为主键
 
     const sql = `
-      INSERT INTO categories (display_name, description, image_id) 
-      VALUES (?, ?, ?)
+      INSERT INTO categories (category_id, display_name, description, image_id, hotness) 
+      VALUES (?, ?, ?, ?, ?)
     `
     const params = [
+      categoryId,
       JSON.stringify(display_name),
       JSON.stringify(description),
-      image_id || null
+      image_id || null,
+      hotness || 0
     ]
 
-    const result = await executeQuery(sql, params)
+    await executeQuery(sql, params)
     return {
-      category_id: result.insertId,
+      category_id: categoryId,
       display_name,
       description,
-      image_id
+      image_id,
+      hotness: hotness || 0
     }
   }
 
   // 更新分类
   static async update(categoryId, categoryData) {
-    const { display_name, description, image_id } = categoryData
+    const { display_name, description, image_id, hotness } = categoryData
 
     const sql = `
       UPDATE categories 
-      SET display_name = ?, description = ?, image_id = ?
+      SET display_name = ?, description = ?, image_id = ?, hotness = ?
       WHERE category_id = ?
     `
     const params = [
       JSON.stringify(display_name),
       JSON.stringify(description),
       image_id || null,
+      hotness !== undefined ? hotness : 0,
       categoryId
     ]
 

@@ -270,6 +270,7 @@ const ImagesManager = () => {
       type: 'text2image',
       ratio: '1:1',
       isPublic: false,
+      hotness: 0,
       categoryId: null,
       size: '',
       tagIds: []
@@ -357,6 +358,7 @@ const ImagesManager = () => {
       type: image.type || 'text2image',
       ratio: image.ratio || '1:1',
       isPublic: image.isPublic || false,
+      hotness: image.hotness || 0,
       categoryId: image.categoryId || null,
       size: image.size || '',
       tagIds: image.tags ? image.tags.map(tag => tag.tag_id) : []
@@ -1273,6 +1275,16 @@ const ImagesManager = () => {
                         <span>分类: {getCategoryName(image.categoryId)}</span>
                         <span>比例: {image.ratio}</span>
                         {image.size && <span>尺寸: {image.size}</span>}
+                        <div className="flex items-center gap-1">
+                          <span>热度:</span>
+                          <span className="font-medium text-orange-600">{image.hotness || 0}</span>
+                          <div className="w-8 h-1 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-400 to-orange-500 rounded-full"
+                              style={{ width: `${Math.min(100, (image.hotness || 0) / 10)}%` }}
+                            ></div>
+                          </div>
+                        </div>
                         {image.coloringUrl && (
                           <span className="text-orange-600 font-medium">已上色</span>
                         )}

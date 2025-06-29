@@ -52,13 +52,18 @@ router.get('/save-options', async (req, res) => {
       data: {
         categories: categories.map(cat => ({
           id: cat.category_id,
+          category_id: cat.category_id,
           name: cat.display_name,
+          display_name: cat.display_name,
           description: cat.description,
-          imageId: cat.image_id
+          imageId: cat.image_id,
+          hotness: cat.hotness
         })),
         tags: tags.map(tag => ({
           id: tag.tag_id,
+          tag_id: tag.tag_id,
           name: tag.display_name,
+          display_name: tag.display_name,
           description: tag.description
         }))
       }
@@ -138,6 +143,7 @@ router.post('/save-generated', async (req, res) => {
           type: imageData.type || 'text2image',
           ratio: imageData.imageRatio || imageData.ratio || '1:1',
           isPublic: imageData.isPublic !== undefined ? imageData.isPublic : true,
+          hotness: imageData.hotness || 0,
           prompt: imageData.prompt ?
             (typeof imageData.prompt === 'object' ? imageData.prompt : { zh: imageData.prompt }) :
             { zh: '前端生成' },
@@ -222,6 +228,7 @@ router.post('/save-selected', async (req, res) => {
       type: imageData.type || 'text2image',
       ratio: imageData.imageRatio || imageData.ratio || '1:1',
       isPublic: imageData.isPublic !== undefined ? imageData.isPublic : true,
+      hotness: imageData.hotness || 0,
       prompt: imageData.prompt ?
         (typeof imageData.prompt === 'object' ? imageData.prompt : { zh: imageData.prompt }) :
         { zh: '前端选中' },
@@ -257,7 +264,7 @@ router.post('/', async (req, res) => {
   try {
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, prompt, userId, category_id, size, additionalInfo, tagIds
+      type, ratio, isPublic, hotness, prompt, userId, category_id, size, additionalInfo, tagIds
     } = req.body
 
     // 验证必填字段
@@ -278,6 +285,7 @@ router.post('/', async (req, res) => {
       type,
       ratio: ratio || '1:1',
       isPublic: isPublic !== undefined ? isPublic : false,
+      hotness: hotness || 0,
       prompt: prompt || {},
       userId: userId || null,
       categoryId: category_id || null,
@@ -309,7 +317,7 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, prompt, userId, categoryId, size, additionalInfo, tagIds
+      type, ratio, isPublic, hotness, prompt, userId, categoryId, size, additionalInfo, tagIds
     } = req.body
 
     // 检查图片是否存在
@@ -345,6 +353,7 @@ router.put('/:id', async (req, res) => {
       type,
       ratio: ratio || '1:1',
       isPublic: isPublic !== undefined ? isPublic : false,
+      hotness: hotness !== undefined ? hotness : (existingImage.hotness || 0),
       prompt: prompt ?
         (typeof prompt === 'object' ? prompt : { zh: prompt }) :
         (existingImage.prompt || {}),

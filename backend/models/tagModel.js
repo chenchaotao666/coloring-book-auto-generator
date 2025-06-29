@@ -1,4 +1,5 @@
 const { executeQuery } = require('../database')
+const { v4: uuidv4 } = require('uuid')
 
 class TagModel {
   // 获取所有标签
@@ -38,19 +39,21 @@ class TagModel {
   // 创建新标签
   static async create(tagData) {
     const { display_name, description } = tagData
+    const tagId = uuidv4() // 生成UUID作为主键
 
     const sql = `
-      INSERT INTO tags (display_name, description) 
-      VALUES (?, ?)
+      INSERT INTO tags (tag_id, display_name, description) 
+      VALUES (?, ?, ?)
     `
     const params = [
+      tagId,
       JSON.stringify(display_name),
       JSON.stringify(description || {})
     ]
 
-    const result = await executeQuery(sql, params)
+    await executeQuery(sql, params)
     return {
-      tag_id: result.insertId,
+      tag_id: tagId,
       display_name,
       description: description || {}
     }

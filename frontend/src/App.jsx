@@ -166,7 +166,8 @@ function App() {
                     name: data.content.name || data.content.title, // 初始化name字段
                     imagePath: null,
                     coloringUrl: null, // 初始化上色URL字段
-                    imageRatio: globalImageRatio // 使用当前全局比例作为默认值
+                    imageRatio: globalImageRatio, // 使用当前全局比例作为默认值
+                    hotness: 0 // 初始化热度值
                   }])
 
                   setGenerationProgress(prev => ({
@@ -562,6 +563,7 @@ function App() {
               type: 'text2image',
               ratio: item.imageRatio || '1:1',
               isPublic: true,
+              hotness: item.hotness || 0,
               prompt: getDisplayText(item.prompt),
               userId: 'frontend_user',
               additionalInfo: {
@@ -570,7 +572,7 @@ function App() {
               }
             }
 
-            const response = await fetch('/api/db-images', {
+            const response = await fetch('/api/images', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'
@@ -849,7 +851,7 @@ function App() {
   // 获取保存选项（分类和标签）
   const loadSaveOptions = async () => {
     try {
-      const response = await fetch('/api/db-images/save-options')
+      const response = await fetch('/api/images/save-options')
       const data = await response.json()
 
       if (data.success) {
@@ -903,6 +905,7 @@ function App() {
           ratio: item.imageRatio || '1:1',
           type: item.type || 'text2image',
           isPublic: item.isPublic !== undefined ? item.isPublic : false,
+          hotness: item.hotness || 0,
           size: item.size || '',
           categoryId: categoryId,
           tagIds: tagIds,
@@ -930,7 +933,7 @@ function App() {
       // 处理新增
       if (itemsToCreate.length > 0) {
         try {
-          const createResponse = await fetch('/api/db-images/save-generated', {
+          const createResponse = await fetch('/api/images/save-generated', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -983,7 +986,7 @@ function App() {
       if (itemsToUpdate.length > 0) {
         for (const imageData of itemsToUpdate) {
           try {
-            const updateResponse = await fetch(`/api/db-images/${imageData.id}`, {
+            const updateResponse = await fetch(`/api/images/${imageData.id}`, {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json'
@@ -1312,6 +1315,7 @@ function App() {
       type: item.type || 'text2image',
       ratio: item.imageRatio || '1:1',
       isPublic: item.isPublic !== undefined ? item.isPublic : false,
+      hotness: item.hotness || 0,
       categoryId: categoryId,
       size: item.size || '',
       tagIds: tagIds
@@ -1367,6 +1371,8 @@ function App() {
               return { ...item, size: value }
             case 'isPublic':
               return { ...item, isPublic: value }
+            case 'hotness':
+              return { ...item, hotness: value }
             case 'categoryId':
               // 如果是已保存的项目，直接更新保存的分类信息
               if (item.savedToDatabase) {
@@ -1383,7 +1389,7 @@ function App() {
               } else {
                 // 未保存的项目，更新标签选择状态
                 const newTagSelections = new Map(imageTagSelections)
-                newTagSelections.set(itemId, new Set(value))
+                newTagSelections.set(itemId, new Set(value || []))
                 setImageTagSelections(newTagSelections)
               }
               return item
@@ -1424,6 +1430,7 @@ function App() {
           type: formData.type || 'text2image',
           ratio: formData.ratio || '1:1',
           isPublic: formData.isPublic !== undefined ? formData.isPublic : true,
+          hotness: formData.hotness || 0,
           prompt: formData.prompt?.zh || '涂色页',
           userId: 'frontend_user',
           additionalInfo: {
@@ -1432,7 +1439,7 @@ function App() {
           }
         }
 
-        const saveResponse = await fetch('/api/db-images', {
+        const saveResponse = await fetch('/api/images', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -2450,8 +2457,8 @@ function App() {
                 formData={viewingContent}
                 editingLanguages={getExistingLanguages(viewingContent)}
                 supportedLanguages={supportedLanguages}
-                categories={[]} // 生成内容查看时不需要分类列表
-                tags={[]} // 生成内容查看时不需要标签列表
+                categories={saveOptions.categories}
+                tags={saveOptions.tags}
                 typeOptions={[
                   { value: 'text2image', label: '文字生成图片' },
                   { value: 'image2image', label: '图片转图片' },
@@ -2466,14 +2473,23 @@ function App() {
                   { value: '16:9', label: '宽屏 (16:9)' }
                 ]}
                 loading={false}
-                onInputChange={() => { }} // 查看模式，不允许编辑
+                onInputChange={(field, lang, value) => {
+                  // 更新查看详情的数据
+                  setViewingContent(prev => {
+                    if (field === 'hotness') {
+                      return { ...prev, hotness: value }
+                    }
+                    // 处理其他字段...
+                    return prev
+                  })
+                }} // 允许编辑
                 onAddLanguage={() => { }} // 查看模式，不允许编辑
                 onRemoveLanguage={() => { }} // 查看模式，不允许编辑
                 onSubmit={() => { }} // 查看模式，不允许提交
                 onCancel={closeDetailDialog}
                 formatMultiLangField={formatMultiLangField}
                 showButtons={false} // 查看模式，不显示提交按钮
-                readOnly={true} // 设置为只读模式
+                readOnly={false} // 设置为可编辑模式
                 onGenerateColoring={handleSingleImageColoring} // 添加上色回调
                 isGeneratingColoring={isGeneratingSingleColoring(viewingContent)} // 添加上色状态
               />

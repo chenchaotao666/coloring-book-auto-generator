@@ -49,8 +49,8 @@ class ImageModel {
     const sql = `
       SELECT 
         i.id, i.name, i.defaultUrl, i.colorUrl, i.coloringUrl,
-        i.title, i.description, i.type, i.ratio, i.isPublic, 
-        i.createdAt, i.updatedAt, i.prompt, i.userId, i.categoryId, i.size, i.additionalInfo,
+        i.title, i.description, i.type, i.ratio, i.isPublic, i.hotness,
+        i.createdAt, i.updatedAt, i.prompt, i.userId, i.categoryId, i.size, i.additionalInfo, i.taskId,
         c.display_name as category_display_name
       FROM images i
       LEFT JOIN categories c ON i.categoryId = c.category_id
@@ -89,8 +89,8 @@ class ImageModel {
     const sql = `
       SELECT 
         i.id, i.name, i.defaultUrl, i.colorUrl, i.coloringUrl,
-        i.title, i.description, i.type, i.ratio, i.isPublic, 
-        i.createdAt, i.updatedAt, i.prompt, i.userId, i.categoryId, i.size, i.additionalInfo,
+        i.title, i.description, i.type, i.ratio, i.isPublic, i.hotness,
+        i.createdAt, i.updatedAt, i.prompt, i.userId, i.categoryId, i.size, i.additionalInfo, i.taskId,
         c.display_name as category_display_name
       FROM images i
       LEFT JOIN categories c ON i.categoryId = c.category_id
@@ -115,7 +115,7 @@ class ImageModel {
   static async create(imageData) {
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, prompt, userId, categoryId, size, additionalInfo, tagIds
+      type, ratio, isPublic, hotness, prompt, userId, categoryId, size, additionalInfo, taskId, tagIds
     } = imageData
 
     const imageId = uuidv4() // 使用UUID作为主键
@@ -126,8 +126,8 @@ class ImageModel {
     const insertImageSql = `
       INSERT INTO images (
         id, name, defaultUrl, colorUrl, coloringUrl, title, description,
-        type, ratio, isPublic, prompt, userId, categoryId, size, additionalInfo
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        type, ratio, isPublic, hotness, prompt, userId, categoryId, size, additionalInfo, taskId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     const insertImageParams = [
       imageId,
@@ -140,11 +140,13 @@ class ImageModel {
       type || null,
       ratio || null,
       isPublic !== undefined ? isPublic : null,
+      hotness || 0,
       JSON.stringify(prompt || {}),
       userId || null,
       categoryId || null,
       size || null,
-      JSON.stringify(additionalInfo || {})
+      JSON.stringify(additionalInfo || {}),
+      taskId || null
     ]
 
     queries.push({ sql: insertImageSql, params: insertImageParams })
@@ -208,6 +210,10 @@ class ImageModel {
       updateFields.push('isPublic = ?')
       params.push(imageData.isPublic)
     }
+    if (imageData.hotness !== undefined) {
+      updateFields.push('hotness = ?')
+      params.push(imageData.hotness)
+    }
     if (imageData.prompt !== undefined) {
       updateFields.push('prompt = ?')
       params.push(JSON.stringify(imageData.prompt))
@@ -227,6 +233,10 @@ class ImageModel {
     if (imageData.additionalInfo !== undefined) {
       updateFields.push('additionalInfo = ?')
       params.push(JSON.stringify(imageData.additionalInfo))
+    }
+    if (imageData.taskId !== undefined) {
+      updateFields.push('taskId = ?')
+      params.push(imageData.taskId)
     }
 
     // 如果有字段需要更新
@@ -317,8 +327,8 @@ class ImageModel {
     const sql = `
       SELECT DISTINCT
         i.id, i.name, i.defaultUrl, i.colorUrl, i.coloringUrl,
-        i.title, i.description, i.type, i.ratio, i.isPublic, 
-        i.createdAt, i.updatedAt, i.prompt, i.userId, i.categoryId, i.size, i.additionalInfo,
+        i.title, i.description, i.type, i.ratio, i.isPublic, i.hotness,
+        i.createdAt, i.updatedAt, i.prompt, i.userId, i.categoryId, i.size, i.additionalInfo, i.taskId,
         c.display_name as category_display_name
       FROM images i
       INNER JOIN image_tags it ON i.id = it.image_id
