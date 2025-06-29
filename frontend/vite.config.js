@@ -13,11 +13,11 @@ export default defineConfig({
     port: 3001,
     proxy: {
       '/api': {
-        target: 'http://localhost:3003',
+        target: 'http://localhost:3006',
         changeOrigin: true,
       },
       '/images': {
-        target: 'http://localhost:3003',
+        target: 'http://localhost:3006',
         changeOrigin: true,
       },
     },

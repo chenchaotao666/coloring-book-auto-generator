@@ -1,9 +1,37 @@
 const express = require('express')
 const router = express.Router()
+const multer = require('multer')
+const path = require('path')
+const fs = require('fs')
 const ImageModel = require('../models/imageModel')
 const CategoryModel = require('../models/categoryModel')
 const TagModel = require('../models/tagModel')
 const ImageColoringService = require('../services/imageColoringService')
+const { v4: uuidv4 } = require('uuid')
+
+// 引入重构后的图片服务
+const imageService = require('../services/imageColoringService')
+
+// 配置multer用于文件上传
+const storage = multer.memoryStorage() // 使用内存存储，直接处理Buffer
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 限制文件大小为10MB
+  },
+  fileFilter: (req, file, cb) => {
+    // 只允许图片文件
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true)
+    } else {
+      cb(new Error('只允许上传图片文件'), false)
+    }
+  }
+})
+
+// 上色任务的图片处理缓存，防止重复上传
+const coloringImageCache = new Map()
+const taskImageCache = new Map() // 任务图片缓存
 
 // 获取所有图片（支持分页和筛选）
 router.get('/', async (req, res) => {
@@ -570,100 +598,442 @@ router.get('/:id/tags', async (req, res) => {
   }
 })
 
-// 图片上色生成
-router.post('/color-generate', async (req, res) => {
-  try {
-    console.log('图片上色生成开始');
-    const { imageId, prompt, options = {} } = req.body;
+/**
+ * =================================
+ * 图片生成相关路由
+ * =================================
+ */
 
-    // 验证必要参数
-    if (!imageId) {
+// 文生图API
+router.post('/text-to-image', async (req, res) => {
+  try {
+    const { prompt, apiType = 'gpt4o', model, imageRatio = '1:1' } = req.body;
+
+    if (!prompt) {
       return res.status(400).json({
         success: false,
-        message: '请提供图片ID'
+        message: 'prompt参数是必需的'
       });
     }
 
-    // 获取原始图片信息
-    const originalImage = await ImageModel.getById(imageId);
-    if (!originalImage) {
-      return res.status(404).json({
-        success: false,
-        message: '原始图片不存在'
-      });
-    }
+    console.log('收到文生图请求:', { prompt, apiType, model, imageRatio });
 
-    // 构造上色prompt
-    const colorPrompt = prompt ?
-      `${prompt},用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明` :
-      '用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明';
-
-    // 调用图片上色服务
-    const coloringResult = await ImageColoringService.generateColoredImage({
-      imageUrl: originalImage.defaultUrl,
-      prompt: colorPrompt,
-      options: {
-        ratio: originalImage.ratio || '1:1',
-        isEnhance: options.isEnhance || false,
-        nVariants: options.nVariants || 1,
-        ...options
-      }
+    const result = await imageService.generateTextToImage({
+      prompt,
+      apiType,
+      model,
+      imageRatio
     });
 
     res.json({
       success: true,
-      message: '图片上色任务已创建',
-      data: {
-        imageId,
-        originalImage,
-        coloringResult
-      }
+      data: result,
+      message: '文生图任务创建成功'
     });
 
   } catch (error) {
-    console.error('图片上色生成失败:', error);
+    console.error('文生图API错误:', error);
     res.status(500).json({
       success: false,
-      message: '图片上色生成失败',
-      error: error.message
+      message: error.message || '文生图任务创建失败'
     });
   }
 });
 
-// 检查上色任务状态并更新图片
-router.get('/color-task/:taskId/:imageId', async (req, res) => {
+// 图生图API - 支持文件上传
+router.post('/image-to-image', upload.single('image'), async (req, res) => {
   try {
-    const { taskId, imageId } = req.params;
-    console.log(`检查上色任务状态: taskId=${taskId}, imageId=${imageId}`);
+    console.log('收到图生图请求，开始处理...');
+    console.log('req.body:', req.body);
+    console.log('req.file:', req.file ? { originalname: req.file.originalname, size: req.file.size, mimetype: req.file.mimetype } : 'null');
 
-    const taskStatus = await ImageColoringService.checkColoringTaskStatus(taskId);
-    console.log('任务状态检查结果:', taskStatus);
+    const { prompt, apiType = 'gpt4o', model, ratio = '1:1' } = req.body;
 
-    // 如果任务完成，更新图片记录
-    if (taskStatus.status === 'completed' && taskStatus.coloringUrl) {
-      console.log('任务已完成，更新数据库图片记录');
-      console.log('最终彩色图片URL:', taskStatus.coloringUrl);
-      console.log('原始AI生成URL:', taskStatus.originalColoringUrl);
+    let imageUrl = req.body.imageUrl; // 支持直接传URL
 
-      const updatedImage = await ImageModel.update(imageId, {
-        coloringUrl: taskStatus.coloringUrl
-      });
+    // 如果上传了文件，先处理文件上传到公网存储
+    if (req.file) {
+      console.log('收到文件上传:', req.file.originalname, req.file.size);
 
-      console.log('数据库更新成功:', updatedImage?.id);
-      taskStatus.updatedImage = updatedImage;
+      // 生成唯一文件名
+      const timestamp = Date.now();
+      const randomId = uuidv4().split('-')[0];
+      const ext = path.extname(req.file.originalname) || '.png';
+      const filename = `image-to-image_${timestamp}_${randomId}${ext}`;
+
+      console.log('准备上传文件到公网存储，文件名:', filename);
+
+      // 上传文件到公网存储（用户上传的彩色图片）
+      try {
+        const { uploadFileAndGetUrl } = require('../utils/storageUtil');
+        const storagePath = `chenchaotao/color/${filename}`;
+        console.log('开始上传文件到存储，路径:', storagePath);
+        imageUrl = await uploadFileAndGetUrl(req.file, storagePath);
+        console.log('文件上传完成:', imageUrl);
+      } catch (uploadError) {
+        console.error('文件上传失败:', uploadError);
+        return res.status(500).json({
+          success: false,
+          message: '文件上传失败: ' + uploadError.message,
+          debug: uploadError.stack
+        });
+      }
     }
+
+    console.log('参数验证 - imageUrl:', imageUrl);
+    console.log('参数验证 - prompt:', prompt);
+    console.log('参数验证 - apiType:', apiType);
+    console.log('参数验证 - model:', model);
+    console.log('参数验证 - ratio:', ratio);
+
+    if (!imageUrl || !prompt) {
+      const errorMsg = `参数验证失败 - imageUrl: ${imageUrl}, prompt: ${prompt}`;
+      console.error(errorMsg);
+      return res.status(400).json({
+        success: false,
+        message: '需要提供图片文件或imageUrl，以及prompt参数',
+        debug: errorMsg
+      });
+    }
+
+    console.log('收到图生图请求:', { imageUrl, prompt, apiType, model, imageRatio: ratio });
+
+    const result = await imageService.generateImageToImage({
+      imageUrl,
+      prompt,
+      apiType,
+      model,
+      imageRatio: ratio
+    });
+
+    // 如果用户上传了文件，在返回结果中包含彩色图片URL
+    const responseData = {
+      ...result,
+      uploadedColorImageUrl: req.file ? imageUrl : null // 用户上传的彩色图片URL
+    };
 
     res.json({
       success: true,
-      data: taskStatus
+      data: responseData,
+      message: '图生图任务创建成功'
     });
 
   } catch (error) {
-    console.error('检查上色任务状态失败:', error);
+    console.error('图生图API错误:', error);
+    console.error('错误堆栈:', error.stack);
     res.status(500).json({
       success: false,
-      message: '检查上色任务状态失败',
-      error: error.message
+      message: error.message || '图生图任务创建失败',
+      debug: error.stack
+    });
+  }
+});
+
+// 图片上色API
+router.post('/color-generate', async (req, res) => {
+  try {
+    const { imageId, imageUrl, prompt, coloringPrompt, apiType = 'gpt4o', model, options } = req.body;
+
+    // 从options中提取apiType和model（向后兼容）
+    const finalApiType = options?.apiType || apiType;
+    const finalModel = options?.model || model;
+
+    // 支持两种方式：直接提供imageUrl或通过imageId从数据库获取
+    let actualImageUrl = imageUrl;
+
+    if (!actualImageUrl && imageId) {
+      // 通过imageId从数据库获取图片信息
+      const image = await ImageModel.getById(imageId);
+      if (!image) {
+        return res.status(404).json({
+          success: false,
+          message: `图片ID ${imageId} 不存在`
+        });
+      }
+      actualImageUrl = image.defaultUrl;
+    }
+
+    if (!actualImageUrl || !prompt) {
+      return res.status(400).json({
+        success: false,
+        message: 'imageUrl(或imageId)和prompt参数都是必需的'
+      });
+    }
+
+    console.log('收到图片上色请求:', { imageId, imageUrl: actualImageUrl, prompt, coloringPrompt, apiType: finalApiType, model: finalModel });
+
+    const result = await imageService.generateColoredImage({
+      imageUrl: actualImageUrl,
+      prompt,
+      coloringPrompt,
+      apiType: finalApiType,
+      model: finalModel
+    });
+
+    res.json({
+      success: true,
+      data: {
+        coloringResult: result  // 包装在coloringResult对象中，匹配前端期望
+      },
+      message: '图片上色任务创建成功'
+    });
+
+  } catch (error) {
+    console.error('图片上色API错误:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '图片上色任务创建失败'
+    });
+  }
+});
+
+// 查询任务状态API（增强版 - 自动下载和保存生成的图片）
+router.get('/task-status/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { apiType = 'gpt4o', taskType = 'unknown' } = req.query;
+
+    if (!taskId) {
+      return res.status(400).json({
+        success: false,
+        message: 'taskId参数是必需的'
+      });
+    }
+
+    console.log('查询任务状态:', { taskId, apiType, taskType });
+
+    const status = await imageService.checkTaskStatus(taskId, apiType);
+
+    // 如果任务完成且有图片URL，自动下载并上传到指定目录
+    let processedImageUrl = status.imageUrl;
+    if (status.status === 'completed' && status.imageUrl) {
+      // 检查缓存，避免重复处理同一张图片
+      const cacheKey = `${taskId}-${status.imageUrl}`;
+
+      if (taskImageCache.has(cacheKey)) {
+        console.log('📋 从缓存获取处理后的图片URL:', taskImageCache.get(cacheKey));
+        processedImageUrl = taskImageCache.get(cacheKey);
+      } else {
+        try {
+          console.log('📥 任务完成，正在下载图片并上传到分类存储:', status.imageUrl);
+
+          // 根据任务类型确定存储分类和文件名前缀
+          let imageType, filenamePrefix;
+          switch (taskType) {
+            case 'text-to-image':
+              imageType = 'TEXT_TO_IMAGE';  // 保存到 sketch/ 目录
+              filenamePrefix = 'text-to-image';
+              break;
+            case 'image-to-image':
+              imageType = 'TEXT_TO_IMAGE';  // 图生图生成的黑白线稿也保存到 sketch/ 目录
+              filenamePrefix = 'image-to-image';
+              break;
+            case 'image-coloring':
+              imageType = 'IMAGE_COLORING'; // 保存到 coloring/ 目录
+              filenamePrefix = 'image-coloring';
+              break;
+            default:
+              imageType = 'TEXT_TO_IMAGE';
+              filenamePrefix = 'generated';
+          }
+
+          // 生成唯一文件名
+          const { v4: uuidv4 } = require('uuid');
+          const filename = `${filenamePrefix}_${Date.now()}_${uuidv4().split('-')[0]}.png`;
+
+          // 使用分类存储功能上传图片
+          const { downloadAndUploadToCategory } = require('../utils/storageUtil');
+          const uploadResult = await downloadAndUploadToCategory(
+            status.imageUrl,
+            imageType,
+            filename
+          );
+
+          processedImageUrl = uploadResult.publicUrl;
+          console.log('✅ 生成的图片已上传到分类存储:', processedImageUrl);
+
+          // 缓存结果，有效期30分钟
+          taskImageCache.set(cacheKey, processedImageUrl);
+          setTimeout(() => {
+            taskImageCache.delete(cacheKey);
+          }, 30 * 60 * 1000);
+
+        } catch (uploadError) {
+          console.error('❌ 上传生成图片到分类存储失败:', uploadError);
+          console.error(`   原始图片URL: ${status.imageUrl}`);
+          console.error(`   任务类型: ${taskType}`);
+          console.error(`   目标图片类型: ${imageType}`);
+
+          // 如果是网络相关错误，给出更友好的提示
+          if (uploadError.message && uploadError.message.includes('网络连接不稳定')) {
+            console.warn('⚠️  网络连接问题导致上传失败，将返回原始URL');
+          }
+
+          // 如果上传失败，仍然返回原始URL
+          processedImageUrl = status.imageUrl;
+        }
+      }
+    }
+
+    // 返回处理后的状态
+    const responseData = {
+      ...status,
+      imageUrl: processedImageUrl  // 使用处理后的URL
+    };
+
+    res.json({
+      success: true,
+      data: responseData,
+      message: '查询任务状态成功'
+    });
+
+  } catch (error) {
+    console.error('查询任务状态错误:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '查询任务状态失败'
+    });
+  }
+});
+
+// 完整的图片生成流程API（包含轮询和下载）
+router.post('/complete-generation', async (req, res) => {
+  try {
+    const { type, ...options } = req.body;
+
+    if (!type || !['text-to-image', 'image-to-image', 'image-coloring'].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: 'type参数必须是text-to-image、image-to-image或image-coloring之一'
+      });
+    }
+
+    console.log('收到完整图片生成请求:', { type, options });
+
+    const localPath = await imageService.completeImageGeneration({
+      type,
+      ...options
+    });
+
+    res.json({
+      success: true,
+      data: {
+        localPath,
+        url: `/${localPath}`
+      },
+      message: '图片生成完成'
+    });
+
+  } catch (error) {
+    console.error('完整图片生成API错误:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '图片生成失败'
+    });
+  }
+});
+
+// 向后兼容的上色任务状态查询API
+router.get('/color-task/:taskId/:imageId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { apiType = 'gpt4o' } = req.query;
+
+    console.log('查询上色任务状态 (兼容API):', { taskId, apiType });
+
+    const status = await imageService.checkTaskStatus(taskId, apiType);
+
+    // 如果任务完成且有图片URL，下载并上传到分类存储
+    let coloringUrl = null;
+    if (status.status === 'completed' && status.imageUrl) {
+      // 检查缓存，避免重复处理同一张图片
+      const cacheKey = `${taskId}-${status.imageUrl}`;
+
+      if (coloringImageCache.has(cacheKey)) {
+        console.log('📋 从缓存获取上色图片URL:', coloringImageCache.get(cacheKey));
+        coloringUrl = coloringImageCache.get(cacheKey);
+      } else {
+        try {
+          console.log('📥 任务完成，正在下载图片并上传到分类存储:', status.imageUrl);
+
+          // 生成唯一文件名
+          const { v4: uuidv4 } = require('uuid');
+          const filename = `image-coloring_${Date.now()}_${uuidv4().split('-')[0]}.png`;
+
+          // 使用新的分类存储功能上传图片
+          const { downloadAndUploadToCategory } = require('../utils/storageUtil');
+          const uploadResult = await downloadAndUploadToCategory(
+            status.imageUrl,
+            'IMAGE_COLORING',  // 上色图片分类
+            filename
+          );
+
+          coloringUrl = uploadResult.publicUrl;
+          console.log('✅ 上色图片已上传到分类存储:', coloringUrl);
+
+          // 缓存结果，有效期30分钟
+          coloringImageCache.set(cacheKey, coloringUrl);
+          setTimeout(() => {
+            coloringImageCache.delete(cacheKey);
+          }, 30 * 60 * 1000);
+
+        } catch (uploadError) {
+          console.error('❌ 上传上色图片到分类存储失败:', uploadError);
+          console.error(`   原始图片URL: ${status.imageUrl}`);
+          console.error(`   任务ID: ${taskId}`);
+
+          // 如果是网络相关错误，给出更友好的提示
+          if (uploadError.message && uploadError.message.includes('网络连接不稳定')) {
+            console.warn('⚠️  网络连接问题导致上色图片上传失败，将返回原始URL');
+          }
+
+          // 如果上传失败，仍然返回原始URL
+          coloringUrl = status.imageUrl;
+        }
+      }
+    }
+
+    // 调整返回结构以匹配前端期望
+    const responseData = {
+      ...status,
+      coloringUrl: coloringUrl  // 使用处理后的URL
+    };
+
+    res.json({
+      success: true,
+      data: responseData,
+      message: '查询上色任务状态成功'
+    });
+
+  } catch (error) {
+    console.error('查询上色任务状态错误:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '查询上色任务状态失败'
+    });
+  }
+});
+
+// 获取图片管理相关数据
+router.get('/management/data', async (req, res) => {
+  try {
+    const [categories, tags] = await Promise.all([
+      CategoryModel.getAll(),
+      TagModel.getAll()
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        categories,
+        tags
+      }
+    });
+  } catch (error) {
+    console.error('获取图片管理数据失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '获取图片管理数据失败'
     });
   }
 });

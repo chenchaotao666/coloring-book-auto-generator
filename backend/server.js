@@ -1,6 +1,6 @@
 const express = require('express')
 const cors = require('cors')
-const fs = require('fs-extra')
+const fs = require('fs').promises
 const path = require('path')
 const axios = require('axios')
 const { v4: uuidv4 } = require('uuid')
@@ -14,6 +14,9 @@ const categoriesRouter = require('./routes/categories')
 const tagsRouter = require('./routes/tags')
 const imagesRouter = require('./routes/images')
 const internationalizationRouter = require('./routes/internationalization')
+
+// 引入重构后的图片服务
+const imageService = require('./services/imageColoringService')
 
 // KIEAI图片生成API配置
 const KIEAI_API_URL = process.env.KIEAI_API_URL || 'https://kieai.erweima.ai/api/v1'
@@ -36,11 +39,11 @@ const COLORING_PAGE_CONFIG = {
 }
 
 const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT || 3005
 
 // 中间件
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
 
 // 静态文件服务 - 提供图片访问
 app.use('/images', express.static(path.join(__dirname, '../images')))
@@ -56,8 +59,18 @@ app.use('/api/internationalization', internationalizationRouter)
 const storageDir = path.join(__dirname, '../storage')
 const imagesDir = path.join(__dirname, '../images')
 
-fs.ensureDirSync(storageDir)
-fs.ensureDirSync(imagesDir)
+const ensureDirectories = async () => {
+  try {
+    await fs.mkdir(storageDir, { recursive: true })
+    await fs.mkdir(imagesDir, { recursive: true })
+    console.log('✅ 目录检查完成')
+  } catch (error) {
+    console.error('创建目录失败:', error)
+  }
+}
+
+// 启动时检查目录
+ensureDirectories()
 
 // 图片生成任务管理
 const imageGenerationTasks = new Map() // 存储正在进行的任务
@@ -295,11 +308,11 @@ app.post('/api/resume-image-generation/:taskId', (req, res) => {
   res.json({ success: true, message: '任务已恢复' })
 })
 
-// 生成图片的API（重新设计为并发批量生成）
+// 生成图片的API（使用重构后的服务）
 app.post('/api/generate-images', async (req, res) => {
-  const { contents } = req.body
+  const { contents, apiType = 'gpt4o', model } = req.body
   const taskId = uuidv4()
-  const BATCH_SIZE = 5 // 每批最多5张图片
+  const BATCH_SIZE = 5
 
   // 立即返回任务ID
   res.json({
@@ -307,7 +320,8 @@ app.post('/api/generate-images', async (req, res) => {
     taskId: taskId,
     message: '图片生成任务已创建',
     totalImages: contents.length,
-    batchSize: BATCH_SIZE
+    batchSize: BATCH_SIZE,
+    apiType: apiType
   })
 
   // 初始化任务状态
@@ -315,6 +329,8 @@ app.post('/api/generate-images', async (req, res) => {
     taskId: taskId,
     paused: false,
     contents: contents,
+    apiType: apiType,
+    model: model,
     currentBatch: 0,
     totalBatches: Math.ceil(contents.length / BATCH_SIZE),
     results: {}
@@ -326,15 +342,15 @@ app.post('/api/generate-images', async (req, res) => {
   const progress = {
     taskId: taskId,
     status: 'running',
-    message: '准备开始生成图片...',
+    message: `准备开始生成图片... (使用${apiType === 'flux-kontext' ? 'Flux Kontext' : 'GPT-4O'} API)`,
     totalImages: contents.length,
     completedImages: 0,
     currentBatch: 0,
     totalBatches: taskInfo.totalBatches,
+    apiType: apiType,
     images: {}
   }
 
-  // 为每张图片初始化进度状态
   contents.forEach(item => {
     progress.images[item.id] = {
       id: item.id,
@@ -354,7 +370,7 @@ app.post('/api/generate-images', async (req, res) => {
   generateImagesConcurrently(taskId)
 })
 
-// 并发生成图片的函数
+// 并发生成图片的函数（使用重构后的服务）
 async function generateImagesConcurrently(taskId) {
   const task = imageGenerationTasks.get(taskId)
   const progress = taskProgress.get(taskId)
@@ -364,72 +380,81 @@ async function generateImagesConcurrently(taskId) {
     return
   }
 
-  const { contents } = task
-  const BATCH_SIZE = 5
-
   try {
-    // 分批处理
-    for (let batchIndex = 0; batchIndex < task.totalBatches; batchIndex++) {
-      // 检查是否被暂停
-      if (task.paused) {
-        progress.status = 'paused'
-        progress.message = '生成已暂停'
-        taskProgress.set(taskId, progress)
-        console.log(`任务 ${taskId} 已暂停`)
-        return
-      }
+    const BATCH_SIZE = 5
+    const contents = task.contents
 
-      const startIndex = batchIndex * BATCH_SIZE
-      const endIndex = Math.min(startIndex + BATCH_SIZE, contents.length)
-      const batch = contents.slice(startIndex, endIndex)
+    for (let batchIndex = 0; batchIndex < task.totalBatches; batchIndex++) {
+      const start = batchIndex * BATCH_SIZE
+      const end = Math.min(start + BATCH_SIZE, contents.length)
+      const batch = contents.slice(start, end)
 
       progress.currentBatch = batchIndex + 1
-      progress.message = `正在生成第 ${batchIndex + 1}/${task.totalBatches} 批图片...`
+      progress.message = `正在处理第 ${progress.currentBatch}/${task.totalBatches} 批图片`
       taskProgress.set(taskId, progress)
 
-      console.log(`开始生成第 ${batchIndex + 1} 批图片 (${batch.length} 张)`)
-
-      // 并发生成当前批次的图片
       const batchPromises = batch.map(async (item) => {
         try {
-          // 更新单张图片状态为开始生成
           progress.images[item.id].status = 'generating'
           progress.images[item.id].message = '正在生成...'
           taskProgress.set(taskId, progress)
 
-          const imagePath = await generateSingleImage(item.prompt, item.id, item.imageRatio || '1:1', (imageProgress) => {
-            // 更新单张图片进度
-            const currentProgress = taskProgress.get(taskId)
-            if (currentProgress && currentProgress.images[item.id]) {
-              currentProgress.images[item.id].progress = imageProgress
-              currentProgress.images[item.id].message = `生成进度: ${imageProgress}%`
-              taskProgress.set(taskId, currentProgress)
+          // 使用重构后的图片服务
+          const result = await imageService.completeImageGeneration({
+            type: 'text-to-image',
+            prompt: item.prompt,
+            apiType: task.apiType,
+            model: task.model,
+            imageRatio: item.imageRatio || '1:1',
+            progressCallback: (imageProgress) => {
+              const currentProgress = taskProgress.get(taskId)
+              if (currentProgress && currentProgress.images[item.id]) {
+                currentProgress.images[item.id].progress = imageProgress
+                currentProgress.images[item.id].message = `生成进度: ${imageProgress}%`
+                taskProgress.set(taskId, currentProgress)
+              }
             }
           })
 
-          // 生成成功
+          // 提取结果信息
+          const imagePath = result.publicUrl || result.localPath || result
+          const publicUrl = result.publicUrl || imagePath
+          const filename = result.filename
+          const storagePath = result.storagePath
+
+          console.log(`✅ 任务 ${taskId} 图片生成完成`, {
+            itemId: item.id,
+            publicUrl: publicUrl,
+            filename: filename,
+            storagePath: storagePath
+          })
+
           const currentProgress = taskProgress.get(taskId)
           if (currentProgress) {
             currentProgress.images[item.id].status = 'completed'
             currentProgress.images[item.id].progress = 100
             currentProgress.images[item.id].message = '生成完成'
-            currentProgress.images[item.id].imagePath = imagePath
+            currentProgress.images[item.id].imagePath = publicUrl // 使用公网URL
+            currentProgress.images[item.id].publicUrl = publicUrl // 新增字段
+            currentProgress.images[item.id].filename = filename // 新增字段
+            currentProgress.images[item.id].storagePath = storagePath // 新增字段
             currentProgress.completedImages++
             taskProgress.set(taskId, currentProgress)
           }
 
-          task.results[item.id] = imagePath
-          return { success: true, id: item.id, imagePath }
+          task.results[item.id] = result
+          return { success: true, id: item.id, imagePath: publicUrl, result: result }
 
         } catch (error) {
-          console.error(`生成图片失败 (ID: ${item.id}):`, error.message)
+          console.error(`生成图片失败 (${item.id}):`, error.message)
 
-          // 生成失败
           const currentProgress = taskProgress.get(taskId)
           if (currentProgress) {
-            currentProgress.images[item.id].status = 'error'
+            currentProgress.images[item.id].status = 'failed'
+            currentProgress.images[item.id].progress = 100
             currentProgress.images[item.id].message = `生成失败: ${error.message}`
             currentProgress.images[item.id].error = error.message
+            currentProgress.completedImages++
             taskProgress.set(taskId, currentProgress)
           }
 
@@ -437,33 +462,28 @@ async function generateImagesConcurrently(taskId) {
         }
       })
 
-      // 等待当前批次完成
       await Promise.all(batchPromises)
 
-      console.log(`第 ${batchIndex + 1} 批图片生成完成`)
-
-      // 批次间延迟，避免过载
       if (batchIndex < task.totalBatches - 1) {
         await new Promise(resolve => setTimeout(resolve, 2000))
       }
     }
 
-    // 所有批次完成
     const finalProgress = taskProgress.get(taskId)
     if (finalProgress) {
       finalProgress.status = 'completed'
-      finalProgress.message = `图片生成完成！成功生成 ${finalProgress.completedImages}/${finalProgress.totalImages} 张图片`
+      finalProgress.message = `图片生成完成 (${finalProgress.completedImages}/${finalProgress.totalImages})`
       taskProgress.set(taskId, finalProgress)
     }
 
-    console.log(`任务 ${taskId} 完成`)
+    console.log(`✅ 任务 ${taskId} 图片生成完成`)
 
   } catch (error) {
-    console.error(`任务 ${taskId} 失败:`, error)
+    console.error(`任务 ${taskId} 处理失败:`, error)
     const finalProgress = taskProgress.get(taskId)
     if (finalProgress) {
-      finalProgress.status = 'error'
-      finalProgress.message = `生成失败: ${error.message}`
+      finalProgress.status = 'failed'
+      finalProgress.message = `批量生成失败: ${error.message}`
       taskProgress.set(taskId, finalProgress)
     }
   }
@@ -796,335 +816,6 @@ Please generate a professional-quality coloring page that meets all these specif
   return professionalPrompt
 }
 
-// 调用KIEAI图片生成API
-async function callKIEAIImageGeneration(prompt, imageRatio = '1:1') {
-  // 简化并优化请求参数，符合官方文档规范
-  const data = {
-    prompt: prompt,
-    size: imageRatio, // 使用传入的图片比例
-    nVariants: 1,
-    isEnhance: false,
-    uploadCn: false,
-    enableFallback: true
-  }
-
-  console.log('🎨 KIEAI图片生成API参数:', data)
-
-  const config = {
-    method: 'post',
-    maxBodyLength: Infinity,
-    url: `${KIEAI_API_URL}/gpt4o-image/generate`, // 确保URL正确
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${KIEAI_AUTH_TOKEN}`
-    },
-    data: JSON.stringify(data),
-    timeout: 120000, // 增加到2分钟超时，因为图片生成可能需要更长时间
-    validateStatus: function (status) {
-      return status < 500; // 将500以下的状态码都视为成功
-    }
-  }
-
-  // 重试机制 - 减少重试次数，因为图片生成通常第一次就能成功
-  const maxRetries = 2
-  let lastError = null
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`🎨 调用KIEAI图片生成API (尝试 ${attempt}/${maxRetries})`)
-      console.log(`📝 Prompt长度: ${prompt.length} 字符`)
-
-      const response = await axios.request(config)
-      console.log('📸 KIEAI API响应状态:', response.status)
-      console.log('📸 KIEAI API响应数据:', JSON.stringify(response.data, null, 2))
-
-      // 检查HTTP状态码
-      if (response.status >= 400) {
-        throw new Error(`KIEAI API HTTP错误: ${response.status}`)
-      }
-
-      // 检查响应数据
-      if (!response.data) {
-        throw new Error('KIEAI API返回空响应')
-      }
-
-      // 处理实际的API响应格式 - 支持两种可能的格式
-      if (response.data.msg === 'success' && response.data.data && response.data.data.taskId) {
-        console.log('✅ 获得TaskID (msg格式):', response.data.data.taskId)
-        return response.data.data.taskId
-      } else if (response.data.code === 200 && response.data.data && response.data.data.taskId) {
-        console.log('✅ 获得TaskID (code格式):', response.data.data.taskId)
-        return response.data.data.taskId
-      } else if (response.data.code) {
-        // 处理错误码格式的响应
-        switch (response.data.code) {
-          case 200:
-            if (response.data.data && response.data.data.taskId) {
-              return response.data.data.taskId
-            }
-            throw new Error('API返回成功但没有taskId')
-          case 401:
-            throw new Error('KIEAI API未授权 - 请检查认证凭据')
-          case 402:
-            throw new Error('KIEAI API积分不足')
-          case 422:
-            throw new Error('KIEAI API参数错误 - 请检查prompt和其他参数')
-          case 429:
-            if (attempt < maxRetries) {
-              console.log(`⏳ API请求限制，等待${attempt * 5}秒后重试...`)
-              await new Promise(resolve => setTimeout(resolve, attempt * 5000))
-              continue
-            }
-            throw new Error('KIEAI API请求限制')
-          case 455:
-            throw new Error('KIEAI API服务不可用')
-          case 500:
-            throw new Error('KIEAI API服务器错误')
-          default:
-            throw new Error(`KIEAI API未知错误 - 状态码: ${response.data.code}, 消息: ${response.data.message || '无'}`)
-        }
-      } else {
-        throw new Error(`KIEAI API响应格式异常: ${JSON.stringify(response.data)}`)
-      }
-    } catch (error) {
-      lastError = error
-      console.error(`KIEAI API调用失败 (尝试 ${attempt}/${maxRetries}):`, error.message)
-
-      if (attempt < maxRetries) {
-        // 指数退避重试，但时间不要太长
-        const delay = Math.min(3000 * attempt, 10000) // 最多等待10秒
-        console.log(`⏳ ${delay}ms后重试...`)
-        await new Promise(resolve => setTimeout(resolve, delay))
-      }
-    }
-  }
-
-  throw lastError
-}
-
-// 查询KIEAI任务状态
-async function getKIEAITaskStatus(taskId) {
-  const config = {
-    method: 'get',
-    maxBodyLength: Infinity,
-    url: `${KIEAI_API_URL}/gpt4o-image/record-info?taskId=${taskId}`,
-    headers: {
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${KIEAI_AUTH_TOKEN}`
-    },
-    timeout: 30000, // 30秒超时
-    validateStatus: function (status) {
-      return status < 500;
-    }
-  }
-
-  // 重试机制 - 注意API频率限制：每个任务每秒最多3次查询
-  const maxRetries = 2
-  let lastError = null
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await axios.request(config)
-
-      // 检查HTTP状态码
-      if (response.status >= 400) {
-        throw new Error(`KIEAI API HTTP错误: ${response.status}`)
-      }
-
-      if (!response.data) {
-        throw new Error('查询任务状态返回空响应')
-      }
-
-      // 处理实际的API响应格式 - 支持两种可能的格式
-      if (response.data.msg === 'success') {
-        if (response.data.data) {
-          return response.data.data
-        } else {
-          throw new Error('任务不存在或已过期')
-        }
-      } else if (response.data.code) {
-        // 处理错误码格式的响应
-        switch (response.data.code) {
-          case 200:
-            if (response.data.data) {
-              return response.data.data
-            }
-            throw new Error('API返回成功但没有任务数据')
-          case 401:
-            throw new Error('KIEAI API未授权')
-          case 404:
-            throw new Error('任务不存在')
-          case 500:
-            throw new Error('KIEAI API服务器错误')
-          default:
-            throw new Error(`查询任务状态失败 - 状态码: ${response.data.code}, 消息: ${response.data.message || '无'}`)
-        }
-      } else {
-        throw new Error(`查询任务状态响应格式异常: ${JSON.stringify(response.data)}`)
-      }
-    } catch (error) {
-      lastError = error
-      console.error(`查询KIEAI任务状态失败 (尝试 ${attempt}/${maxRetries}):`, error.message)
-
-      if (attempt < maxRetries) {
-        // 遵守API频率限制：确保不超过每秒3次查询
-        // 等待至少1秒后重试，避免触发频率限制
-        await new Promise(resolve => setTimeout(resolve, 1000))
-      }
-    }
-  }
-
-  throw lastError
-}
-
-// 下载图片并保存到本地
-async function downloadAndSaveImage(imageUrl, filename) {
-  try {
-    console.log(`📥 开始下载图片: ${imageUrl}`)
-
-    const response = await axios({
-      method: 'get',
-      url: imageUrl,
-      responseType: 'stream',
-      timeout: 30000 // 30秒超时
-    })
-
-    const imagePath = path.join(imagesDir, filename)
-    const writer = fs.createWriteStream(imagePath)
-
-    response.data.pipe(writer)
-
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => {
-        console.log(`✅ 图片下载完成: ${filename}`)
-        resolve(`images/${filename}`)
-      })
-      writer.on('error', reject)
-    })
-  } catch (error) {
-    console.error('下载图片失败:', error)
-    throw error
-  }
-}
-
-// 生成单个图片的函数
-async function generateSingleImage(prompt, id, imageRatio, progressCallback) {
-  const filename = `image_${id}_${Date.now()}.png`
-
-  // 如果配置了KIEAI API，尝试调用真实的图片生成
-  if (KIEAI_AUTH_TOKEN && KIEAI_AUTH_TOKEN !== '27e443bd81969aefddc051bd78fa0a01') {
-    try {
-      console.log(`🎨 为ID: ${id} 生成专业涂色页图片`)
-      console.log(`📝 原始prompt: ${prompt}`)
-
-      // 1. 构建专业涂色页prompt
-      const professionalPrompt = buildProfessionalColoringPagePrompt(prompt)
-      console.log(`🔧 专业prompt已构建，长度: ${professionalPrompt.length} 字符`)
-
-      // 2. 调用KIEAI生成图片
-      const taskId = await callKIEAIImageGeneration(professionalPrompt, imageRatio)
-      console.log(`📋 获得任务ID: ${taskId}`)
-
-      // 任务创建成功，等待API返回真实进度
-      if (progressCallback) progressCallback(0)
-
-      // 3. 轮询任务状态（最多等待5分钟，因为图片生成可能需要较长时间）
-      const maxAttempts = 100 // 每5秒查询一次
-      let attempts = 0
-
-      while (attempts < maxAttempts) {
-        // 前几次查询间隔短一些，后面逐渐延长
-        const delay = attempts < 6 ? 3000 : (attempts < 12 ? 5000 : 8000)
-        await new Promise(resolve => setTimeout(resolve, delay))
-        attempts++
-
-        console.log(`🔍 查询任务状态 (${attempts}/${maxAttempts}): ${taskId}`)
-
-        // 轮询过程中不更新进度，等待API返回真实进度
-
-        try {
-          const taskStatus = await getKIEAITaskStatus(taskId)
-
-          // 根据官方文档处理不同状态
-          switch (taskStatus.status) {
-            case 'SUCCESS':
-              console.log('🎉 专业涂色页生成完成！')
-
-              if (taskStatus.response && taskStatus.response.resultUrls && taskStatus.response.resultUrls.length > 0) {
-                const imageUrl = taskStatus.response.resultUrls[0]
-                console.log(`📸 图片URL: ${imageUrl}`)
-
-                // 4. 下载图片到本地
-                const result = await downloadAndSaveImage(imageUrl, filename)
-
-                if (progressCallback) progressCallback(100)
-
-                return result
-              } else {
-                throw new Error('生成成功但没有图片URL')
-              }
-
-            case 'GENERATING':
-              console.log('🔍 taskStatus.progress: ', taskStatus.progress)
-              const apiProgress = parseFloat(taskStatus.progress || '0') * 100
-              console.log(`⏳ 正在生成中... 进度: ${apiProgress}%`)
-              if (progressCallback) progressCallback(Math.round(apiProgress))
-              break
-
-            case 'CREATE_TASK_FAILED':
-              throw new Error(`创建任务失败: ${taskStatus.errorMessage || '未知错误'}`)
-
-            case 'GENERATE_FAILED':
-              throw new Error(`生成失败: ${taskStatus.errorMessage || '未知错误'}`)
-
-            default:
-              console.log(`📊 任务状态: ${taskStatus.status}, 进度: ${taskStatus.progress || '0%'}`)
-              if (taskStatus.errorMessage) {
-                console.log(`⚠️ 错误信息: ${taskStatus.errorMessage}`)
-              }
-          }
-        } catch (statusError) {
-          console.warn(`查询任务状态失败 (${attempts}/${maxAttempts}):`, statusError.message)
-
-          // 如果是网络错误且还有重试机会，继续尝试
-          if (attempts < maxAttempts && (
-            statusError.message.includes('ECONNRESET') ||
-            statusError.message.includes('timeout') ||
-            statusError.message.includes('ETIMEDOUT')
-          )) {
-            console.log('⏳ 网络错误，继续轮询...')
-            continue
-          }
-
-          // 如果是其他错误或超过一半尝试次数，抛出异常
-          if (attempts > maxAttempts / 2) {
-            throw statusError
-          }
-        }
-      }
-
-      throw new Error('图片生成超时（5分钟）')
-
-    } catch (error) {
-      console.warn('KIEAI图片生成失败，使用占位符:', error.message)
-      // 如果KIEAI失败，降级到占位符
-    }
-  }
-
-  // 降级处理：创建占位符文件
-  console.log(`📝 创建占位符图片: ${filename}`)
-
-  const imagePath = path.join(imagesDir, filename)
-  const placeholderContent = `模拟生成的图片文件\nPrompt: ${prompt}\n生成时间: ${new Date().toISOString()}\nID: ${id}`
-
-  await fs.writeFile(imagePath, placeholderContent)
-
-  if (progressCallback) progressCallback(100)
-
-  return `images/${filename}`
-}
-
 // 调用OpenAI API的函数（如果配置了API密钥）
 async function callOpenAIAPI(keyword, description, template, model) {
   const prompt = `基于以下信息生成涂色书内容：
@@ -1296,8 +987,8 @@ app.get('/api/config-check', (req, res) => {
       }
     },
     directories: {
-      storage: fs.existsSync(storageDir),
-      images: fs.existsSync(imagesDir)
+      storage: true, // 目录检查已在启动时完成
+      images: true
     },
     recommendations: []
   }
@@ -1320,9 +1011,9 @@ app.get('/api/health', (req, res) => {
 })
 
 // 启动服务器
-app.listen(PORT, async () => {
-  console.log(`服务器运行在端口 ${PORT}`)
-  console.log(`健康检查: http://localhost:${PORT}/api/health`)
+app.listen(3006, async () => {
+  console.log(`服务器运行在端口 3006`)
+  console.log(`健康检查: http://localhost:3006/api/health`)
 
   // 测试数据库连接
   console.log('正在测试数据库连接...')

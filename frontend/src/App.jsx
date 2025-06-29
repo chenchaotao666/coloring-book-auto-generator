@@ -28,7 +28,7 @@ function App() {
   const [formData, setFormData] = useState({
     keyword: '',
     description: '',
-    count: 5,
+    count: 1,
     template: '',
     model: 'deepseek-chat'
   })
@@ -57,6 +57,13 @@ function App() {
   const [imageCategorySelections, setImageCategorySelections] = useState(new Map())
   const [imageTagSelections, setImageTagSelections] = useState(new Map())
 
+  // API选择相关状态
+  const [selectedApiType, setSelectedApiType] = useState('gpt4o') // 'gpt4o' 或 'flux-kontext'
+  const [fluxModel, setFluxModel] = useState('flux-kontext-pro') // 'flux-kontext-pro' 或 'flux-kontext-max'
+
+  // 上色提示词状态
+  const [coloringPrompt, setColoringPrompt] = useState('用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明')
+
   // 导航状态
   const [currentPage, setCurrentPage] = useState('generator') // 'generator'、'categories'、'tags' 或 'images'
 
@@ -71,6 +78,10 @@ function App() {
 
   // 单个图片上色状态
   const [singleColoringTasks, setSingleColoringTasks] = useState(new Map()) // 存储单个图片的上色任务
+
+  // 文生图和图生图任务状态
+  const [textToImageTasks, setTextToImageTasks] = useState(new Map()) // key: formData.id, value: {taskId, progress, status}
+  const [imageToImageTasks, setImageToImageTasks] = useState(new Map()) // key: formData.id, value: {taskId, progress, status}
 
   // 支持的语言配置
   const supportedLanguages = [
@@ -345,7 +356,7 @@ function App() {
     setImageProgress(null)
 
     try {
-      // 1. 创建图片生成任务
+      // 1. 创建图片生成任务，添加API选择参数
       const response = await fetch('/api/generate-images', {
         method: 'POST',
         headers: {
@@ -357,7 +368,9 @@ function App() {
             title: getDisplayText(item.title),
             prompt: getDisplayText(item.prompt),
             imageRatio: item.imageRatio || globalImageRatio // 使用项目特定比例或全局比例
-          }))
+          })),
+          apiType: selectedApiType, // 添加API类型
+          model: selectedApiType === 'flux-kontext' ? fluxModel : undefined // 添加模型选择
         }),
       })
 
@@ -523,123 +536,85 @@ function App() {
     }
 
     // 检查哪些图片已有上色版本
+    const itemsWithColoring = itemsWithImages.filter(item => item.coloringUrl)
     const itemsWithoutColoring = itemsWithImages.filter(item => !item.coloringUrl)
-    if (itemsWithoutColoring.length === 0) {
-      alert('所有图片都已经上色完成！')
+
+    let itemsToColor = itemsWithoutColoring
+
+    // 如果有已上色的图片，询问是否重新上色
+    if (itemsWithColoring.length > 0) {
+      const includeExisting = confirm(
+        `检测到 ${itemsWithColoring.length} 张图片已有上色版本，${itemsWithoutColoring.length} 张图片未上色。\n\n` +
+        `点击"确定"将为所有 ${itemsWithImages.length} 张图片重新上色（覆盖现有上色）\n` +
+        `点击"取消"将只为 ${itemsWithoutColoring.length} 张未上色的图片上色`
+      )
+
+      if (includeExisting) {
+        itemsToColor = itemsWithImages // 包含所有图片
+      } else if (itemsWithoutColoring.length === 0) {
+        alert('没有需要上色的图片！')
+        return
+      }
+    } else if (itemsWithoutColoring.length === 0) {
+      alert('没有可上色的图片！请先生成图片。')
       return
     }
 
-    if (!confirm(`确认为 ${itemsWithoutColoring.length} 张图片生成上色版本？`)) {
+    if (!confirm(`确认为 ${itemsToColor.length} 张图片生成上色版本？`)) {
       return
     }
 
     setIsGeneratingColoring(true)
     setColoringProgress({
       current: 0,
-      total: itemsWithoutColoring.length,
+      total: itemsToColor.length,
       message: '准备开始批量上色...',
       details: {}
     })
 
     try {
-      // 先确保所有图片都保存到数据库
-      const itemsNeedSaving = itemsWithoutColoring.filter(item => !item.databaseId)
-      const databaseIdMap = new Map() // 存储新分配的databaseId
-
-      if (itemsNeedSaving.length > 0) {
-        setColoringProgress(prev => ({
-          ...prev,
-          message: `先保存 ${itemsNeedSaving.length} 张图片到数据库...`
-        }))
-
-        // 自动保存图片到数据库
-        for (const item of itemsNeedSaving) {
-          try {
-            const imageData = {
-              name: getDisplayText(item.title),
-              title: getDisplayText(item.title),
-              description: getDisplayText(item.prompt) || '自动生成的涂色页',
-              defaultUrl: item.imagePath,
-              type: 'text2image',
-              ratio: item.imageRatio || '1:1',
-              isPublic: true,
-              hotness: item.hotness || 0,
-              prompt: getDisplayText(item.prompt),
-              userId: 'frontend_user',
-              additionalInfo: {
-                frontendId: item.id,
-                autoGenerated: true
-              }
-            }
-
-            const response = await fetch('/api/images', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(imageData)
-            })
-
-            const result = await response.json()
-
-            if (result.success) {
-              // 存储到临时映射
-              databaseIdMap.set(item.id, result.data.id)
-              console.log(`图片已保存到数据库: ${item.id} -> ${result.data.id}`)
-            } else {
-              throw new Error(result.message || '保存失败')
-            }
-          } catch (error) {
-            console.error(`保存图片失败: ${getDisplayText(item.title)}`, error)
-            throw new Error(`保存图片"${getDisplayText(item.title)}"失败: ${error.message}`)
-          }
-        }
-
-        // 批量更新contentList
-        setContentList(prev => prev.map(prevItem => {
-          const newDatabaseId = databaseIdMap.get(prevItem.id)
-          return newDatabaseId
-            ? { ...prevItem, databaseId: newDatabaseId, savedToDatabase: true }
-            : prevItem
-        }))
-      }
+      // 直接对所有有图片的内容进行上色，无需检查数据库ID
+      const finalItemsToColor = itemsToColor
 
       const newTasks = new Map()
 
       // 为每个需要上色的图片创建上色任务
-      for (let i = 0; i < itemsWithoutColoring.length; i++) {
-        const item = itemsWithoutColoring[i]
+      for (let i = 0; i < finalItemsToColor.length; i++) {
+        const item = finalItemsToColor[i]
 
-        // 获取databaseId（优先使用新分配的，否则使用原有的）
-        const databaseId = databaseIdMap.get(item.id) || item.databaseId
+        // 使用图片URL而不是数据库ID
+        const imageUrl = item.imagePath || item.defaultUrl
 
-        if (!databaseId) {
-          throw new Error(`图片"${getDisplayText(item.title)}"缺少数据库ID`)
+        if (!imageUrl) {
+          throw new Error(`图片"${getDisplayText(item.title)}"缺少图片URL`)
         }
 
         try {
           setColoringProgress(prev => ({
             ...prev,
             current: i,
-            message: `正在创建上色任务 ${i + 1}/${itemsWithoutColoring.length}...`
+            message: `正在创建上色任务 ${i + 1}/${finalItemsToColor.length}...`
           }))
 
           // 构造提示词
           const prompt = getDisplayText(item.prompt) || getDisplayText(item.title) || '涂色页'
 
-          // 调用上色API
+          // 调用上色API，使用图片URL
           const response = await fetch('/api/images/color-generate', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              imageId: databaseId, // 使用数据库ID
+              imageUrl: imageUrl, // 直接使用图片URL
               prompt: prompt,
+              coloringPrompt: coloringPrompt.trim() || null, // 传递用户自定义的上色提示词
               options: {
                 ratio: item.imageRatio || '1:1',
                 isEnhance: false,
-                nVariants: 1
+                nVariants: 1,
+                apiType: selectedApiType, // 添加API类型
+                model: selectedApiType === 'flux-kontext' ? fluxModel : undefined // 添加模型选择
               }
             }),
           })
@@ -650,9 +625,10 @@ function App() {
             // 记录任务ID与内容的映射
             newTasks.set(data.data.coloringResult.taskId, {
               itemId: item.id,
-              imageId: databaseId,
+              imageUrl: imageUrl, // 使用图片URL而不是数据库ID
               status: 'processing',
-              createdAt: new Date()
+              createdAt: new Date(),
+              apiType: selectedApiType // 记录API类型
             })
 
             // 更新进度详情
@@ -693,7 +669,7 @@ function App() {
         }
 
         // 任务间延迟，避免过载
-        if (i < itemsWithoutColoring.length - 1) {
+        if (i < finalItemsToColor.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 1000))
         }
       }
@@ -705,7 +681,7 @@ function App() {
       if (newTasks.size > 0) {
         setColoringProgress(prev => ({
           ...prev,
-          current: itemsWithoutColoring.length,
+          current: finalItemsToColor.length,
           message: `${newTasks.size} 个上色任务已创建，正在处理中...`
         }))
 
@@ -738,22 +714,40 @@ function App() {
     const poll = async () => {
       try {
         const taskEntries = Array.from(activeTasks.entries())
+        console.log(`🔄 开始轮询 ${taskEntries.length} 个上色任务`)
 
         for (const [taskId, taskInfo] of taskEntries) {
           try {
-            const response = await fetch(`/api/images/color-task/${taskId}/${taskInfo.imageId}`)
+            console.log(`🔍 检查上色任务状态: ${taskId}`)
+            const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${taskInfo.apiType || selectedApiType}`)
             const data = await response.json()
+
+            console.log(`📊 任务 ${taskId} 状态响应:`, data)
 
             if (data.success) {
               const status = data.data.status
+              console.log(`📈 任务 ${taskId} 当前状态: ${status}`)
 
-              if (status === 'completed' && data.data.coloringUrl) {
+              if (status === 'completed' && (data.data.coloringUrl || data.data.imageUrl)) {
+                // 获取上色后的图片URL
+                const coloringUrl = data.data.coloringUrl || data.data.imageUrl
+
                 // 任务完成，更新contentList
                 setContentList(prev => prev.map(item =>
                   item.id === taskInfo.itemId
-                    ? { ...item, coloringUrl: data.data.coloringUrl }
+                    ? { ...item, coloringUrl: coloringUrl }
                     : item
                 ))
+
+                // 如果正在查看详情弹框，且更新的项目与查看的项目匹配，同步更新viewingContent
+                if (viewingContent && viewingContent.id === taskInfo.itemId) {
+                  console.log('🔄 批量上色完成，同步更新查看详情弹框数据')
+                  setViewingContent(prev => ({
+                    ...prev,
+                    coloringUrl: coloringUrl
+                  }))
+                  console.log('✅ 批量上色：查看详情弹框的coloringUrl已同步更新:', coloringUrl)
+                }
 
                 // 更新进度详情
                 setColoringProgress(prev => ({
@@ -808,6 +802,8 @@ function App() {
                   }
                 }))
               }
+            } else {
+              console.error(`❌ 批量上色任务状态查询失败: ${taskId}`, data)
             }
           } catch (error) {
             console.error(`检查上色任务 ${taskId} 状态失败:`, error)
@@ -836,15 +832,18 @@ function App() {
         }
 
         // 继续轮询
+        console.log(`⏳ 继续轮询，剩余 ${activeTasks.size} 个任务`)
         setTimeout(poll, pollInterval)
 
       } catch (error) {
         console.error('轮询上色任务状态失败:', error)
+        console.log(`⏳ 轮询错误后重试，剩余 ${activeTasks.size} 个任务`)
         setTimeout(poll, pollInterval)
       }
     }
 
     // 开始轮询
+    console.log(`🚀 开始批量上色轮询，任务数量: ${tasks.size}`)
     setTimeout(poll, 3000) // 3秒后开始第一次轮询
   }
 
@@ -889,6 +888,8 @@ function App() {
         const categoryId = imageCategorySelections.get(item.id) || item.savedCategoryId || null
         const tagIds = Array.from(imageTagSelections.get(item.id) || item.savedTagIds || [])
 
+
+
         // 处理多语言字段，如果是字符串则转换为对象
         const formatMultiLangField = (value) => {
           if (!value) return { zh: '' }
@@ -901,6 +902,9 @@ function App() {
           title: formatMultiLangField(item.title),
           description: formatMultiLangField(item.description),
           imagePath: item.imagePath,
+          defaultUrl: item.defaultUrl || item.imagePath, // 添加defaultUrl字段
+          colorUrl: item.colorUrl || null, // 添加colorUrl字段
+          coloringUrl: item.coloringUrl || null, // 添加coloringUrl字段
           prompt: formatMultiLangField(item.prompt),
           ratio: item.imageRatio || '1:1',
           type: item.type || 'text2image',
@@ -913,6 +917,8 @@ function App() {
           additionalInfo: formatMultiLangField(item.content),
           frontendId: item.id // 添加前端ID用于关联
         }
+
+
 
         if (item.databaseId) {
           // 已保存过，需要更新
@@ -1003,11 +1009,13 @@ function App() {
               setContentList(prevList =>
                 prevList.map(item => {
                   if (item.databaseId === imageData.id) {
+
                     return {
                       ...item,
                       savedCategoryId: imageData.categoryId,
                       savedTagIds: imageData.tagIds,
                       savedToDatabase: true
+                      // 注意：不覆盖coloringUrl等字段，保持原有值
                     }
                   }
                   return item
@@ -1214,29 +1222,6 @@ function App() {
     }
   }
 
-  // 查看内容详情
-  const viewContentDetails = (item) => {
-    // 转换数据格式以适配 ImageForm
-    const formattedContent = {
-      name: { zh: item.name || item.title || '' },
-      title: { zh: item.title || '' },
-      description: { zh: item.content || '' },
-      prompt: { zh: item.prompt || '' },
-      defaultUrl: item.imagePath ? `/${item.imagePath}` : '',
-      colorUrl: '',
-      coloringUrl: '',
-      type: 'text2image',
-      ratio: item.imageRatio || '1:1',
-      isPublic: false,
-      categoryId: null,
-      size: '',
-      tagIds: []
-    }
-
-    setViewingContent(formattedContent)
-    setShowDetailDialog(true)
-  }
-
   // 关闭详情对话框
   const closeDetailDialog = () => {
     setShowDetailDialog(false)
@@ -1303,15 +1288,16 @@ function App() {
       return { zh: field }
     }
 
-    return {
+    const formData = {
+      id: item.id, // 添加id字段，确保能够追踪到正确的item
       name: extractMultiLangField(item.name || item.title),
       title: extractMultiLangField(item.title),
       description: extractMultiLangField(item.description),
       prompt: extractMultiLangField(item.prompt),
       additionalInfo: extractMultiLangField(item.content), // 将content作为additionalInfo（文案内容）
-      defaultUrl: item.imagePath ? `/${item.imagePath}` : '',
-      colorUrl: '',
-      coloringUrl: '',
+      defaultUrl: item.imagePath || item.defaultUrl || '',  // 增加fallback
+      colorUrl: item.colorUrl || '',
+      coloringUrl: item.coloringUrl || '',  // 正确传递coloringUrl
       type: item.type || 'text2image',
       ratio: item.imageRatio || '1:1',
       isPublic: item.isPublic !== undefined ? item.isPublic : false,
@@ -1320,6 +1306,18 @@ function App() {
       size: item.size || '',
       tagIds: tagIds
     }
+
+    // 当有coloringUrl时，验证数据传递
+    if (item.coloringUrl) {
+      console.log(`🖼️ convertItemToFormData - 检测到coloringUrl:`)
+      console.log(`- 项目ID: ${item.id}`)
+      console.log(`- 原始coloringUrl: ${item.coloringUrl}`)
+      console.log(`- formData.coloringUrl: ${formData.coloringUrl}`)
+    }
+
+
+
+    return formData
   }
 
   // 处理生成内容的表单编辑
@@ -1373,6 +1371,12 @@ function App() {
               return { ...item, isPublic: value }
             case 'hotness':
               return { ...item, hotness: value }
+            case 'colorUrl':
+              return { ...item, colorUrl: value }
+            case 'coloringUrl':
+              return { ...item, coloringUrl: value }
+            case 'defaultUrl':
+              return { ...item, imagePath: value, defaultUrl: value }  // 同时更新两个字段
             case 'categoryId':
               // 如果是已保存的项目，直接更新保存的分类信息
               if (item.savedToDatabase) {
@@ -1409,80 +1413,48 @@ function App() {
       return
     }
 
-    // 检查是否有数据库ID
-    const imageItem = contentList.find(item =>
-      item.imagePath === formData.defaultUrl ||
-      (item.databaseId && item.databaseId.toString() === formData.id?.toString())
-    )
+    console.log('🎨 开始单个图片上色:')
+    console.log('- formData.id:', formData.id)
+    console.log('- formData.defaultUrl:', formData.defaultUrl)
 
-    let imageId = formData.id || imageItem?.databaseId
+    // 检查是否有数据库ID - 修复查找逻辑
+    const imageItem = contentList.find(item => {
+      // 方式1：通过前端ID匹配
+      if (formData.id && item.id === formData.id) {
+        console.log('✅ 通过前端ID找到匹配项:', item.id)
+        return true
+      }
+      // 方式2：通过图片路径匹配
+      if (formData.defaultUrl && (item.imagePath === formData.defaultUrl || item.defaultUrl === formData.defaultUrl)) {
+        console.log('✅ 通过图片路径找到匹配项:', item.imagePath || item.defaultUrl)
+        return true
+      }
+      return false
+    })
+
+    console.log('🔍 找到的图片项:', imageItem)
 
     try {
-      // 如果没有数据库ID，先保存图片到数据库
-      if (!imageId) {
-        console.log('图片未保存到数据库，正在自动保存...')
 
-        const saveData = {
-          name: formData.name?.zh || formData.title?.zh || '单个上色图片',
-          title: formData.title?.zh || '单个上色图片',
-          description: formData.description?.zh || '手动上色的图片',
-          defaultUrl: formData.defaultUrl,
-          type: formData.type || 'text2image',
-          ratio: formData.ratio || '1:1',
-          isPublic: formData.isPublic !== undefined ? formData.isPublic : true,
-          hotness: formData.hotness || 0,
-          prompt: formData.prompt?.zh || '涂色页',
-          userId: 'frontend_user',
-          additionalInfo: {
-            frontendId: imageItem?.id,
-            singleColoring: true
-          }
-        }
-
-        const saveResponse = await fetch('/api/images', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(saveData)
-        })
-
-        const saveResult = await saveResponse.json()
-
-        if (!saveResult.success) {
-          throw new Error(saveResult.message || '保存图片到数据库失败')
-        }
-
-        imageId = saveResult.data.id
-
-        // 更新contentList中的databaseId
-        if (imageItem) {
-          setContentList(prev => prev.map(item =>
-            item.id === imageItem.id
-              ? { ...item, databaseId: imageId, savedToDatabase: true }
-              : item
-          ))
-        }
-
-        console.log(`图片已保存到数据库: ${imageId}`)
-      }
-
-      // 构造提示词
+      // 构造提示词 - 使用用户自定义的上色提示词
       const prompt = formData.prompt?.zh || formData.title?.zh || '涂色页'
 
-      // 调用上色API
+      // 调用上色API，直接使用图片URL而不是数据库ID
       const response = await fetch('/api/images/color-generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          imageId: imageId,
+          imageUrl: formData.defaultUrl, // 直接使用图片URL
           prompt: prompt,
+          coloringPrompt: coloringPrompt.trim() || null, // 传递用户自定义的上色提示词
           options: {
             ratio: formData.ratio || '1:1',
             isEnhance: false,
-            nVariants: 1
+            nVariants: 1,
+            apiType: selectedApiType, // 添加API类型
+            model: selectedApiType === 'flux-kontext' ? fluxModel : undefined // 添加模型选择
           }
         }),
       })
@@ -1495,20 +1467,28 @@ function App() {
         // 记录单个上色任务
         setSingleColoringTasks(prev => {
           const newMap = new Map(prev)
-          newMap.set(taskId, {
-            imageId: imageId,
+          const taskData = {
+            imageUrl: formData.defaultUrl, // 使用图片URL而不是数据库ID
             formDataId: formData.id,
             frontendItemId: imageItem?.id,
+            defaultUrl: formData.defaultUrl, // 添加URL用于匹配
             status: 'processing',
-            createdAt: new Date()
+            createdAt: new Date(),
+            apiType: selectedApiType // 记录API类型
+          }
+          newMap.set(taskId, taskData)
+          console.log('📝 创建上色任务记录:', {
+            taskId,
+            taskData
           })
           return newMap
         })
 
         console.log(`单个图片上色任务已创建: ${taskId}`)
+        console.log('🚀 即将开始轮询上色任务状态...')
 
-        // 开始轮询单个上色任务状态
-        pollSingleColoringTask(taskId, imageId)
+        // 开始轮询单个上色任务状态（使用任务ID作为标识）
+        pollSingleColoringTask(taskId, taskId, selectedApiType)
 
         return true
       } else {
@@ -1523,50 +1503,155 @@ function App() {
   }
 
   // 轮询单个上色任务状态
-  const pollSingleColoringTask = async (taskId, imageId) => {
+  const pollSingleColoringTask = async (taskId, identifierId, apiType = 'gpt4o') => {
     const pollInterval = 3000 // 每3秒查询一次
     let pollCount = 0
     const maxPolls = 180 // 最多查询9分钟
 
+    console.log(`🚀 开始轮询上色任务: ${taskId}`)
+
+    // 生成轮询实例ID用于调试
+    const pollInstanceId = Math.random().toString(36).substr(2, 9)
+    console.log(`📋 轮询实例ID: ${pollInstanceId} for 任务: ${taskId}`)
+
     const poll = async () => {
       try {
-        const response = await fetch(`/api/images/color-task/${taskId}/${imageId}`)
+        // 暂时移除状态检查，专注于轮询本身
+        // 我们先让轮询继续运行，看看是否是状态检查导致的问题
+        console.log(`🔄 继续轮询 [实例: ${pollInstanceId}] - 忽略状态检查`)
+
+        // 暂时移除已完成状态检查，让轮询继续进行
+
+        console.log(`🔄 轮询任务 ${taskId} - 第 ${pollCount + 1} 次 [实例: ${pollInstanceId}]`)
+
+        // 使用任务状态查询API，不需要数据库ID
+        const apiUrl = `/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${apiType}`
+        console.log(`📡 查询任务状态 API: ${apiUrl} [实例: ${pollInstanceId}]`)
+        const response = await fetch(apiUrl)
         const data = await response.json()
+        console.log(`📡 API响应 [实例: ${pollInstanceId}]:`, data)
 
         if (data.success) {
           const status = data.data.status
 
-          if (status === 'completed' && data.data.coloringUrl) {
-            // 任务完成，更新相关状态
-            const taskInfo = singleColoringTasks.get(taskId)
+          // 更新任务进度
+          const progress = Math.min(10 + pollCount * 2, 90) // 从10%开始，每次增加2%，最高90%
+          console.log(`📊 更新任务进度: ${taskId} - 状态: ${status}, 进度: ${status === 'completed' ? 100 : progress}%`)
+          setSingleColoringTasks(prev => {
+            const newMap = new Map(prev)
+            const currentTask = newMap.get(taskId)
+            if (currentTask) {
+              newMap.set(taskId, {
+                ...currentTask,
+                progress: status === 'completed' ? 100 : progress,
+                status: status,
+                message: status === 'completed' ? '上色完成！' : `正在上色中... (${pollCount + 1}/${maxPolls})`
+              })
+              console.log(`✅ 任务状态已更新: ${taskId}`)
+            } else {
+              console.warn(`⚠️ 找不到要更新的任务: ${taskId}`)
+            }
+            return newMap
+          })
 
-            if (taskInfo) {
-              // 如果有对应的前端item，更新contentList
-              if (taskInfo.frontendItemId) {
-                setContentList(prev => prev.map(item =>
-                  item.id === taskInfo.frontendItemId
-                    ? { ...item, coloringUrl: data.data.coloringUrl }
-                    : item
-                ))
+          if (status === 'completed' && (data.data.coloringUrl || data.data.imageUrl)) {
+            console.log(`🎨 检测到任务完成 [实例: ${pollInstanceId}]: ${taskId}`)
+
+            // 获取上色后的图片URL
+            const coloringUrl = data.data.coloringUrl || data.data.imageUrl
+
+            console.log(`🎨 上色任务完成，准备更新UI [实例: ${pollInstanceId}]:`, {
+              taskId,
+              coloringUrl: coloringUrl
+            })
+
+            // 使用智能匹配方式更新UI，而不是依赖任务状态
+            let foundItem = null
+
+            // 方法1: 通过contentList直接搜索匹配项
+            setContentList(prev => prev.map(item => {
+              // 尝试多种匹配方式
+              const isMatch = (
+                // 通过任务ID中的信息匹配（如果taskId包含可识别信息）
+                item.imagePath && taskId.includes(item.imagePath.split('/').pop()?.split('.')[0]) ||
+                // 通过defaultUrl匹配
+                item.defaultUrl && taskId.includes(item.defaultUrl.split('/').pop()?.split('.')[0]) ||
+                // 通过item ID匹配（如果有对应关系）
+                item.id && taskId.includes(item.id)
+              )
+
+              if (isMatch && !item.coloringUrl) { // 只更新还没有coloringUrl的项目
+                console.log(`✅ 通过匹配找到并更新项目 [实例: ${pollInstanceId}]:`, item.id)
+                foundItem = item
+                return { ...item, coloringUrl: coloringUrl }
               }
+              return item
+            }))
 
-              // 更新查看详情弹框的数据
-              if (viewingContent && viewingContent.id === taskInfo.formDataId) {
-                setViewingContent(prev => ({
-                  ...prev,
-                  coloringUrl: data.data.coloringUrl
-                }))
+            // 如果通过上面的方法没找到，尝试更宽松的匹配
+            if (!foundItem) {
+              console.log(`🔍 使用宽松匹配继续查找 [实例: ${pollInstanceId}]`)
+              setContentList(prev => {
+                let updated = false
+                return prev.map(item => {
+                  if (!updated && item.imagePath && !item.coloringUrl) {
+                    console.log(`✅ 宽松匹配更新第一个无coloringUrl的项目 [实例: ${pollInstanceId}]:`, item.id)
+                    foundItem = item
+                    updated = true
+                    return { ...item, coloringUrl: coloringUrl }
+                  }
+                  return item
+                })
+              })
+            }
+
+            // 如果正在查看详情弹框，同步更新
+            if (foundItem && viewingContent && viewingContent.id === foundItem.id) {
+              console.log(`🔄 同步更新查看详情弹框数据 [实例: ${pollInstanceId}]`)
+              setViewingContent(prev => ({
+                ...prev,
+                coloringUrl: coloringUrl
+              }))
+            }
+
+            console.log(`✅ 单个图片上色完成并已更新UI [实例: ${pollInstanceId}]: ${taskId}`)
+
+            // 添加用户友好的成功提示
+            alert(`图片上色完成！\n上色结果已自动填入"上色后图片URL"输入框并显示图片预览。\n\n🔗 上色图片URL: ${coloringUrl}`)
+
+            // 任务完成，先更新任务状态为completed，保存结果URL
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              const currentTask = newMap.get(taskId)
+              if (currentTask) {
+                newMap.set(taskId, {
+                  ...currentTask,
+                  progress: 100,
+                  status: 'completed',
+                  message: '上色完成！',
+                  coloringUrl: coloringUrl, // 保存结果URL
+                  completedAt: new Date(), // 添加完成时间戳
+                  shouldDelete: true // 标记应该删除
+                })
+                console.log(`✅ 任务状态已更新为completed [实例: ${pollInstanceId}]: ${taskId}`)
               }
+              return newMap
+            })
 
-              // 清除任务记录
+            // 延迟清除任务记录，确保UI有时间更新和按钮状态恢复
+            // 增加延迟时间，确保所有轮询实例都能正常退出
+            setTimeout(() => {
               setSingleColoringTasks(prev => {
                 const newMap = new Map(prev)
-                newMap.delete(taskId)
+                if (newMap.has(taskId)) {
+                  newMap.delete(taskId)
+                  console.log(`🧹 已清除上色任务记录: ${taskId}`)
+                } else {
+                  console.log(`⚠️ 尝试清除不存在的任务: ${taskId}`)
+                }
                 return newMap
               })
-
-              console.log(`单个图片上色完成: ${taskId}`)
-            }
+            }, 10000) // 10秒后清除，给足够时间让轮询退出
 
             return
 
@@ -1586,13 +1671,16 @@ function App() {
 
           } else {
             // 任务仍在进行中，继续轮询
-            console.log(`单个图片上色进行中: ${taskId}, 状态: ${status}`)
+            console.log(`🔄 任务仍在进行中: ${taskId}, 状态: ${status}, 将在${pollInterval}ms后继续轮询`)
           }
+        } else {
+          console.error(`❌ 任务状态查询失败: ${taskId}`, data)
         }
 
         // 继续轮询
         pollCount++
         if (pollCount < maxPolls) {
+          console.log(`⏰ 安排下次轮询: ${taskId} - 第 ${pollCount + 1} 次，${pollInterval}ms后执行 [实例: ${pollInstanceId}]`)
           setTimeout(poll, pollInterval)
         } else {
           console.warn(`单个图片上色任务轮询超时: ${taskId}`)
@@ -1625,18 +1713,682 @@ function App() {
       }
     }
 
-    // 开始轮询
+    // 开始轮询 - 立即开始第一次查询
+    console.log(`⏰ 立即开始第一次轮询: ${taskId}`)
     poll()
   }
 
   // 检查是否有正在进行的单个上色任务
   const isGeneratingSingleColoring = (formData) => {
-    return Array.from(singleColoringTasks.values()).some(task =>
-      task.formDataId === formData.id ||
-      task.frontendItemId === contentList.find(item =>
-        item.imagePath === formData.defaultUrl
-      )?.id
-    )
+    const isGenerating = Array.from(singleColoringTasks.values()).some(task => {
+      // 只检查processing状态的任务，不包括completed状态
+      if (task.status === 'completed') {
+        return false
+      }
+
+      // 通过多种方式匹配任务
+      if (task.formDataId === formData.id) return true
+      if (task.frontendItemId === formData.id) return true
+      if (task.defaultUrl && (task.defaultUrl === formData.defaultUrl || task.defaultUrl === formData.imagePath)) return true
+
+      // 通过contentList查找匹配
+      const matchingItem = contentList.find(item =>
+        item.imagePath === formData.defaultUrl ||
+        item.defaultUrl === formData.defaultUrl ||
+        item.id === formData.id ||
+        item.databaseId === formData.id
+      )
+
+      if (matchingItem && (
+        task.frontendItemId === matchingItem.id ||
+        task.formDataId === matchingItem.id ||
+        task.imageId === matchingItem.databaseId ||
+        task.defaultUrl === matchingItem.imagePath ||
+        task.defaultUrl === matchingItem.defaultUrl
+      )) {
+        return true
+      }
+
+      return false
+    })
+
+    console.log(`🔍 检查是否正在生成上色 for ${formData.id}:`, isGenerating)
+    return isGenerating
+  }
+
+  // 处理文生图
+  const handleTextToImage = async (formData) => {
+    try {
+      console.log('开始文生图生成:', formData)
+
+      // 添加任务状态
+      setTextToImageTasks(prev => new Map(prev.set(formData.id, {
+        taskId: null,
+        progress: 0,
+        status: 'starting',
+        message: '正在创建任务...'
+      })))
+
+      // 使用formData中的内容作为提示词
+      const prompt = formData.title?.zh || formData.name?.zh || '生成涂色书图片'
+
+      const requestData = {
+        prompt: prompt,
+        apiType: selectedApiType,
+        model: selectedApiType === 'flux-kontext' ? fluxModel : undefined,
+        ratio: formData.ratio || '1:1'
+      }
+
+      const response = await fetch('/api/images/text-to-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData)
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        // 更新任务状态为失败
+        setTextToImageTasks(prev => new Map(prev.set(formData.id, {
+          taskId: null,
+          progress: 0,
+          status: 'failed',
+          message: result.error || '文生图生成失败'
+        })))
+        throw new Error(result.error || '文生图生成失败')
+      }
+
+      console.log('文生图任务创建成功:', result)
+
+      // 更新任务状态
+      setTextToImageTasks(prev => new Map(prev.set(formData.id, {
+        taskId: result.data.taskId,
+        progress: 10,
+        status: 'processing',
+        message: '任务已创建，正在生成中...'
+      })))
+
+      // 开始轮询任务状态
+      if (result.data && result.data.taskId) {
+        pollTextToImageTask(result.data.taskId, formData)
+      } else {
+        throw new Error('API返回的数据中缺少taskId')
+      }
+
+    } catch (error) {
+      console.error('文生图生成错误:', error)
+      // 更新任务状态为失败
+      setTextToImageTasks(prev => new Map(prev.set(formData.id, {
+        taskId: null,
+        progress: 0,
+        status: 'failed',
+        message: error.message
+      })))
+      alert(`文生图生成失败: ${error.message}`)
+
+      // 3秒后清除失败状态，让用户可以重试
+      setTimeout(() => {
+        setTextToImageTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(formData.id)
+          console.log(`🧹 已清除文生图失败状态: ${formData.id}`)
+          return newMap
+        })
+      }, 3000)
+    }
+  }
+
+  // 处理图生图
+  const handleImageToImage = async (formData, uploadedFile) => {
+    try {
+      console.log('开始图生图生成:')
+      console.log('- formData:', formData)
+      console.log('- formData.title:', formData.title)
+      console.log('- formData.name:', formData.name)
+      console.log('- uploadedFile:', uploadedFile)
+
+      // 添加任务状态
+      setImageToImageTasks(prev => new Map(prev.set(formData.id, {
+        taskId: null,
+        progress: 0,
+        status: 'starting',
+        message: '正在上传图片...'
+      })))
+
+      // 创建FormData对象上传图片
+      const formDataObj = new FormData()
+
+      // 尝试多种方式获取prompt文本
+      let promptText = ''
+      if (formData.title && typeof formData.title === 'object') {
+        promptText = formData.title.zh || formData.title.en || ''
+      } else if (formData.title && typeof formData.title === 'string') {
+        promptText = formData.title
+      } else if (formData.name && typeof formData.name === 'object') {
+        promptText = formData.name.zh || formData.name.en || ''
+      } else if (formData.name && typeof formData.name === 'string') {
+        promptText = formData.name
+      }
+
+      // 如果还是空的，使用默认prompt
+      if (!promptText || promptText.trim() === '') {
+        promptText = '生成涂色书图片'
+      }
+
+      formDataObj.append('image', uploadedFile)
+      formDataObj.append('prompt', promptText)
+      formDataObj.append('apiType', selectedApiType)
+      if (selectedApiType === 'flux-kontext' && fluxModel) {
+        formDataObj.append('model', fluxModel)
+      }
+      formDataObj.append('ratio', formData.ratio || '1:1')
+
+      console.log('准备发送图生图请求:')
+      console.log('- 文件:', uploadedFile.name, uploadedFile.size)
+      console.log('- prompt:', promptText)
+      console.log('- apiType:', selectedApiType)
+      console.log('- fluxModel:', fluxModel)
+      console.log('- ratio:', formData.ratio || '1:1')
+
+      const response = await fetch('/api/images/image-to-image', {
+        method: 'POST',
+        body: formDataObj
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        console.error('图生图API错误响应:', result)
+        // 更新任务状态为失败
+        setImageToImageTasks(prev => new Map(prev.set(formData.id, {
+          taskId: null,
+          progress: 0,
+          status: 'failed',
+          message: result.message || result.error || '图生图生成失败'
+        })))
+        throw new Error(result.message || result.error || '图生图生成失败')
+      }
+
+      console.log('图生图任务创建成功:', result)
+
+      // 如果有用户上传的彩色图片URL，替换之前的blob预览URL
+      if (result.data.uploadedColorImageUrl) {
+        setContentList(prevList =>
+          prevList.map(item => {
+            if (item.id === formData.id) {
+              // 如果当前是blob URL，释放它
+              if (item.colorUrl && item.colorUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(item.colorUrl)
+                console.log('已释放blob预览URL:', item.colorUrl)
+              }
+
+              return {
+                ...item,
+                colorUrl: result.data.uploadedColorImageUrl,
+                uploadedColorUrl: result.data.uploadedColorImageUrl
+              }
+            }
+            return item
+          })
+        )
+        console.log('已保存用户上传的彩色图片URL:', result.data.uploadedColorImageUrl)
+      }
+
+      // 更新任务状态
+      setImageToImageTasks(prev => new Map(prev.set(formData.id, {
+        taskId: result.data.taskId,
+        progress: 20,
+        status: 'processing',
+        message: '图片已上传，正在生成中...'
+      })))
+
+      // 开始轮询任务状态
+      if (result.data && result.data.taskId) {
+        pollImageToImageTask(result.data.taskId, formData)
+      } else {
+        throw new Error('API返回的数据中缺少taskId')
+      }
+
+    } catch (error) {
+      console.error('图生图生成错误:', error)
+      // 更新任务状态为失败
+      setImageToImageTasks(prev => new Map(prev.set(formData.id, {
+        taskId: null,
+        progress: 0,
+        status: 'failed',
+        message: error.message
+      })))
+      alert(`图生图生成失败: ${error.message}`)
+
+      // 3秒后清除失败状态，让用户可以重试
+      setTimeout(() => {
+        setImageToImageTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(formData.id)
+          console.log(`🧹 已清除图生图失败状态: ${formData.id}`)
+          return newMap
+        })
+      }, 3000)
+    }
+  }
+
+  // 轮询文生图任务状态
+  const pollTextToImageTask = async (taskId, formData) => {
+    const maxAttempts = 60 // 最多轮询60次（约5分钟）
+    let attempts = 0
+
+    const poll = async () => {
+      try {
+        attempts++
+        console.log(`轮询文生图任务状态 ${attempts}/${maxAttempts}:`, taskId)
+
+        const response = await fetch(`/api/images/task-status/${taskId}?taskType=text-to-image`)
+        const result = await response.json()
+
+        if (!response.ok) {
+          throw new Error(result.error || '获取任务状态失败')
+        }
+
+        console.log('文生图任务状态:', result)
+        console.log('文生图任务状态详细信息:', {
+          status: result.data?.status,
+          imageUrl: result.data?.imageUrl,
+          hasImageUrl: !!result.data?.imageUrl
+        })
+
+        // 更新进度
+        const progress = Math.min(10 + attempts * 1.5, 90)
+        setTextToImageTasks(prev => new Map(prev.set(formData.id, {
+          taskId: taskId,
+          progress: progress,
+          status: 'processing',
+          message: `正在生成中... (${attempts}/${maxAttempts})`
+        })))
+
+        if (result.data && result.data.status === 'completed' && result.data.imageUrl) {
+          // 任务完成，更新状态
+          setTextToImageTasks(prev => new Map(prev.set(formData.id, {
+            taskId: taskId,
+            progress: 100,
+            status: 'completed',
+            message: '生成完成！'
+          })))
+
+          // 更新contentList中对应的项目
+          console.log(`📝 文生图完成，准备更新contentList:`)
+          console.log('- formData.id:', formData.id)
+          console.log('- result.data.imageUrl:', result.data.imageUrl)
+
+          setContentList(prevList => {
+            const updatedList = prevList.map(item => {
+              if (item.id === formData.id) {
+                console.log(`✅ 找到匹配项目，更新imagePath和defaultUrl:`)
+                console.log('- 更新前 item.imagePath:', item.imagePath)
+                console.log('- 更新前 item.defaultUrl:', item.defaultUrl)
+                console.log('- 新的imageUrl:', result.data.imageUrl)
+
+                return {
+                  ...item,
+                  imagePath: result.data.imageUrl,
+                  defaultUrl: result.data.imageUrl
+                }
+              }
+              return item
+            })
+
+            // 验证更新结果
+            const updatedItem = updatedList.find(item => item.id === formData.id)
+            console.log(`🔍 文生图更新后的项目:`, updatedItem)
+
+            return updatedList
+          })
+
+          console.log('文生图生成完成:', result.data.imageUrl)
+          console.log('更新formData.id:', formData.id)
+
+          // 验证更新是否成功
+          setTimeout(() => {
+            setContentList(currentList => {
+              const updatedItem = currentList.find(item => item.id === formData.id)
+              console.log('文生图更新后的contentList项目:', updatedItem)
+              return currentList
+            })
+          }, 100)
+
+          alert('文生图生成成功！')
+
+          // 3秒后清除任务状态
+          setTimeout(() => {
+            setTextToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(formData.id)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        } else if (result.data && result.data.status === 'failed') {
+          // 更新任务状态为失败
+          setTextToImageTasks(prev => new Map(prev.set(formData.id, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: result.data.error || '文生图生成失败'
+          })))
+
+          alert(`文生图生成失败: ${result.data.error || '未知错误'}`)
+
+          // 3秒后清除失败状态，让用户可以重试
+          setTimeout(() => {
+            setTextToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(formData.id)
+              console.log(`🧹 已清除文生图失败状态: ${formData.id}`)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        }
+
+        // 继续轮询
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 3000) // 3秒后再次轮询
+        } else {
+          // 超时处理
+          setTextToImageTasks(prev => new Map(prev.set(formData.id, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: '文生图生成超时'
+          })))
+
+          alert('文生图生成超时，请重试')
+
+          // 3秒后清除超时状态
+          setTimeout(() => {
+            setTextToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(formData.id)
+              console.log(`🧹 已清除文生图超时状态: ${formData.id}`)
+              return newMap
+            })
+          }, 3000)
+        }
+
+      } catch (error) {
+        console.error('轮询文生图任务失败:', error)
+
+        // 更新任务状态为失败
+        setTextToImageTasks(prev => new Map(prev.set(formData.id, {
+          taskId: taskId,
+          progress: 0,
+          status: 'failed',
+          message: error.message || '网络错误'
+        })))
+
+        alert(`文生图生成失败: ${error.message}`)
+
+        // 3秒后清除失败状态
+        setTimeout(() => {
+          setTextToImageTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(formData.id)
+            console.log(`🧹 已清除文生图网络错误状态: ${formData.id}`)
+            return newMap
+          })
+        }, 3000)
+      }
+    }
+
+    // 开始轮询
+    poll()
+  }
+
+  // 轮询图生图任务状态
+  const pollImageToImageTask = async (taskId, formData) => {
+    const maxAttempts = 60 // 最多轮询60次（约5分钟）
+    let attempts = 0
+
+    const poll = async () => {
+      try {
+        attempts++
+        console.log(`轮询图生图任务状态 ${attempts}/${maxAttempts}:`, taskId)
+
+        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-to-image`)
+        const result = await response.json()
+
+        if (!response.ok) {
+          throw new Error(result.error || '获取任务状态失败')
+        }
+
+        console.log('图生图任务状态:', result)
+        console.log('图生图任务状态详细信息:', {
+          status: result.data?.status,
+          imageUrl: result.data?.imageUrl,
+          hasImageUrl: !!result.data?.imageUrl
+        })
+
+        // 更新进度
+        const progress = Math.min(20 + attempts * 1.3, 90)
+        setImageToImageTasks(prev => new Map(prev.set(formData.id, {
+          taskId: taskId,
+          progress: progress,
+          status: 'processing',
+          message: `正在生成中... (${attempts}/${maxAttempts})`
+        })))
+
+        if (result.data && result.data.status === 'completed' && result.data.imageUrl) {
+          // 任务完成，更新状态
+          setImageToImageTasks(prev => new Map(prev.set(formData.id, {
+            taskId: taskId,
+            progress: 100,
+            status: 'completed',
+            message: '生成完成！'
+          })))
+
+          // 更新contentList中对应的项目
+          console.log(`📝 图生图完成，准备更新contentList:`)
+          console.log('- formData.id:', formData.id)
+          console.log('- result.data.imageUrl:', result.data.imageUrl)
+
+          setContentList(prevList => {
+            const updatedList = prevList.map(item => {
+              if (item.id === formData.id) {
+                console.log(`✅ 找到匹配项目，更新imagePath和defaultUrl:`)
+                console.log('- 更新前 item.imagePath:', item.imagePath)
+                console.log('- 更新前 item.defaultUrl:', item.defaultUrl)
+                console.log('- 更新前 item.colorUrl:', item.colorUrl)
+                console.log('- 新的imageUrl:', result.data.imageUrl)
+
+                return {
+                  ...item,
+                  imagePath: result.data.imageUrl,
+                  defaultUrl: result.data.imageUrl,
+                  // 保留之前可能保存的彩色图片URL
+                  colorUrl: item.colorUrl || item.uploadedColorUrl
+                }
+              }
+              return item
+            })
+
+            // 验证更新结果
+            const updatedItem = updatedList.find(item => item.id === formData.id)
+            console.log(`🔍 图生图更新后的项目:`, updatedItem)
+
+            return updatedList
+          })
+
+          console.log('图生图生成完成，更新defaultUrl:', result.data.imageUrl)
+          console.log('更新formData.id:', formData.id)
+
+          // 验证更新是否成功
+          setTimeout(() => {
+            setContentList(currentList => {
+              const updatedItem = currentList.find(item => item.id === formData.id)
+              console.log('更新后的contentList项目:', updatedItem)
+              return currentList
+            })
+          }, 100)
+
+          alert('图生图生成成功！')
+
+          // 3秒后清除任务状态
+          setTimeout(() => {
+            setImageToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(formData.id)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        } else if (result.data && result.data.status === 'failed') {
+          // 更新任务状态为失败
+          setImageToImageTasks(prev => new Map(prev.set(formData.id, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: result.data.error || '图生图生成失败'
+          })))
+
+          alert(`图生图生成失败: ${result.data.error || '未知错误'}`)
+
+          // 3秒后清除失败状态，让用户可以重试
+          setTimeout(() => {
+            setImageToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(formData.id)
+              console.log(`🧹 已清除图生图失败状态: ${formData.id}`)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        }
+
+        // 继续轮询
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 3000) // 3秒后再次轮询
+        } else {
+          // 超时处理
+          setImageToImageTasks(prev => new Map(prev.set(formData.id, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: '图生图生成超时'
+          })))
+
+          alert('图生图生成超时，请重试')
+
+          // 3秒后清除超时状态
+          setTimeout(() => {
+            setImageToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(formData.id)
+              console.log(`🧹 已清除图生图超时状态: ${formData.id}`)
+              return newMap
+            })
+          }, 3000)
+        }
+
+      } catch (error) {
+        console.error('轮询图生图任务失败:', error)
+
+        // 更新任务状态为失败
+        setImageToImageTasks(prev => new Map(prev.set(formData.id, {
+          taskId: taskId,
+          progress: 0,
+          status: 'failed',
+          message: error.message || '网络错误'
+        })))
+
+        alert(`图生图生成失败: ${error.message}`)
+
+        // 3秒后清除失败状态
+        setTimeout(() => {
+          setImageToImageTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(formData.id)
+            console.log(`🧹 已清除图生图网络错误状态: ${formData.id}`)
+            return newMap
+          })
+        }, 3000)
+      }
+    }
+
+    // 开始轮询
+    poll()
+  }
+
+  // 检查是否有正在进行的文生图任务
+  const isGeneratingTextToImage = (formData) => {
+    const task = textToImageTasks.get(formData.id)
+    return task && (task.status === 'starting' || task.status === 'processing')
+  }
+
+  // 检查是否有正在进行的图生图任务
+  const isGeneratingImageToImage = (formData) => {
+    const task = imageToImageTasks.get(formData.id)
+    return task && (task.status === 'starting' || task.status === 'processing')
+  }
+
+  // 获取文生图任务状态
+  const getTextToImageTaskStatus = (formData) => {
+    return textToImageTasks.get(formData.id)
+  }
+
+  // 获取图生图任务状态
+  const getImageToImageTaskStatus = (formData) => {
+    return imageToImageTasks.get(formData.id)
+  }
+
+  // 获取上色任务状态
+  const getColoringTaskStatus = (formData) => {
+    // 通过多种方式查找上色任务状态
+    for (const [taskId, task] of singleColoringTasks) {
+      // 详细的匹配逻辑，确保能找到对应的任务
+      const isMatch = (
+        task.formDataId === formData.id ||
+        task.frontendItemId === formData.id ||
+        task.defaultUrl === formData.defaultUrl ||
+        task.defaultUrl === formData.imagePath ||
+        // 通过contentList进行额外匹配
+        (() => {
+          const matchingItem = contentList.find(item =>
+            item.id === formData.id ||
+            item.imagePath === formData.defaultUrl ||
+            item.defaultUrl === formData.defaultUrl
+          )
+          return matchingItem && (
+            task.frontendItemId === matchingItem.id ||
+            task.formDataId === matchingItem.id ||
+            task.imageId === matchingItem.databaseId ||
+            task.defaultUrl === matchingItem.imagePath ||
+            task.defaultUrl === matchingItem.defaultUrl
+          )
+        })()
+      )
+
+      if (isMatch) {
+        // 构造状态对象，类似于文生图和图生图的格式
+        const status = {
+          taskId: taskId,
+          progress: task.progress || 0,
+          status: task.status || 'processing',
+          message: task.message || '正在上色中...',
+          coloringUrl: task.coloringUrl // 添加结果URL
+        }
+
+        console.log(`🔍 找到上色任务状态 for ${formData.id}:`, status)
+        return status
+      }
+    }
+
+    console.log(`🔍 未找到上色任务状态 for ${formData.id}`)
+    return null
   }
 
   return (
@@ -1793,6 +2545,49 @@ function App() {
                           </SelectContent>
                         </Select>
                       </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="apiType" className="text-sm font-medium">图像生成API</Label>
+                        <Select value={selectedApiType} onValueChange={setSelectedApiType}>
+                          <SelectTrigger className="h-10">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="gpt4o">GPT-4O 图像生成</SelectItem>
+                            <SelectItem value="flux-kontext">Flux Kontext 图像生成</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {selectedApiType === 'flux-kontext' && (
+                        <div className="space-y-2">
+                          <Label htmlFor="fluxModel" className="text-sm font-medium">Flux 模型</Label>
+                          <Select value={fluxModel} onValueChange={setFluxModel}>
+                            <SelectTrigger className="h-10">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="flux-kontext-pro">Flux Kontext Pro (标准)</SelectItem>
+                              <SelectItem value="flux-kontext-max">Flux Kontext Max (增强)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <Label htmlFor="coloringPrompt" className="text-sm font-medium">上色提示词</Label>
+                        <Textarea
+                          id="coloringPrompt"
+                          placeholder="输入上色提示词，留空将使用默认提示词"
+                          value={coloringPrompt}
+                          onChange={(e) => setColoringPrompt(e.target.value)}
+                          rows={3}
+                          className="resize-none text-sm"
+                        />
+                        <p className="text-xs text-gray-500">
+                          用于指导AI如何为图片上色，留空时将使用默认的马克笔上色风格
+                        </p>
+                      </div>
                     </div>
                   </div>
 
@@ -1896,7 +2691,12 @@ function App() {
                           <Image className="w-6 h-6 text-purple-600" />
                         </div>
                         <h3 className="font-medium text-purple-900 mb-2">生成图片</h3>
-                        <p className="text-sm text-purple-700 mb-4">AI生成专业涂色页图片</p>
+                        <p className="text-sm text-purple-700 mb-2">AI生成专业涂色页图片</p>
+                        <p className="text-xs text-purple-600 mb-4">
+                          当前API: {selectedApiType === 'flux-kontext' ? 'Flux Kontext' : 'GPT-4O'}
+                          {selectedApiType === 'flux-kontext' && ` (${fluxModel === 'flux-kontext-pro' ? 'Pro' : 'Max'})`}
+                        </p>
+
                         <Button
                           onClick={generateImages}
                           disabled={isGeneratingImages || contentList.length === 0}
@@ -1916,10 +2716,14 @@ function App() {
                           <Palette className="w-6 h-6 text-orange-600" />
                         </div>
                         <h3 className="font-medium text-orange-900 mb-2">图片上色</h3>
-                        <p className="text-sm text-orange-700 mb-4">为线稿图生成马克笔上色版本</p>
+                        <p className="text-sm text-orange-700 mb-2">为线稿图生成马克笔上色版本</p>
+                        <p className="text-xs text-orange-600 mb-4">
+                          当前API: {selectedApiType === 'flux-kontext' ? 'Flux Kontext' : 'GPT-4O'}
+                          {selectedApiType === 'flux-kontext' && ` (${fluxModel === 'flux-kontext-pro' ? 'Pro' : 'Max'})`}
+                        </p>
                         <Button
                           onClick={handleBatchColoring}
-                          disabled={!contentList.some(item => item.imagePath && !item.coloringUrl) || isGeneratingColoring}
+                          disabled={!contentList.some(item => item.imagePath) || isGeneratingColoring}
                           variant="outline"
                           className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
                           size="sm"
@@ -2143,6 +2947,8 @@ function App() {
                       )}
                     </div>
                   )}
+
+
                 </CardContent>
               </Card>
 
@@ -2282,6 +3088,24 @@ function App() {
                                 </span>
                               ) : null}
 
+                              {/* 上色状态指示器 */}
+                              {item.coloringUrl ? (
+                                <span className="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                                  <ImageIcon className="w-3 h-3 mr-1" />
+                                  上色完成
+                                </span>
+                              ) : coloringProgress?.details?.[item.id]?.status === 'processing' ? (
+                                <span className="inline-flex items-center px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-full">
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  上色中
+                                </span>
+                              ) : coloringProgress?.details?.[item.id]?.status === 'error' ? (
+                                <span className="inline-flex items-center px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
+                                  <AlertCircle className="w-3 h-3 mr-1" />
+                                  上色失败
+                                </span>
+                              ) : null}
+
                               {/* 数据库保存状态 */}
                               {item.databaseId ? (
                                 <span className="inline-flex items-center px-2 py-1 text-xs bg-emerald-100 text-emerald-800 rounded-full">
@@ -2341,6 +3165,13 @@ function App() {
                               className="scale-90 origin-top" // 缩小以适应卡片
                               onGenerateColoring={handleSingleImageColoring} // 添加上色回调
                               isGeneratingColoring={isGeneratingSingleColoring(convertItemToFormData(item))} // 添加上色状态
+                              coloringTaskStatus={getColoringTaskStatus(convertItemToFormData(item))} // 添加上色任务状态
+                              onTextToImage={handleTextToImage} // 添加文生图回调
+                              isGeneratingTextToImage={isGeneratingTextToImage(convertItemToFormData(item))} // 添加文生图状态
+                              textToImageTaskStatus={getTextToImageTaskStatus(convertItemToFormData(item))} // 添加文生图任务状态
+                              onImageToImage={handleImageToImage} // 添加图生图回调
+                              isGeneratingImageToImage={isGeneratingImageToImage(convertItemToFormData(item))} // 添加图生图状态
+                              imageToImageTaskStatus={getImageToImageTaskStatus(convertItemToFormData(item))} // 添加图生图任务状态
                             />
                           </div>
                         </div>
@@ -2478,10 +3309,35 @@ function App() {
                   setViewingContent(prev => {
                     if (field === 'hotness') {
                       return { ...prev, hotness: value }
+                    } else if (field === 'coloringUrl') {
+                      return { ...prev, coloringUrl: value }
+                    } else if (field === 'colorUrl') {
+                      return { ...prev, colorUrl: value }
+                    } else if (field === 'defaultUrl') {
+                      return { ...prev, defaultUrl: value }
+                    } else if (field === 'ratio') {
+                      return { ...prev, ratio: value }
+                    } else if (field === 'type') {
+                      return { ...prev, type: value }
+                    } else if (field === 'isPublic') {
+                      return { ...prev, isPublic: value }
+                    } else if (lang) {
+                      // 处理多语言字段
+                      return {
+                        ...prev,
+                        [field]: {
+                          ...prev[field],
+                          [lang]: value
+                        }
+                      }
                     }
-                    // 处理其他字段...
                     return prev
                   })
+
+                  // 同时更新contentList中对应的项目
+                  if (viewingContent && viewingContent.id) {
+                    handleContentFormChange(viewingContent.id, field, lang, value)
+                  }
                 }} // 允许编辑
                 onAddLanguage={() => { }} // 查看模式，不允许编辑
                 onRemoveLanguage={() => { }} // 查看模式，不允许编辑
@@ -2492,6 +3348,13 @@ function App() {
                 readOnly={false} // 设置为可编辑模式
                 onGenerateColoring={handleSingleImageColoring} // 添加上色回调
                 isGeneratingColoring={isGeneratingSingleColoring(viewingContent)} // 添加上色状态
+                coloringTaskStatus={getColoringTaskStatus(viewingContent)} // 添加上色任务状态
+                onTextToImage={handleTextToImage} // 添加文生图回调
+                isGeneratingTextToImage={isGeneratingTextToImage(viewingContent)} // 添加文生图状态
+                textToImageTaskStatus={getTextToImageTaskStatus(viewingContent)} // 添加文生图任务状态
+                onImageToImage={handleImageToImage} // 添加图生图回调
+                isGeneratingImageToImage={isGeneratingImageToImage(viewingContent)} // 添加图生图状态
+                imageToImageTaskStatus={getImageToImageTaskStatus(viewingContent)} // 添加图生图任务状态
               />
               <div className="flex justify-end mt-6 pt-6 border-t">
                 <Button onClick={closeDetailDialog}>
