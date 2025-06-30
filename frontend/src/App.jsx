@@ -11,6 +11,7 @@ import React, { useEffect, useState } from 'react'
 import CategoriesManager from './components/CategoriesManager'
 import ImageForm from './components/ImageForm'
 import ImagesManager from './components/ImagesManager'
+import InternationalizationEditor from './components/InternationalizationEditor'
 import TagsManager from './components/TagsManager'
 
 // 工具函数：从多语言对象中提取显示文本
@@ -71,6 +72,7 @@ function App() {
   const [selectedLanguages, setSelectedLanguages] = useState([])
   const [isGeneratingInternationalization, setIsGeneratingInternationalization] = useState(false)
   const [internationalizationResults, setInternationalizationResults] = useState({})
+  const [activeInternationalizationLanguage, setActiveInternationalizationLanguage] = useState('') // 国际化结果的活跃语言tab
 
   // 查看详情相关状态
   const [showDetailDialog, setShowDetailDialog] = useState(false)
@@ -107,6 +109,21 @@ function App() {
   useEffect(() => {
     loadSaveOptions()
   }, [])
+
+  // 当国际化结果变化时，设置默认的活跃语言
+  useEffect(() => {
+    if (Object.keys(internationalizationResults).length > 0 && !activeInternationalizationLanguage) {
+      // 获取第一个项目的第一个语言作为默认活跃语言
+      const firstItemId = Object.keys(internationalizationResults)[0]
+      const firstItemTranslations = internationalizationResults[firstItemId]
+      if (firstItemTranslations) {
+        const firstLanguage = Object.keys(firstItemTranslations)[0]
+        if (firstLanguage) {
+          setActiveInternationalizationLanguage(firstLanguage)
+        }
+      }
+    }
+  }, [internationalizationResults, activeInternationalizationLanguage])
 
   // 处理表单输入
   const handleInputChange = (field, value) => {
@@ -1192,8 +1209,11 @@ function App() {
         type: 'content', // 自定义类型，用于内容翻译
         items: itemsWithContent.map(item => ({
           id: item.id,
-          name: item.title,
-          description: item.content
+          name: getDisplayText(item.name || item.title),
+          title: getDisplayText(item.title),
+          description: getDisplayText(item.description),
+          prompt: getDisplayText(item.prompt),
+          additionalInfo: getDisplayText(item.content) // 将content作为additionalInfo传递
         })),
         targetLanguages: selectedLanguages
       }
@@ -1210,6 +1230,12 @@ function App() {
 
       if (data.success) {
         setInternationalizationResults(data.results)
+
+        // 自动设置第一个语言为活跃语言
+        if (selectedLanguages.length > 0) {
+          setActiveInternationalizationLanguage(selectedLanguages[0])
+        }
+
         alert(`成功为 ${itemsWithContent.length} 个内容生成了 ${selectedLanguages.length} 种语言的翻译`)
       } else {
         alert('国际化失败: ' + data.message)
@@ -1580,7 +1606,7 @@ function App() {
                 item.id && taskId.includes(item.id)
               )
 
-              if (isMatch && !item.coloringUrl) { // 只更新还没有coloringUrl的项目
+              if (isMatch) { // 移除 !item.coloringUrl 条件，允许覆盖已有的上色图片
                 console.log(`✅ 通过匹配找到并更新项目 [实例: ${pollInstanceId}]:`, item.id)
                 foundItem = item
                 return { ...item, coloringUrl: coloringUrl }
@@ -1594,8 +1620,8 @@ function App() {
               setContentList(prev => {
                 let updated = false
                 return prev.map(item => {
-                  if (!updated && item.imagePath && !item.coloringUrl) {
-                    console.log(`✅ 宽松匹配更新第一个无coloringUrl的项目 [实例: ${pollInstanceId}]:`, item.id)
+                  if (!updated && item.imagePath) { // 移除 !item.coloringUrl 条件，允许覆盖已有的上色图片
+                    console.log(`✅ 宽松匹配更新第一个有imagePath的项目 [实例: ${pollInstanceId}]:`, item.id)
                     foundItem = item
                     updated = true
                     return { ...item, coloringUrl: coloringUrl }
@@ -1617,7 +1643,7 @@ function App() {
             console.log(`✅ 单个图片上色完成并已更新UI [实例: ${pollInstanceId}]: ${taskId}`)
 
             // 添加用户友好的成功提示
-            alert(`图片上色完成！\n上色结果已自动填入"上色后图片URL"输入框并显示图片预览。\n\n🔗 上色图片URL: ${coloringUrl}`)
+            alert(`图片上色完成！\n上色结果已自动更新到"上色后图片URL"输入框并显示图片预览。\n\n🔗 新的上色图片URL: ${coloringUrl}`)
 
             // 任务完成，先更新任务状态为completed，保存结果URL
             setSingleColoringTasks(prev => {
@@ -2397,7 +2423,7 @@ function App() {
         {/* 导航栏 */}
         <div className="bg-white shadow-sm border-b">
           <div className="flex items-center justify-between p-4">
-            <h1 className="text-2xl font-bold">涂色书内容自动生成器</h1>
+            <h1 className="text-2xl font-bold">涂色书管理系统</h1>
             <div className="flex items-center gap-2">
               {/* 国际化控制区域 */}
               {currentPage === 'generator' && contentList.some(item => item.content) && (
@@ -2430,7 +2456,15 @@ function App() {
                   className="flex items-center gap-2"
                 >
                   <Home className="w-4 h-4" />
-                  内容生成
+                  图片生成
+                </Button>
+                <Button
+                  variant={currentPage === 'images' ? 'default' : 'outline'}
+                  onClick={() => setCurrentPage('images')}
+                  className="flex items-center gap-2"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  图片管理
                 </Button>
                 <Button
                   variant={currentPage === 'categories' ? 'default' : 'outline'}
@@ -2447,14 +2481,6 @@ function App() {
                 >
                   <Tag className="w-4 h-4" />
                   标签管理
-                </Button>
-                <Button
-                  variant={currentPage === 'images' ? 'default' : 'outline'}
-                  onClick={() => setCurrentPage('images')}
-                  className="flex items-center gap-2"
-                >
-                  <ImageIcon className="w-4 h-4" />
-                  图片管理
                 </Button>
               </div>
             </div>
@@ -3191,56 +3217,65 @@ function App() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-4">
-                      {Object.entries(internationalizationResults).map(([itemId, translations]) => {
-                        const item = contentList.find(c => c.id === itemId)
-                        if (!item) return null
+                    {/* 语言选项卡 */}
+                    <div className="flex flex-wrap gap-2 border-b mb-4">
+                      {(() => {
+                        // 获取所有可用的语言
+                        const allLanguages = new Set()
+                        Object.values(internationalizationResults).forEach(translations => {
+                          Object.keys(translations).forEach(langCode => {
+                            allLanguages.add(langCode)
+                          })
+                        })
 
-                        return (
-                          <div key={itemId} className="border border-gray-200 rounded-lg p-4">
-                            <div className="mb-3">
-                              <h3 className="font-medium text-gray-900">
-                                {getDisplayText(item.title)}
-                              </h3>
-                              <p className="text-sm text-gray-500">原始内容</p>
-                            </div>
+                        return Array.from(allLanguages).map(langCode => {
+                          const language = supportedLanguages.find(lang => lang.code === langCode)
+                          const isActive = activeInternationalizationLanguage === langCode
 
-                            <div className="grid gap-4">
-                              {Object.entries(translations).map(([langCode, translation]) => {
-                                const language = supportedLanguages.find(lang => lang.code === langCode)
-
-                                return (
-                                  <div key={langCode} className="bg-gray-50 p-3 rounded border">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <Languages className="w-4 h-4 text-blue-600" />
-                                      <span className="font-medium text-blue-900">
-                                        {language ? language.name : langCode}
-                                      </span>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                      <div>
-                                        <Label className="text-xs text-gray-600">标题</Label>
-                                        <p className="text-sm text-gray-900 bg-white p-2 rounded border">
-                                          {getDisplayText(translation.name) || '未翻译'}
-                                        </p>
-                                      </div>
-
-                                      <div>
-                                        <Label className="text-xs text-gray-600">内容</Label>
-                                        <div className="text-sm text-gray-900 bg-white p-2 rounded border max-h-32 overflow-y-auto whitespace-pre-wrap">
-                                          {getDisplayText(translation.description) || '未翻译'}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        )
-                      })}
+                          return (
+                            <button
+                              key={langCode}
+                              type="button"
+                              onClick={() => setActiveInternationalizationLanguage(langCode)}
+                              className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${isActive
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                                }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Languages className="w-4 h-4" />
+                                {language ? language.name : langCode.toUpperCase()}
+                              </div>
+                            </button>
+                          )
+                        })
+                      })()}
                     </div>
+
+                    {/* 当前语言的翻译内容 */}
+                    {activeInternationalizationLanguage && (
+                      <div className="space-y-4">
+                        {Object.entries(internationalizationResults).map(([itemId, translations]) => {
+                          const item = contentList.find(c => c.id === itemId)
+                          const translation = translations[activeInternationalizationLanguage]
+
+                          if (!item || !translation) return null
+
+                          return (
+                            <InternationalizationEditor
+                              key={itemId}
+                              imageId={itemId}
+                              languageCode={activeInternationalizationLanguage}
+                              translation={translation}
+                              originalImage={item}
+                              supportedLanguages={supportedLanguages}
+                              readOnly={true}
+                              getDisplayText={getDisplayText}
+                            />
+                          )
+                        })}
+                      </div>
+                    )}
 
                     <div className="mt-4 flex gap-2">
                       <Button
@@ -3257,6 +3292,7 @@ function App() {
                         onClick={() => {
                           setInternationalizationResults({})
                           setSelectedLanguages([])
+                          setActiveInternationalizationLanguage('') // 清除活跃语言
                         }}
                       >
                         清除结果

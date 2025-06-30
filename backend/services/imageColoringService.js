@@ -482,12 +482,10 @@ async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType 
     let colorPrompt;
     if (coloringPrompt) {
       // 如果用户提供了自定义上色提示词，直接使用
-      colorPrompt = prompt ? `${prompt}, ${coloringPrompt}` : coloringPrompt;
+      colorPrompt = coloringPrompt;
     } else {
       // 如果用户没有提供，使用默认的上色提示词
-      colorPrompt = prompt ?
-        `${prompt}, 用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明` :
-        '用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明';
+      colorPrompt = '用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明';
     }
 
     console.log('🎨 最终上色prompt:', colorPrompt);

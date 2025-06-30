@@ -12,6 +12,7 @@ const MultiSelect = React.forwardRef(({
   ...props
 }, ref) => {
   const [isOpen, setIsOpen] = React.useState(false)
+  const containerRef = React.useRef(null)
 
   // 处理键盘按键
   React.useEffect(() => {
@@ -24,6 +25,24 @@ const MultiSelect = React.forwardRef(({
     if (isOpen) {
       document.addEventListener('keydown', handleKeyDown)
       return () => document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen])
+
+  // 处理点击外部关闭
+  React.useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener('touchstart', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+        document.removeEventListener('touchstart', handleClickOutside)
+      }
     }
   }, [isOpen])
 
@@ -46,7 +65,18 @@ const MultiSelect = React.forwardRef(({
   const selectedOptions = safeOptions.filter(option => safeValue.includes(option.value))
 
   return (
-    <div className={cn("relative", className)} ref={ref} {...props}>
+    <div
+      className={cn("relative", className)}
+      ref={(node) => {
+        containerRef.current = node
+        if (typeof ref === 'function') {
+          ref(node)
+        } else if (ref) {
+          ref.current = node
+        }
+      }}
+      {...props}
+    >
       {/* 主选择框 */}
       <Button
         type="button"
@@ -111,14 +141,6 @@ const MultiSelect = React.forwardRef(({
             ))
           )}
         </div>
-      )}
-
-      {/* 点击外部关闭 */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setIsOpen(false)}
-        />
       )}
     </div>
   )

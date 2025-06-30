@@ -2,10 +2,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import {
   AlertCircle,
   Check,
@@ -24,6 +22,7 @@ import {
 } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import ImageForm from './ImageForm'
+import InternationalizationEditor from './InternationalizationEditor'
 
 const ImagesManager = () => {
   // 状态管理
@@ -35,6 +34,7 @@ const ImagesManager = () => {
   const [selectedLanguages, setSelectedLanguages] = useState([])
   const [internationalizationLoading, setInternationalizationLoading] = useState(false)
   const [internationalizationResults, setInternationalizationResults] = useState({})
+  const [activeInternationalizationLanguage, setActiveInternationalizationLanguage] = useState('') // 国际化结果的活跃语言tab
 
   // 单个图片上色状态
   const [singleColoringTasks, setSingleColoringTasks] = useState(new Map()) // 存储单个图片的上色任务
@@ -125,7 +125,7 @@ const ImagesManager = () => {
     const allLanguages = new Set(['zh']) // 中文是必须的
 
       // 检查各个多语言字段中存在的语言
-      ;['name', 'title', 'description', 'prompt'].forEach(field => {
+      ;['name', 'title', 'description', 'prompt', 'additionalInfo'].forEach(field => {
         if (formData[field] && typeof formData[field] === 'object') {
           Object.keys(formData[field]).forEach(lang => {
             if (formData[field][lang]) {
@@ -149,7 +149,8 @@ const ImagesManager = () => {
         name: { ...prev.name, [langCode]: '' },
         title: { ...prev.title, [langCode]: '' },
         description: { ...prev.description, [langCode]: '' },
-        prompt: { ...prev.prompt, [langCode]: '' }
+        prompt: { ...prev.prompt, [langCode]: '' },
+        additionalInfo: { ...prev.additionalInfo, [langCode]: '' }
       }))
     }
   }
@@ -240,6 +241,21 @@ const ImagesManager = () => {
     loadCategoriesAndTags()
   }, [])
 
+  // 当国际化结果变化时，设置默认的活跃语言
+  useEffect(() => {
+    if (Object.keys(internationalizationResults).length > 0 && !activeInternationalizationLanguage) {
+      // 获取第一个项目的第一个语言作为默认活跃语言
+      const firstItemId = Object.keys(internationalizationResults)[0]
+      const firstItemTranslations = internationalizationResults[firstItemId]
+      if (firstItemTranslations) {
+        const firstLanguage = Object.keys(firstItemTranslations)[0]
+        if (firstLanguage) {
+          setActiveInternationalizationLanguage(firstLanguage)
+        }
+      }
+    }
+  }, [internationalizationResults, activeInternationalizationLanguage])
+
   // 筛选变化时重新加载
   useEffect(() => {
     loadImages()
@@ -259,6 +275,7 @@ const ImagesManager = () => {
   // 重置表单
   const resetForm = () => {
     setFormData({
+      id: null,
       name: { zh: '' },
       title: { zh: '' },
       description: { zh: '' },
@@ -347,6 +364,7 @@ const ImagesManager = () => {
     }
 
     const parsedFormData = {
+      id: image.id,
       name: parseField(image.name),
       title: parseField(image.title),
       description: parseField(image.description),
@@ -364,11 +382,31 @@ const ImagesManager = () => {
       tagIds: image.tags ? image.tags.map(tag => tag.tag_id) : []
     }
 
+    // 如果有国际化翻译结果，合并到formData中
+    const imageTranslations = internationalizationResults[image.id]
+    if (imageTranslations) {
+      Object.entries(imageTranslations).forEach(([langCode, translation]) => {
+        // 只合并有内容的翻译
+        if (translation && typeof translation === 'object') {
+          Object.entries(translation).forEach(([fieldName, value]) => {
+            if (value && parsedFormData[fieldName]) {
+              parsedFormData[fieldName] = {
+                ...parsedFormData[fieldName],
+                [langCode]: value
+              }
+            }
+          })
+        }
+      })
+    }
+
     setFormData(parsedFormData)
 
-    // 设置编辑的语言版本
+    // 设置编辑的语言版本 - 包含已有翻译的语言
     const existingLangs = getExistingLanguages(parsedFormData)
-    setEditingLanguages(existingLangs.length > 0 ? existingLangs : ['zh'])
+    const translationLangs = imageTranslations ? Object.keys(imageTranslations) : []
+    const allLanguages = Array.from(new Set([...existingLangs, ...translationLangs]))
+    setEditingLanguages(allLanguages.length > 0 ? allLanguages : ['zh'])
 
     setEditingId(image.id)
     setShowForm(true)
@@ -495,38 +533,22 @@ const ImagesManager = () => {
       return
     }
 
-    let imageId = formData.id || editingId
+    console.log('🎨 开始单个图片上色:')
+    console.log('- formData.id:', formData.id)
+    console.log('- formData.defaultUrl:', formData.defaultUrl)
 
     try {
-      // 如果是新建图片（没有ID），先保存到数据库
-      if (!imageId) {
-        console.log('图片未保存到数据库，正在自动保存...')
-
-        // 先提交表单保存图片
-        const saveResult = await handleSubmit(null, true) // 添加一个静默保存参数
-
-        if (!saveResult) {
-          throw new Error('保存图片到数据库失败')
-        }
-
-        imageId = editingId // 保存后应该会设置editingId
-
-        if (!imageId) {
-          throw new Error('无法获取图片ID')
-        }
-      }
-
       // 构造提示词
       const prompt = formData.prompt?.zh || formData.title?.zh || '涂色页'
 
-      // 调用上色API
+      // 调用上色API，直接使用图片URL而不是数据库ID
       const response = await fetch('/api/images/color-generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          imageId: imageId,
+          imageUrl: formData.defaultUrl, // 直接使用图片URL
           prompt: prompt,
           options: {
             ratio: formData.ratio || '1:1',
@@ -544,11 +566,18 @@ const ImagesManager = () => {
         // 记录单个上色任务
         setSingleColoringTasks(prev => {
           const newMap = new Map(prev)
-          newMap.set(taskId, {
-            imageId: imageId,
+          const taskData = {
+            imageUrl: formData.defaultUrl, // 使用图片URL而不是数据库ID
             formDataId: formData.id,
+            imageId: formData.id || editingId, // 保留imageId用于兼容
+            defaultUrl: formData.defaultUrl,
             status: 'processing',
             createdAt: new Date()
+          }
+          newMap.set(taskId, taskData)
+          console.log('📝 创建上色任务记录:', {
+            taskId,
+            taskData
           })
           return newMap
         })
@@ -556,7 +585,7 @@ const ImagesManager = () => {
         console.log(`单个图片上色任务已创建: ${taskId}`)
 
         // 开始轮询单个上色任务状态
-        pollSingleColoringTask(taskId, imageId)
+        pollSingleColoringTask(taskId, formData.id || editingId)
 
         return true
       } else {
@@ -576,46 +605,69 @@ const ImagesManager = () => {
     let pollCount = 0
     const maxPolls = 60 // 最多查询3分钟
 
+    console.log(`🚀 开始轮询单个上色任务: ${taskId} for imageId: ${imageId}`)
+
     const poll = async () => {
       try {
-        const response = await fetch(`/api/images/color-task/${taskId}/${imageId}`)
+        console.log(`🔄 轮询上色任务 ${taskId} - 第 ${pollCount + 1} 次`)
+
+        // 使用新的任务状态查询API
+        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring`)
         const data = await response.json()
+
+        console.log(`📊 上色任务 ${taskId} 状态响应:`, data)
 
         if (data.success) {
           const status = data.data.status
 
-          if (status === 'completed' && data.data.coloringUrl) {
-            // 任务完成，更新相关状态
-            const taskInfo = singleColoringTasks.get(taskId)
-
-            if (taskInfo) {
-              // 更新当前编辑表单的数据
-              if (editingId && editingId.toString() === imageId.toString()) {
-                setFormData(prev => ({
-                  ...prev,
-                  coloringUrl: data.data.coloringUrl
-                }))
-              }
-
-              // 重新加载图片列表
-              loadImages()
-
-              // 清除任务记录
-              setSingleColoringTasks(prev => {
-                const newMap = new Map(prev)
-                newMap.delete(taskId)
-                return newMap
+          // 更新任务进度
+          const progress = Math.min(10 + pollCount * 3, 90) // 从10%开始，每次增加3%，最高90%
+          setSingleColoringTasks(prev => {
+            const newMap = new Map(prev)
+            const currentTask = newMap.get(taskId)
+            if (currentTask) {
+              newMap.set(taskId, {
+                ...currentTask,
+                progress: status === 'completed' ? 100 : progress,
+                status: status,
+                message: status === 'completed' ? '上色完成！' : `正在上色中... (${pollCount + 1}/${maxPolls})`
               })
+            }
+            return newMap
+          })
 
-              setSuccess('图片上色完成！')
-              console.log(`单个图片上色完成: ${taskId}`)
+          if (status === 'completed' && (data.data.coloringUrl || data.data.imageUrl)) {
+            console.log(`🎨 上色任务完成: ${taskId}`)
+
+            // 获取上色后的图片URL
+            const coloringUrl = data.data.coloringUrl || data.data.imageUrl
+
+            // 更新当前编辑表单的数据
+            if (editingId && editingId.toString() === imageId.toString()) {
+              setFormData(prev => ({
+                ...prev,
+                coloringUrl: coloringUrl
+              }))
+              console.log(`✅ 已更新编辑表单的coloringUrl: ${coloringUrl}`)
             }
 
+            // 重新加载图片列表以获取最新数据，确保覆盖之前的上色结果
+            loadImages()
+
+            // 清除任务记录
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskId)
+              return newMap
+            })
+
+            setSuccess('图片上色完成！上色结果已更新。')
+            console.log(`✅ 单个图片上色完成: ${taskId}`)
             return
 
           } else if (status === 'failed') {
             // 任务失败
-            console.error(`单个图片上色失败: ${taskId}`)
+            console.error(`❌ 单个图片上色失败: ${taskId}`)
 
             // 清除任务记录
             setSingleColoringTasks(prev => {
@@ -629,8 +681,10 @@ const ImagesManager = () => {
 
           } else {
             // 任务仍在进行中，继续轮询
-            console.log(`单个图片上色进行中: ${taskId}, 状态: ${status}`)
+            console.log(`🔄 任务仍在进行中: ${taskId}, 状态: ${status}`)
           }
+        } else {
+          console.error(`❌ 上色任务状态查询失败: ${taskId}`, data)
         }
 
         // 继续轮询
@@ -638,7 +692,7 @@ const ImagesManager = () => {
         if (pollCount < maxPolls) {
           setTimeout(poll, pollInterval)
         } else {
-          console.warn(`单个图片上色任务轮询超时: ${taskId}`)
+          console.warn(`⏰ 单个图片上色任务轮询超时: ${taskId}`)
 
           // 清除任务记录
           setSingleColoringTasks(prev => {
@@ -651,7 +705,7 @@ const ImagesManager = () => {
         }
 
       } catch (error) {
-        console.error(`查询单个上色任务状态失败: ${taskId}`, error)
+        console.error(`❌ 查询单个上色任务状态失败: ${taskId}`, error)
 
         // 继续重试
         pollCount++
@@ -664,6 +718,8 @@ const ImagesManager = () => {
             newMap.delete(taskId)
             return newMap
           })
+
+          setError('上色任务查询失败，请重试')
         }
       }
     }
@@ -675,9 +731,49 @@ const ImagesManager = () => {
   // 检查是否有正在进行的单个上色任务
   const isGeneratingSingleColoring = (formData) => {
     const imageId = formData.id || editingId
-    return Array.from(singleColoringTasks.values()).some(task =>
-      task.imageId?.toString() === imageId?.toString()
-    )
+    return Array.from(singleColoringTasks.values()).some(task => {
+      // 只检查processing状态的任务，不包括completed状态
+      if (task.status === 'completed') {
+        return false
+      }
+
+      // 多种匹配方式
+      const matches = (
+        task.imageId?.toString() === imageId?.toString() ||
+        task.formDataId === formData.id ||
+        (task.defaultUrl && (task.defaultUrl === formData.defaultUrl || task.defaultUrl === formData.imagePath)) ||
+        (task.imageUrl && (task.imageUrl === formData.defaultUrl || task.imageUrl === formData.imagePath))
+      )
+
+      if (matches) {
+        console.log(`🔍 找到匹配的上色任务:`, task)
+      }
+
+      return matches
+    })
+  }
+
+  // 获取上色任务状态
+  const getColoringTaskStatus = (formData) => {
+    const imageId = formData.id || editingId
+    for (const [taskId, task] of singleColoringTasks) {
+      const matches = (
+        task.imageId?.toString() === imageId?.toString() ||
+        task.formDataId === formData.id ||
+        (task.defaultUrl && (task.defaultUrl === formData.defaultUrl || task.defaultUrl === formData.imagePath)) ||
+        (task.imageUrl && (task.imageUrl === formData.defaultUrl || task.imageUrl === formData.imagePath))
+      )
+
+      if (matches) {
+        return {
+          taskId: taskId,
+          progress: task.progress || 0,
+          status: task.status || 'processing',
+          message: task.message || '正在上色中...'
+        }
+      }
+    }
+    return null
   }
 
   // 删除图片
@@ -746,7 +842,8 @@ const ImagesManager = () => {
         name: formatMultiLangField(img.name),
         title: formatMultiLangField(img.title),
         description: formatMultiLangField(img.description),
-        prompt: formatMultiLangField(img.prompt)
+        prompt: formatMultiLangField(img.prompt),
+        additionalInfo: formatMultiLangField(img.additionalInfo) // 添加文案内容字段
       }))
 
       const response = await fetch('/api/internationalization', {
@@ -765,6 +862,43 @@ const ImagesManager = () => {
 
       if (data.success) {
         setInternationalizationResults(data.results)
+
+        // 如果当前正在编辑某个图片，且该图片在翻译结果中，更新formData
+        if (editingId && data.results[editingId]) {
+          const imageTranslations = data.results[editingId]
+          setFormData(prev => {
+            const updatedData = { ...prev }
+
+            // 为每种翻译语言更新各个字段
+            Object.entries(imageTranslations).forEach(([langCode, translation]) => {
+              if (translation && typeof translation === 'object') {
+                Object.entries(translation).forEach(([fieldName, value]) => {
+                  if (value && updatedData[fieldName]) {
+                    updatedData[fieldName] = {
+                      ...updatedData[fieldName],
+                      [langCode]: value
+                    }
+                  }
+                })
+              }
+            })
+
+            return updatedData
+          })
+
+          // 确保新翻译的语言被添加到editingLanguages中
+          const newLanguages = Object.keys(imageTranslations)
+          setEditingLanguages(prev => {
+            const combined = Array.from(new Set([...prev, ...newLanguages]))
+            return combined
+          })
+        }
+
+        // 自动设置第一个语言为活跃语言
+        if (selectedLanguages.length > 0) {
+          setActiveInternationalizationLanguage(selectedLanguages[0])
+        }
+
         setSuccess(`成功生成 ${selectedLanguages.length} 种语言的翻译`)
       } else {
         setError(data.message || '国际化生成失败')
@@ -823,13 +957,13 @@ const ImagesManager = () => {
           userId: currentImage.userId,
           category_id: currentImage.categoryId,
           size: currentImage.size,
-          additionalInfo: currentImage.additionalInfo,
           tagIds: currentImage.tags ? currentImage.tags.map(tag => tag.tag_id) : [],
           // 更新多语言字段
           name: mergeMultiLangField(currentImage.name, translations, 'name'),
           title: mergeMultiLangField(currentImage.title, translations, 'title'),
           description: mergeMultiLangField(currentImage.description, translations, 'description'),
-          prompt: mergeMultiLangField(currentImage.prompt, translations, 'prompt')
+          prompt: mergeMultiLangField(currentImage.prompt, translations, 'prompt'),
+          additionalInfo: mergeMultiLangField(currentImage.additionalInfo, translations, 'additionalInfo') // 添加文案内容字段的更新
         }
 
         updates.push({
@@ -860,6 +994,7 @@ const ImagesManager = () => {
         setSuccess(`成功保存 ${successful} 个图片的翻译`)
         setInternationalizationResults({})
         setSelectedItems(new Set())
+        setActiveInternationalizationLanguage('') // 清除活跃语言
         loadImages()
       } else {
         // 显示详细的错误信息
@@ -886,6 +1021,634 @@ const ImagesManager = () => {
         }
       }
     }))
+  }
+
+  // 单独生成翻译状态
+  const [singleTranslationTasks, setSingleTranslationTasks] = useState(new Map()) // 存储单个翻译任务
+
+  // 单独生成翻译
+  const handleGenerateTranslation = async (imageId, languageCode, originalImage) => {
+    // 添加强验证
+    if (!imageId || imageId === undefined || imageId === null) {
+      console.error('❌ imageId无效:', imageId)
+      setError('图片ID无效，无法生成翻译')
+      return
+    }
+
+    if (!languageCode) {
+      console.error('❌ languageCode无效:', languageCode)
+      setError('语言代码无效，无法生成翻译')
+      return
+    }
+
+    if (!originalImage) {
+      console.error('❌ originalImage无效:', originalImage)
+      setError('原始图片数据无效，无法生成翻译')
+      return
+    }
+
+    const taskKey = `${imageId}-${languageCode}`
+
+    // 设置生成状态
+    setSingleTranslationTasks(prev => {
+      const newMap = new Map(prev)
+      newMap.set(taskKey, { status: 'loading' })
+      return newMap
+    })
+
+    try {
+      // 获取中文内容作为源内容
+      const sourceContent = {
+        name: formatMultiLangField(originalImage.name),
+        title: formatMultiLangField(originalImage.title),
+        description: formatMultiLangField(originalImage.description),
+        prompt: formatMultiLangField(originalImage.prompt),
+        additionalInfo: formatMultiLangField(originalImage.additionalInfo)
+      }
+
+      const requestData = {
+        type: 'content',
+        items: [{
+          id: imageId,
+          name: sourceContent.name,
+          title: sourceContent.title,
+          description: sourceContent.description,
+          prompt: sourceContent.prompt,
+          additionalInfo: sourceContent.additionalInfo
+        }],
+        targetLanguages: [languageCode]
+      }
+
+      const response = await fetch('/api/internationalization', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+      })
+
+      const data = await response.json()
+
+      if (data.success && data.results[imageId] && data.results[imageId][languageCode]) {
+        // 更新翻译结果
+        const newTranslation = data.results[imageId][languageCode]
+        setInternationalizationResults(prev => ({
+          ...prev,
+          [imageId]: {
+            ...prev[imageId],
+            [languageCode]: newTranslation
+          }
+        }))
+
+        // 如果当前正在编辑这个图片，也要更新formData
+        if (editingId && editingId.toString() === imageId.toString()) {
+          setFormData(prev => ({
+            ...prev,
+            name: {
+              ...prev.name,
+              [languageCode]: newTranslation.name || ''
+            },
+            title: {
+              ...prev.title,
+              [languageCode]: newTranslation.title || ''
+            },
+            description: {
+              ...prev.description,
+              [languageCode]: newTranslation.description || ''
+            },
+            prompt: {
+              ...prev.prompt,
+              [languageCode]: newTranslation.prompt || ''
+            },
+            additionalInfo: {
+              ...prev.additionalInfo,
+              [languageCode]: newTranslation.additionalInfo || ''
+            }
+          }))
+
+          // 确保新语言被添加到editingLanguages中
+          if (!editingLanguages.includes(languageCode)) {
+            setEditingLanguages(prev => [...prev, languageCode])
+          }
+        }
+
+        // 设置活跃语言为当前生成的语言
+        setActiveInternationalizationLanguage(languageCode)
+
+        // 清除生成状态
+        setSingleTranslationTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(taskKey)
+          return newMap
+        })
+
+        setSuccess(`成功生成${supportedLanguages.find(lang => lang.code === languageCode)?.name || languageCode}翻译`)
+        setTimeout(() => setSuccess(''), 3000)
+      } else {
+        throw new Error(data.message || '翻译生成失败')
+      }
+    } catch (error) {
+      console.error('单独生成翻译失败:', error)
+      setError('翻译生成失败: ' + error.message)
+      setTimeout(() => setError(''), 5000)
+
+      // 清除生成状态
+      setSingleTranslationTasks(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(taskKey)
+        return newMap
+      })
+    }
+  }
+
+  // 检查是否正在生成特定翻译
+  const isGeneratingTranslation = (imageId, languageCode) => {
+    const taskKey = `${imageId}-${languageCode}`
+    return singleTranslationTasks.has(taskKey)
+  }
+
+  // 为ImageForm创建的检查函数
+  const isGeneratingTranslationForForm = (formData, languageCode) => {
+    if (!formData.id || !languageCode || languageCode === 'zh') return false
+    return isGeneratingTranslation(formData.id, languageCode)
+  }
+
+  // 文生图和图生图任务状态
+  const [textToImageTasks, setTextToImageTasks] = useState(new Map())
+  const [imageToImageTasks, setImageToImageTasks] = useState(new Map())
+
+  // 处理文生图
+  const handleTextToImage = async (formData) => {
+    try {
+      console.log('开始文生图生成:', formData)
+
+      const taskKey = formData.id || 'new'
+
+      // 添加任务状态
+      setTextToImageTasks(prev => new Map(prev.set(taskKey, {
+        taskId: null,
+        progress: 0,
+        status: 'starting',
+        message: '正在创建任务...'
+      })))
+
+      // 使用formData中的内容作为提示词
+      const prompt = formData.title?.zh || formData.name?.zh || '生成涂色书图片'
+
+      const requestData = {
+        prompt: prompt,
+        ratio: formData.ratio || '1:1'
+      }
+
+      const response = await fetch('/api/images/text-to-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData)
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        // 更新任务状态为失败
+        setTextToImageTasks(prev => new Map(prev.set(taskKey, {
+          taskId: null,
+          progress: 0,
+          status: 'failed',
+          message: result.error || '文生图生成失败'
+        })))
+        throw new Error(result.error || '文生图生成失败')
+      }
+
+      console.log('文生图任务创建成功:', result)
+
+      // 更新任务状态
+      setTextToImageTasks(prev => new Map(prev.set(taskKey, {
+        taskId: result.data.taskId,
+        progress: 10,
+        status: 'processing',
+        message: '任务已创建，正在生成中...'
+      })))
+
+      // 开始轮询任务状态
+      if (result.data && result.data.taskId) {
+        pollTextToImageTask(result.data.taskId, formData, taskKey)
+      } else {
+        throw new Error('API返回的数据中缺少taskId')
+      }
+
+    } catch (error) {
+      console.error('文生图生成错误:', error)
+      const taskKey = formData.id || 'new'
+      // 更新任务状态为失败
+      setTextToImageTasks(prev => new Map(prev.set(taskKey, {
+        taskId: null,
+        progress: 0,
+        status: 'failed',
+        message: error.message
+      })))
+      setError(`文生图生成失败: ${error.message}`)
+
+      // 3秒后清除失败状态，让用户可以重试
+      setTimeout(() => {
+        setTextToImageTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(taskKey)
+          return newMap
+        })
+      }, 3000)
+    }
+  }
+
+  // 处理图生图
+  const handleImageToImage = async (formData, uploadedFile) => {
+    try {
+      console.log('开始图生图生成:', formData, uploadedFile)
+
+      const taskKey = formData.id || 'new'
+
+      // 添加任务状态
+      setImageToImageTasks(prev => new Map(prev.set(taskKey, {
+        taskId: null,
+        progress: 0,
+        status: 'starting',
+        message: '正在上传图片...'
+      })))
+
+      // 创建FormData对象上传图片
+      const formDataObj = new FormData()
+
+      // 获取prompt文本
+      let promptText = ''
+      if (formData.title && typeof formData.title === 'object') {
+        promptText = formData.title.zh || formData.title.en || ''
+      } else if (formData.title && typeof formData.title === 'string') {
+        promptText = formData.title
+      } else if (formData.name && typeof formData.name === 'object') {
+        promptText = formData.name.zh || formData.name.en || ''
+      } else if (formData.name && typeof formData.name === 'string') {
+        promptText = formData.name
+      }
+
+      if (!promptText || promptText.trim() === '') {
+        promptText = '生成涂色书图片'
+      }
+
+      formDataObj.append('image', uploadedFile)
+      formDataObj.append('prompt', promptText)
+      formDataObj.append('ratio', formData.ratio || '1:1')
+
+      const response = await fetch('/api/images/image-to-image', {
+        method: 'POST',
+        body: formDataObj
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        console.error('图生图API错误响应:', result)
+        // 更新任务状态为失败
+        setImageToImageTasks(prev => new Map(prev.set(taskKey, {
+          taskId: null,
+          progress: 0,
+          status: 'failed',
+          message: result.message || result.error || '图生图生成失败'
+        })))
+        throw new Error(result.message || result.error || '图生图生成失败')
+      }
+
+      console.log('图生图任务创建成功:', result)
+
+      // 如果有用户上传的彩色图片URL，更新formData
+      if (result.data.uploadedColorImageUrl) {
+        setFormData(prev => ({
+          ...prev,
+          colorUrl: result.data.uploadedColorImageUrl
+        }))
+        console.log('已保存用户上传的彩色图片URL:', result.data.uploadedColorImageUrl)
+      }
+
+      // 更新任务状态
+      setImageToImageTasks(prev => new Map(prev.set(taskKey, {
+        taskId: result.data.taskId,
+        progress: 20,
+        status: 'processing',
+        message: '图片已上传，正在生成中...'
+      })))
+
+      // 开始轮询任务状态
+      if (result.data && result.data.taskId) {
+        pollImageToImageTask(result.data.taskId, formData, taskKey)
+      } else {
+        throw new Error('API返回的数据中缺少taskId')
+      }
+
+    } catch (error) {
+      console.error('图生图生成错误:', error)
+      const taskKey = formData.id || 'new'
+      // 更新任务状态为失败
+      setImageToImageTasks(prev => new Map(prev.set(taskKey, {
+        taskId: null,
+        progress: 0,
+        status: 'failed',
+        message: error.message
+      })))
+      setError(`图生图生成失败: ${error.message}`)
+
+      // 3秒后清除失败状态，让用户可以重试
+      setTimeout(() => {
+        setImageToImageTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(taskKey)
+          return newMap
+        })
+      }, 3000)
+    }
+  }
+
+  // 轮询文生图任务状态
+  const pollTextToImageTask = async (taskId, formData, taskKey) => {
+    const maxAttempts = 60 // 最多轮询60次（约5分钟）
+    let attempts = 0
+
+    const poll = async () => {
+      try {
+        attempts++
+        console.log(`轮询文生图任务状态 ${attempts}/${maxAttempts}:`, taskId)
+
+        const response = await fetch(`/api/images/task-status/${taskId}?taskType=text-to-image`)
+        const result = await response.json()
+
+        if (!response.ok) {
+          throw new Error(result.error || '获取任务状态失败')
+        }
+
+        // 更新进度
+        const progress = Math.min(10 + attempts * 1.5, 90)
+        setTextToImageTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: progress,
+          status: 'processing',
+          message: `正在生成中... (${attempts}/${maxAttempts})`
+        })))
+
+        if (result.data && result.data.status === 'completed' && result.data.imageUrl) {
+          // 任务完成，更新状态
+          setTextToImageTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 100,
+            status: 'completed',
+            message: '生成完成！'
+          })))
+
+          // 更新formData中的图片URL
+          setFormData(prev => ({
+            ...prev,
+            defaultUrl: result.data.imageUrl
+          }))
+
+          console.log('文生图生成完成:', result.data.imageUrl)
+          setSuccess('文生图生成成功！')
+
+          // 3秒后清除任务状态
+          setTimeout(() => {
+            setTextToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        } else if (result.data && result.data.status === 'failed') {
+          // 更新任务状态为失败
+          setTextToImageTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: result.data.error || '文生图生成失败'
+          })))
+
+          setError(`文生图生成失败: ${result.data.error || '未知错误'}`)
+
+          // 3秒后清除失败状态
+          setTimeout(() => {
+            setTextToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        }
+
+        // 继续轮询
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 3000)
+        } else {
+          // 超时处理
+          setTextToImageTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: '文生图生成超时'
+          })))
+
+          setError('文生图生成超时，请重试')
+
+          // 3秒后清除超时状态
+          setTimeout(() => {
+            setTextToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+        }
+
+      } catch (error) {
+        console.error('轮询文生图任务失败:', error)
+
+        // 更新任务状态为失败
+        setTextToImageTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: 0,
+          status: 'failed',
+          message: error.message || '网络错误'
+        })))
+
+        setError(`文生图生成失败: ${error.message}`)
+
+        // 3秒后清除失败状态
+        setTimeout(() => {
+          setTextToImageTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(taskKey)
+            return newMap
+          })
+        }, 3000)
+      }
+    }
+
+    // 开始轮询
+    poll()
+  }
+
+  // 轮询图生图任务状态
+  const pollImageToImageTask = async (taskId, formData, taskKey) => {
+    const maxAttempts = 150 // 最多轮询150次（约9分钟）
+    let attempts = 0
+
+    const poll = async () => {
+      try {
+        attempts++
+        console.log(`轮询图生图任务状态 ${attempts}/${maxAttempts}:`, taskId)
+
+        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-to-image`)
+        const result = await response.json()
+
+        if (!response.ok) {
+          throw new Error(result.error || '获取任务状态失败')
+        }
+
+        // 更新进度
+        const progress = Math.min(20 + attempts * 1.3, 90)
+        setImageToImageTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: progress,
+          status: 'processing',
+          message: `正在生成中... (${attempts}/${maxAttempts})`
+        })))
+
+        if (result.data && result.data.status === 'completed' && result.data.imageUrl) {
+          // 任务完成，更新状态
+          setImageToImageTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 100,
+            status: 'completed',
+            message: '生成完成！'
+          })))
+
+          // 更新formData中的图片URL
+          setFormData(prev => ({
+            ...prev,
+            defaultUrl: result.data.imageUrl
+          }))
+
+          console.log('图生图生成完成:', result.data.imageUrl)
+          setSuccess('图生图生成成功！')
+
+          // 3秒后清除任务状态
+          setTimeout(() => {
+            setImageToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        } else if (result.data && result.data.status === 'failed') {
+          // 更新任务状态为失败
+          setImageToImageTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: result.data.error || '图生图生成失败'
+          })))
+
+          setError(`图生图生成失败: ${result.data.error || '未知错误'}`)
+
+          // 3秒后清除失败状态
+          setTimeout(() => {
+            setImageToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        }
+
+        // 继续轮询
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 3000)
+        } else {
+          // 超时处理
+          setImageToImageTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: '图生图生成超时'
+          })))
+
+          setError('图生图生成超时，请重试')
+
+          // 3秒后清除超时状态
+          setTimeout(() => {
+            setImageToImageTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+        }
+
+      } catch (error) {
+        console.error('轮询图生图任务失败:', error)
+
+        // 更新任务状态为失败
+        setImageToImageTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: 0,
+          status: 'failed',
+          message: error.message || '网络错误'
+        })))
+
+        setError(`图生图生成失败: ${error.message}`)
+
+        // 3秒后清除失败状态
+        setTimeout(() => {
+          setImageToImageTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(taskKey)
+            return newMap
+          })
+        }, 3000)
+      }
+    }
+
+    // 开始轮询
+    poll()
+  }
+
+  // 检查是否有正在进行的文生图任务
+  const isGeneratingTextToImage = (formData) => {
+    const taskKey = formData.id || 'new'
+    const task = textToImageTasks.get(taskKey)
+    return task && (task.status === 'starting' || task.status === 'processing')
+  }
+
+  // 检查是否有正在进行的图生图任务
+  const isGeneratingImageToImage = (formData) => {
+    const taskKey = formData.id || 'new'
+    const task = imageToImageTasks.get(taskKey)
+    return task && (task.status === 'starting' || task.status === 'processing')
+  }
+
+  // 获取文生图任务状态
+  const getTextToImageTaskStatus = (formData) => {
+    const taskKey = formData.id || 'new'
+    return textToImageTasks.get(taskKey)
+  }
+
+  // 获取图生图任务状态
+  const getImageToImageTaskStatus = (formData) => {
+    const taskKey = formData.id || 'new'
+    return imageToImageTasks.get(taskKey)
   }
 
   return (
@@ -1020,6 +1783,15 @@ const ImagesManager = () => {
             formatMultiLangField={formatMultiLangField}
             onGenerateColoring={handleSingleImageColoring} // 添加上色回调
             isGeneratingColoring={isGeneratingSingleColoring(formData)} // 添加上色状态
+            coloringTaskStatus={getColoringTaskStatus(formData)} // 添加上色任务状态
+            onGenerateTranslation={handleGenerateTranslation} // 添加生成翻译回调
+            isGeneratingTranslation={isGeneratingTranslationForForm} // 添加生成翻译状态检查函数
+            onTextToImage={handleTextToImage} // 添加文生图回调
+            isGeneratingTextToImage={isGeneratingTextToImage(formData)} // 添加文生图状态
+            textToImageTaskStatus={getTextToImageTaskStatus(formData)} // 添加文生图任务状态
+            onImageToImage={handleImageToImage} // 添加图生图回调
+            isGeneratingImageToImage={isGeneratingImageToImage(formData)} // 添加图生图状态
+            imageToImageTaskStatus={getImageToImageTaskStatus(formData)} // 添加图生图任务状态
           />
         </DialogContent>
       </Dialog>
@@ -1044,6 +1816,7 @@ const ImagesManager = () => {
                   onClick={() => {
                     setInternationalizationResults({})
                     setSelectedItems(new Set())
+                    setActiveInternationalizationLanguage('') // 清除活跃语言
                   }}
                 >
                   清除结果
@@ -1052,72 +1825,72 @@ const ImagesManager = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {Object.entries(internationalizationResults).map(([imageId, translations]) => {
-                const image = images.find(img => img.id === imageId)
-                if (!image) return null
+            {/* 语言选项卡 */}
+            <div className="flex flex-wrap gap-2 border-b mb-4">
+              {(() => {
+                // 获取所有可用的语言
+                const allLanguages = new Set()
+                Object.values(internationalizationResults).forEach(translations => {
+                  Object.keys(translations).forEach(langCode => {
+                    allLanguages.add(langCode)
+                  })
+                })
 
-                return (
-                  <div key={imageId} className="border rounded-lg p-4">
-                    <h4 className="font-medium mb-4">
-                      {formatMultiLangField(image.title)} (ID: {imageId})
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {Object.entries(translations).map(([langCode, content]) => {
-                        const language = supportedLanguages.find(l => l.code === langCode)
-                        return (
-                          <div key={langCode} className="bg-gray-50 p-4 rounded-lg">
-                            <div className="font-medium text-sm text-gray-600 mb-3">
-                              {language?.name || langCode}
-                            </div>
-                            <div className="space-y-3">
-                              <div>
-                                <Label className="text-xs text-gray-500">名称</Label>
-                                <Input
-                                  value={content.name || ''}
-                                  onChange={(e) => handleTranslationEdit(imageId, langCode, 'name', e.target.value)}
-                                  className="mt-1 text-sm"
-                                  placeholder="翻译名称"
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs text-gray-500">标题</Label>
-                                <Input
-                                  value={content.title || ''}
-                                  onChange={(e) => handleTranslationEdit(imageId, langCode, 'title', e.target.value)}
-                                  className="mt-1 text-sm"
-                                  placeholder="翻译标题"
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs text-gray-500">描述</Label>
-                                <Textarea
-                                  value={content.description || ''}
-                                  onChange={(e) => handleTranslationEdit(imageId, langCode, 'description', e.target.value)}
-                                  className="mt-1 text-sm"
-                                  placeholder="翻译描述"
-                                  rows={2}
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs text-gray-500">提示词</Label>
-                                <Textarea
-                                  value={content.prompt || ''}
-                                  onChange={(e) => handleTranslationEdit(imageId, langCode, 'prompt', e.target.value)}
-                                  className="mt-1 text-sm"
-                                  placeholder="翻译提示词"
-                                  rows={2}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
+                return Array.from(allLanguages).map(langCode => {
+                  const language = supportedLanguages.find(lang => lang.code === langCode)
+                  const isActive = activeInternationalizationLanguage === langCode
+
+                  return (
+                    <button
+                      key={langCode}
+                      type="button"
+                      onClick={() => setActiveInternationalizationLanguage(langCode)}
+                      className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${isActive
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Languages className="w-4 h-4" />
+                        {language ? language.name : langCode.toUpperCase()}
+                      </div>
+                    </button>
+                  )
+                })
+              })()}
             </div>
+
+            {/* 当前语言的翻译内容 */}
+            {activeInternationalizationLanguage && (
+              <div className="space-y-4">
+                {Object.entries(internationalizationResults).map(([imageId, translations]) => {
+                  const image = images.find(img => img.id.toString() === imageId.toString())
+                  const translation = translations[activeInternationalizationLanguage]
+
+                  if (!image || !translation) {
+                    console.warn('⚠️ 未找到匹配的图片或翻译:')
+                    console.warn('- imageId:', imageId, '(类型:', typeof imageId, ')')
+                    console.warn('- 可用的图片ID列表:', images.map(img => `${img.id}(${typeof img.id})`))
+                    console.warn('- translation:', translation)
+                    return null
+                  }
+
+                  return (
+                    <InternationalizationEditor
+                      key={imageId}
+                      imageId={imageId}
+                      languageCode={activeInternationalizationLanguage}
+                      translation={translation}
+                      originalImage={image}
+                      supportedLanguages={supportedLanguages}
+                      onTranslationEdit={handleTranslationEdit}
+                      onGenerateTranslation={handleGenerateTranslation}
+                      isGeneratingTranslation={isGeneratingTranslation(imageId, activeInternationalizationLanguage)}
+                    />
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1193,6 +1966,7 @@ const ImagesManager = () => {
                       setSelectedItems(new Set())
                       setSelectedLanguages([])
                       setInternationalizationResults({})
+                      setActiveInternationalizationLanguage('') // 清除活跃语言
                     }}
                     className="flex items-center gap-2"
                   >

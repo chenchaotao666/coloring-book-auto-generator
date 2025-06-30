@@ -245,113 +245,222 @@ router.post('/save', async (req, res) => {
 
 // 翻译处理函数
 async function translateItems(type, items, targetLanguages) {
+  console.log('🔍 translateItems 函数接收到的参数:')
+  console.log('- type:', type)
+  console.log('- targetLanguages:', targetLanguages)
+  console.log('- items数量:', items.length)
+  console.log('- items详细信息:', JSON.stringify(items, null, 2))
+
+  // 验证输入参数
+  const invalidItems = items.filter(item => !item || item.id === undefined || item.id === null)
+  if (invalidItems.length > 0) {
+    console.error('❌ 发现无效的items:', invalidItems)
+    throw new Error('请求数据中包含无效的项目，请检查数据完整性')
+  }
+
   const results = {}
+  const maxRetries = 2
+  let lastError = null
 
-  // 构建翻译请求
-  const prompt = buildTranslationPrompt(type, items, targetLanguages)
-
-  try {
-    // 调用DeepSeek API
-    const response = await axios.post(DEEPSEEK_API_URL, {
-      model: 'deepseek-chat',
-      messages: [
-        {
-          role: 'system',
-          content: type === 'content'
-            ? '你是一个专业的多语言翻译专家，专门负责将中文的图片内容(包括名称、标题、描述、AI提示词)翻译成多种语言。请确保翻译准确、专业，并保持原意。对于AI提示词要保持其技术性和描述性。必须返回严格的JSON格式，不要包含任何其他文字说明。'
-            : '你是一个专业的多语言翻译专家，专门负责将中文的分类名称和标签翻译成多种语言。请确保翻译准确、专业，并保持原意。必须返回严格的JSON格式，不要包含任何其他文字说明。'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 4000
-    }, {
-      headers: {
-        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
-    })
-
-    const responseText = response.data.choices[0].message.content.trim()
-    console.log('AI翻译响应原文:', responseText)
-
-    // 解析AI响应
-    let translationData
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // 尝试提取JSON部分
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        console.log('提取的JSON部分:', jsonMatch[0])
-        translationData = JSON.parse(jsonMatch[0])
-      } else {
-        console.log('直接解析整个响应作为JSON')
-        translationData = JSON.parse(responseText)
-      }
-      console.log('解析后的翻译数据:', JSON.stringify(translationData, null, 2))
-    } catch (parseError) {
-      console.error('解析AI响应失败:', parseError)
-      console.error('原始响应文本:', responseText)
-      throw new Error('AI返回的翻译结果格式错误: ' + parseError.message)
-    }
+      console.log(`AI翻译尝试 ${attempt}/${maxRetries}`)
 
-    // 处理翻译结果
-    items.forEach(item => {
-      const itemTranslations = translationData[item.id.toString()]
-      if (itemTranslations) {
-        results[item.id] = itemTranslations
-      } else {
-        // 如果AI没有返回该项的翻译，创建默认值
-        results[item.id] = {}
-        targetLanguages.forEach(lang => {
-          if (type === 'content') {
-            results[item.id][lang] = {
-              name: item.name || '未翻译',
-              title: item.title || '未翻译',
-              description: item.description || '',
-              prompt: item.prompt || ''
-            }
-          } else {
-            results[item.id][lang] = {
-              name: item.name || '未翻译',
-              description: item.description || ''
-            }
+      // 如果是重试，添加短暂延迟
+      if (attempt > 1) {
+        console.log(`等待 ${attempt * 2} 秒后重试...`)
+        await new Promise(resolve => setTimeout(resolve, attempt * 2000))
+      }
+
+      // 调用DeepSeek API
+      const response = await axios.post(DEEPSEEK_API_URL, {
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: type === 'content'
+              ? `你是一个专业的多语言翻译专家，专门负责儿童涂色书应用的内容翻译。
+
+你的任务：
+1. 将中文的涂色书内容(名称、标题、描述、AI提示词)翻译成目标语言
+2. 翻译要自然流畅，符合目标语言的表达习惯
+3. 对于儿童涂色书主题，使用儿童友好的词汇和表达
+4. AI提示词要保持技术准确性，但措辞要符合目标语言习惯
+5. 严格按照JSON格式返回，不要添加任何解释文字
+
+翻译原则：
+- 准确传达原意
+- 语言自然流畅
+- 适合儿童理解
+- 保持专业性`
+              : `你是一个专业的多语言翻译专家，专门负责将中文的分类名称和标签翻译成多种语言。
+
+你的任务：
+1. 准确翻译分类/标签名称和描述
+2. 翻译要自然流畅，符合目标语言习惯
+3. 保持原意和专业性
+4. 严格按照JSON格式返回，不要添加任何解释文字
+
+翻译原则：
+- 准确传达原意
+- 语言自然流畅
+- 保持专业性`
+          },
+          {
+            role: 'user',
+            content: buildTranslationPrompt(type, items, targetLanguages)
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 4000
+      }, {
+        headers: {
+          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 120000, // 增加到2分钟
+        signal: AbortSignal.timeout(120000) // 添加AbortSignal作为备用
+      })
+
+      const responseText = response.data.choices[0].message.content.trim()
+      console.log('AI翻译响应原文:', responseText)
+
+      // 解析AI响应
+      let translationData
+      let cleanedText = responseText.trim()
+
+      try {
+        // 清理响应文本
+        cleanedText = responseText.trim()
+
+        // 移除可能的markdown代码块标记
+        cleanedText = cleanedText.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')
+
+        // 尝试提取JSON部分（最外层的大括号）
+        const jsonMatch = cleanedText.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          console.log('提取的JSON部分:', jsonMatch[0])
+          translationData = JSON.parse(jsonMatch[0])
+        } else {
+          console.log('直接解析整个响应作为JSON')
+          translationData = JSON.parse(cleanedText)
+        }
+
+        console.log('解析后的翻译数据:', JSON.stringify(translationData, null, 2))
+
+        // 验证翻译数据的完整性
+        const missingItems = []
+        items.forEach(item => {
+          // 添加防护性检查，确保item.id不是undefined
+          if (!item || item.id === undefined || item.id === null) {
+            console.error('❌ 发现无效的item:', item)
+            missingItems.push('undefined_item')
+            return
+          }
+
+          if (!translationData[item.id.toString()]) {
+            missingItems.push(item.id)
           }
         })
+
+        if (missingItems.length > 0) {
+          console.warn('以下项目缺少翻译:', missingItems)
+        }
+
+      } catch (parseError) {
+        console.error('解析AI响应失败:', parseError)
+        console.error('原始响应文本:', responseText)
+        console.error('清理后的文本:', cleanedText)
+        throw new Error(`AI返回的翻译结果格式错误: ${parseError.message}。请重试或检查原始内容是否包含特殊字符。`)
       }
-    })
 
-    return results
+      // 处理翻译结果
+      items.forEach(item => {
+        // 添加防护性检查，确保item.id不是undefined
+        if (!item || item.id === undefined || item.id === null) {
+          console.error('❌ 处理翻译结果时发现无效的item:', item)
+          return
+        }
 
-  } catch (error) {
-    console.error('调用AI翻译服务失败:', error)
-
-    // 如果AI翻译失败，返回默认结果
-    console.log('AI翻译失败，返回默认翻译结果')
-    items.forEach(item => {
-      results[item.id] = {}
-      targetLanguages.forEach(lang => {
-        if (type === 'content') {
-          results[item.id][lang] = {
-            name: `${item.name} (${SUPPORTED_LANGUAGES[lang]})`,
-            title: item.title ? `${item.title} (${SUPPORTED_LANGUAGES[lang]})` : '',
-            description: item.description ? `${item.description} (${SUPPORTED_LANGUAGES[lang]})` : '',
-            prompt: item.prompt ? `${item.prompt} (${SUPPORTED_LANGUAGES[lang]})` : ''
-          }
+        const itemTranslations = translationData[item.id.toString()]
+        if (itemTranslations) {
+          results[item.id] = itemTranslations
         } else {
-          results[item.id][lang] = {
-            name: `${item.name} (${SUPPORTED_LANGUAGES[lang]})`,
-            description: item.description ? `${item.description} (${SUPPORTED_LANGUAGES[lang]})` : ''
-          }
+          // 如果AI没有返回该项的翻译，创建默认值
+          results[item.id] = {}
+          targetLanguages.forEach(lang => {
+            if (type === 'content') {
+              results[item.id][lang] = {
+                name: item.name || '未翻译',
+                title: item.title || '未翻译',
+                description: item.description || '',
+                prompt: item.prompt || '',
+                additionalInfo: item.additionalInfo || ''
+              }
+            } else {
+              results[item.id][lang] = {
+                name: item.name || '未翻译',
+                description: item.description || ''
+              }
+            }
+          })
         }
       })
-    })
 
-    return results
+      // 翻译成功，返回结果
+      console.log(`AI翻译成功完成 (尝试 ${attempt}/${maxRetries})`)
+      return results
+
+    } catch (error) {
+      console.error(`AI翻译尝试 ${attempt}/${maxRetries} 失败:`, error)
+      console.error('错误详情:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status
+      })
+
+      lastError = error
+
+      // 判断是否应该重试
+      const shouldRetry = (
+        attempt < maxRetries &&
+        (error.code === 'ECONNABORTED' ||
+          error.message.includes('aborted') ||
+          error.code === 'ECONNREFUSED' ||
+          error.response?.status >= 500)
+      )
+
+      if (shouldRetry) {
+        console.log(`将重试 AI翻译 (${attempt + 1}/${maxRetries})`)
+        continue // 继续循环，进行重试
+      } else {
+        // 不应该重试或已达到最大重试次数，抛出错误
+        break
+      }
+    }
   }
+
+  // 所有重试都失败了，抛出最后一个错误
+  console.error('所有AI翻译尝试都失败了')
+
+  // 根据不同的错误类型提供更具体的错误信息
+  let errorMessage = '未知错误'
+  if (lastError.code === 'ECONNABORTED' || lastError.message.includes('aborted')) {
+    errorMessage = '请求超时，翻译内容可能过长，请尝试减少翻译内容或稍后重试'
+  } else if (lastError.code === 'ECONNREFUSED') {
+    errorMessage = '无法连接到AI服务，请检查网络连接'
+  } else if (lastError.response?.status === 401) {
+    errorMessage = 'API密钥无效，请检查DeepSeek API配置'
+  } else if (lastError.response?.status === 429) {
+    errorMessage = 'API调用频率过高，请稍后重试'
+  } else if (lastError.response?.status >= 500) {
+    errorMessage = 'AI服务暂时不可用，请稍后重试'
+  } else if (lastError.message) {
+    errorMessage = lastError.message
+  }
+
+  throw new Error(`AI翻译服务调用失败: ${errorMessage}`)
 }
 
 // 构建翻译提示词
@@ -362,32 +471,40 @@ function buildTranslationPrompt(type, items, targetLanguages) {
   } else if (type === 'tags') {
     typeLabel = '标签'
   } else if (type === 'content') {
-    typeLabel = '内容'
+    typeLabel = '涂色书内容'
   }
 
   const languageNames = targetLanguages.map(lang => SUPPORTED_LANGUAGES[lang]).join('、')
 
-  let prompt = `请将以下${typeLabel}翻译成${languageNames}。
+  let prompt = `作为专业翻译专家，请将以下${typeLabel}准确翻译成${languageNames}。
 
-要求：
-1. 翻译要准确、专业，适合涂色书应用场景
-2. 保持原意和语境
-3. 必须返回严格的JSON格式，不要添加任何解释文字
-4. 如果描述为空，翻译后的描述也可以为空
-5. 确保每个项目的ID都在返回的JSON中
-${type === 'content' ? '6. 对于内容翻译，name字段是标题，description字段是详细内容' : ''}
+重要要求：
+1. 翻译要自然、准确、专业，适合儿童涂色书应用场景
+2. 保持原文的意思和语调，符合目标语言习惯
+3. 对于涂色书主题，要使用儿童友好的表达方式
+4. AI提示词要保持技术性，但翻译要准确
+5. 必须严格按照JSON格式返回，不要添加任何解释文字
+6. 确保每个项目的ID都在返回的JSON中
+${type === 'content' ? '7. name字段是简短名称，title字段是完整标题，description是详细内容描述，prompt是AI生成图片的提示词，additionalInfo是文案内容' : ''}
 
 需要翻译的${typeLabel}：
 `
 
   items.forEach(item => {
+    // 添加验证，确保item和item.id有效
+    if (!item || item.id === undefined || item.id === null) {
+      console.error('❌ buildTranslationPrompt中发现无效item:', item)
+      return
+    }
+
     if (type === 'content') {
       prompt += `
 ID: ${item.id}
-名称: ${item.name}
-标题: ${item.title || ''}
-描述: ${item.description || ''}
-提示词: ${item.prompt || ''}
+简短名称: ${item.name || ''}
+完整标题: ${item.title || ''}
+内容描述: ${item.description || ''}
+AI提示词: ${item.prompt || ''}
+文案内容: ${item.additionalInfo || ''}
 ---`
     } else {
       prompt += `
@@ -400,27 +517,25 @@ ID: ${item.id}
 
   prompt += `
 
-请返回以下JSON格式：
+请严格按照以下JSON格式返回翻译结果：
 {
-  "item_id_1": {
-    "language_code_1": {
-      "name": "翻译后的名称",${type === 'content' ? '\n      "title": "翻译后的标题",' : ''}
-      "description": "翻译后的描述"${type === 'content' ? ',\n      "prompt": "翻译后的提示词"' : ''}
-    },
-    "language_code_2": {
-      "name": "翻译后的名称",${type === 'content' ? '\n      "title": "翻译后的标题",' : ''}
-      "description": "翻译后的描述"${type === 'content' ? ',\n      "prompt": "翻译后的提示词"' : ''}
-    }
-  },
-  "item_id_2": {
-    // 同样的格式
-  }
+  "${items[0]?.id}": {
+    "${targetLanguages[0]}": {
+      "name": "翻译后的简短名称",${type === 'content' ? '\n      "title": "翻译后的完整标题",' : ''}
+      "description": "翻译后的描述"${type === 'content' ? ',\n      "prompt": "翻译后的AI提示词",\n      "additionalInfo": "翻译后的文案内容"' : ''}
+    }${targetLanguages.length > 1 ? `,\n    "${targetLanguages[1]}": {\n      "name": "翻译后的简短名称",${type === 'content' ? '\n      "title": "翻译后的完整标题",' : ''}\n      "description": "翻译后的描述"${type === 'content' ? ',\n      "prompt": "翻译后的AI提示词",\n      "additionalInfo": "翻译后的文案内容"' : ''}\n    }` : ''}
+  }${items.length > 1 ? `,\n  "${items[1]?.id}": {\n    // 同样的语言翻译格式\n  }` : ''}
 }
 
-语言代码对应关系：
+语言代码说明：
 ${targetLanguages.map(lang => `${lang}: ${SUPPORTED_LANGUAGES[lang]}`).join('\n')}
 
-请确保返回的JSON格式正确，并且包含所有请求的${typeLabel}和语言。`
+请确保：
+- JSON格式严格正确
+- 包含所有${items.length}个项目
+- 每个项目包含所有${targetLanguages.length}种目标语言
+- 翻译自然流畅，符合目标语言习惯
+- 不要添加任何JSON之外的文字说明`
 
   return prompt
 }

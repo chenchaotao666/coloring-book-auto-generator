@@ -30,6 +30,7 @@ const CategoriesManager = () => {
   const [selectedLanguages, setSelectedLanguages] = useState([])
   const [internationalizationLoading, setInternationalizationLoading] = useState(false)
   const [internationalizationResults, setInternationalizationResults] = useState({})
+  const [activeInternationalizationLanguage, setActiveInternationalizationLanguage] = useState('') // 国际化结果的活跃语言tab
 
   // 图片相关状态
   const [availableImages, setAvailableImages] = useState([])
@@ -111,6 +112,21 @@ const CategoriesManager = () => {
     loadCategories()
     loadImages()
   }, [])
+
+  // 当国际化结果变化时，设置默认的活跃语言
+  useEffect(() => {
+    if (Object.keys(internationalizationResults).length > 0 && !activeInternationalizationLanguage) {
+      // 获取第一个项目的第一个语言作为默认活跃语言
+      const firstItemId = Object.keys(internationalizationResults)[0]
+      const firstItemTranslations = internationalizationResults[firstItemId]
+      if (firstItemTranslations) {
+        const firstLanguage = Object.keys(firstItemTranslations)[0]
+        if (firstLanguage) {
+          setActiveInternationalizationLanguage(firstLanguage)
+        }
+      }
+    }
+  }, [internationalizationResults, activeInternationalizationLanguage])
 
   // 清除提示信息
   useEffect(() => {
@@ -388,6 +404,12 @@ const CategoriesManager = () => {
       if (data.success) {
         console.log('国际化翻译结果:', data.results)
         setInternationalizationResults(data.results)
+
+        // 自动设置第一个语言为活跃语言
+        if (selectedLanguages.length > 0) {
+          setActiveInternationalizationLanguage(selectedLanguages[0])
+        }
+
         setSuccess(`成功为 ${selectedItems.size} 个分类生成了 ${selectedLanguages.length} 种语言的翻译`)
       } else {
         console.error('国际化失败:', data)
@@ -467,6 +489,7 @@ const CategoriesManager = () => {
         setSelectedItems(new Set())
         setShowInternationalization(false)
         setSelectedLanguages([])
+        setActiveInternationalizationLanguage('') // 清除活跃语言
         // 重新加载数据以显示最新的翻译
         loadCategories()
       } else {
@@ -553,6 +576,7 @@ const CategoriesManager = () => {
                   setSelectedItems(new Set())
                   setSelectedLanguages([])
                   setInternationalizationResults({})
+                  setActiveInternationalizationLanguage('') // 清除活跃语言
                 }}
                 className="flex items-center gap-2"
               >
@@ -613,6 +637,7 @@ const CategoriesManager = () => {
                     setShowInternationalization(false)
                     setSelectedLanguages([])
                     setInternationalizationResults({})
+                    setActiveInternationalizationLanguage('') // 清除活跃语言
                   }}
                 >
                   取消
@@ -643,6 +668,7 @@ const CategoriesManager = () => {
                   onClick={() => {
                     setInternationalizationResults({})
                     setSelectedItems(new Set())
+                    setActiveInternationalizationLanguage('') // 清除活跃语言
                   }}
                 >
                   清除结果
@@ -651,56 +677,94 @@ const CategoriesManager = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {Object.entries(internationalizationResults).map(([categoryId, translations]) => {
-                const category = categories.find(cat => cat.category_id.toString() === categoryId)
-                if (!category) return null
+            {/* 语言选项卡 */}
+            <div className="flex flex-wrap gap-2 border-b mb-4">
+              {(() => {
+                // 获取所有可用的语言
+                const allLanguages = new Set()
+                Object.values(internationalizationResults).forEach(translations => {
+                  Object.keys(translations).forEach(langCode => {
+                    allLanguages.add(langCode)
+                  })
+                })
 
-                return (
-                  <div key={categoryId} className="border rounded-lg p-4">
-                    <h4 className="font-medium mb-4">
-                      {formatDisplayName(category.display_name)} (ID: {categoryId})
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {Object.entries(translations).map(([langCode, content]) => {
-                        const language = supportedLanguages.find(l => l.code === langCode)
-                        console.log(`语言映射调试 - langCode: ${langCode}, language:`, language, 'content:', content)
-                        return (
-                          <div key={langCode} className="bg-gray-50 p-4 rounded-lg">
-                            <div className="font-medium text-sm text-gray-600 mb-3">
-                              {language?.name || langCode}
-                            </div>
-                            <div className="space-y-3">
-                              <div>
-                                <Label className="text-xs text-gray-500">名称</Label>
-                                <Input
-                                  value={content.name || ''}
-                                  onChange={(e) => handleTranslationEdit(categoryId, langCode, 'name', e.target.value)}
-                                  className="mt-1 text-sm"
-                                  placeholder="翻译名称"
-                                />
-                              </div>
-                              {(content.description !== undefined) && (
-                                <div>
-                                  <Label className="text-xs text-gray-500">描述</Label>
-                                  <Textarea
-                                    value={content.description || ''}
-                                    onChange={(e) => handleTranslationEdit(categoryId, langCode, 'description', e.target.value)}
-                                    className="mt-1 text-sm"
-                                    placeholder="翻译描述"
-                                    rows={2}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
+                return Array.from(allLanguages).map(langCode => {
+                  const language = supportedLanguages.find(lang => lang.code === langCode)
+                  const isActive = activeInternationalizationLanguage === langCode
+
+                  return (
+                    <button
+                      key={langCode}
+                      type="button"
+                      onClick={() => setActiveInternationalizationLanguage(langCode)}
+                      className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${isActive
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Languages className="w-4 h-4" />
+                        {language ? language.name : langCode.toUpperCase()}
+                      </div>
+                    </button>
+                  )
+                })
+              })()}
             </div>
+
+            {/* 当前语言的翻译内容 */}
+            {activeInternationalizationLanguage && (
+              <div className="space-y-4">
+                {Object.entries(internationalizationResults).map(([categoryId, translations]) => {
+                  const category = categories.find(cat => cat.category_id.toString() === categoryId)
+                  const translation = translations[activeInternationalizationLanguage]
+
+                  if (!category || !translation) return null
+
+                  return (
+                    <div key={categoryId} className="border border-gray-200 rounded-lg p-4">
+                      <div className="mb-3">
+                        <h3 className="font-medium text-gray-900">
+                          {formatDisplayName(category.display_name)}
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          原始内容 → {supportedLanguages.find(lang => lang.code === activeInternationalizationLanguage)?.name || activeInternationalizationLanguage}
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        {/* 分类名称 */}
+                        {translation.name !== undefined && (
+                          <div>
+                            <Label className="text-xs text-gray-600">分类名称</Label>
+                            <Input
+                              value={translation.name || ''}
+                              onChange={(e) => handleTranslationEdit(categoryId, activeInternationalizationLanguage, 'name', e.target.value)}
+                              className="mt-1 text-sm bg-gray-50"
+                              placeholder="翻译名称"
+                            />
+                          </div>
+                        )}
+
+                        {/* 分类描述 */}
+                        {translation.description !== undefined && (
+                          <div>
+                            <Label className="text-xs text-gray-600">分类描述</Label>
+                            <Textarea
+                              value={translation.description || ''}
+                              onChange={(e) => handleTranslationEdit(categoryId, activeInternationalizationLanguage, 'description', e.target.value)}
+                              className="mt-1 text-sm bg-gray-50"
+                              placeholder="翻译描述"
+                              rows={2}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
