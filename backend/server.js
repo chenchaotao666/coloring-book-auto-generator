@@ -78,7 +78,14 @@ const taskProgress = new Map() // 存储任务进度
 
 // 第一步：生成主题的API
 app.post('/api/generate-themes', async (req, res) => {
-  const { keyword, description, count, model } = req.body
+  const { keyword, description, count, model, themeTemplate } = req.body
+
+  console.log('🔍 生成主题API参数检查:')
+  console.log('- keyword:', keyword)
+  console.log('- description:', description)
+  console.log('- count:', count)
+  console.log('- model:', model)
+  console.log('- themeTemplate:', typeof themeTemplate, themeTemplate?.substring ? themeTemplate.substring(0, 100) + '...' : themeTemplate)
 
   // 设置服务器发送事件 (SSE) 响应头
   res.writeHead(200, {
@@ -98,7 +105,7 @@ app.post('/api/generate-themes', async (req, res) => {
       total: count
     })}\n\n`)
 
-    const themes = await generateThemes(keyword, description, count, model)
+    const themes = await generateThemes(keyword, description, count, model, themeTemplate)
 
     // 逐个发送生成的主题
     for (let i = 0; i < themes.length; i++) {
@@ -153,7 +160,13 @@ app.post('/api/generate-themes', async (req, res) => {
 
 // 第二步：生成文案的API
 app.post('/api/generate-content', async (req, res) => {
-  const { items, keyword, model } = req.body
+  const { items, keyword, model, template } = req.body
+
+  console.log('🔍 生成文案API参数检查:')
+  console.log('- keyword:', keyword)
+  console.log('- model:', model)
+  console.log('- template:', typeof template, template?.substring ? template.substring(0, 100) + '...' : template)
+  console.log('- items count:', items?.length)
 
   // 设置服务器发送事件 (SSE) 响应头
   res.writeHead(200, {
@@ -173,11 +186,8 @@ app.post('/api/generate-content', async (req, res) => {
       total: items.length
     })}\n\n`)
 
-    const contentTemplate = {
-      coloring_tips: "涂色技巧相关内容",
-      coloring_challenges: "涂色挑战相关内容",
-      coloring_benefits: "填色书好处相关内容"
-    }
+    // 使用用户传入的AI提示词模板
+    const contentTemplate = template
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
@@ -491,13 +501,15 @@ async function generateImagesConcurrently(taskId) {
 }
 
 // 第一步：生成多个不同主题的标题和prompt
-async function generateThemes(keyword, description, count, model) {
+async function generateThemes(keyword, description, count, model, themeTemplate) {
   console.log(`🎯 开始生成${count}个基于"${keyword}"的不同主题...`)
+  console.log('🔍 generateThemes 参数:')
+  console.log('- themeTemplate:', typeof themeTemplate, themeTemplate?.substring ? themeTemplate.substring(0, 100) + '...' : themeTemplate)
 
   // 如果配置了DeepSeek API，尝试调用
   if (process.env.DEEPSEEK_API_KEY && model.includes('deepseek')) {
     try {
-      return await callDeepSeekForThemes(keyword, description, count, model)
+      return await callDeepSeekForThemes(keyword, description, count, model, themeTemplate)
     } catch (error) {
       console.warn('调用DeepSeek API生成主题失败，使用模拟数据:', error.message)
     }
@@ -526,9 +538,12 @@ async function generateThemes(keyword, description, count, model) {
 async function generateDetailedContent(keyword, title, prompt, contentTemplate, model) {
   console.log(`📝 为"${title}"生成详细内容文案...`)
 
+  console.log('KEY + model: ', process.env.DEEPSEEK_API_KEY, model)
+
   // 如果配置了DeepSeek API，尝试调用
   if (process.env.DEEPSEEK_API_KEY && model.includes('deepseek')) {
     try {
+      console.log('调用DeepSeek API生成详细内容...')
       return await callDeepSeekForDetailedContent(keyword, title, prompt, contentTemplate, model)
     } catch (error) {
       console.warn('调用DeepSeek API生成详细内容失败，使用默认内容:', error.message)
@@ -554,8 +569,20 @@ function generateDefaultContent(keyword, title) {
 }
 
 // 调用DeepSeek API生成主题
-async function callDeepSeekForThemes(keyword, description, count, model) {
-  const prompt = `请基于关键词"${keyword}"${description ? '和描述"' + description + '"' : ''}，生成${count}个不同主题的涂色页概念。
+async function callDeepSeekForThemes(keyword, description, count, model, themeTemplate) {
+  console.log('🔍 callDeepSeekForThemes 参数检查:')
+  console.log('- keyword:', keyword)
+  console.log('- description:', description)
+  console.log('- count:', count)
+  console.log('- model:', model)
+  console.log('- themeTemplate:', typeof themeTemplate, themeTemplate?.substring ? themeTemplate.substring(0, 100) + '...' : themeTemplate)
+
+  // 使用用户提供的模板作为AI提示词，如果没有则使用默认的
+  let prompt = themeTemplate;
+
+  if (!prompt || prompt.trim() === '') {
+    // 默认的AI主题生成提示词模板
+    prompt = `请基于关键词"${keyword}"${description ? '和描述"' + description + '"' : ''}，生成${count}个不同主题的涂色页概念。
 
 每个主题都应该：
 1. 围绕${keyword}这个核心元素
@@ -574,7 +601,18 @@ async function callDeepSeekForThemes(keyword, description, count, model) {
     "description": "蝴蝶在花丛中翩翩起舞的美妙场景",
     "prompt": "详细的蝴蝶在花园中翩翩起舞的涂色页，复杂的线条艺术，花朵和蝴蝶，黑白轮廓线，适合涂色"
   }
-]`
+]`;
+  } else {
+    // 替换用户模板中的占位符
+    prompt = prompt
+      .replace(/\$\{keyword\}/g, keyword)
+      .replace(/\$\{description\}/g, description || '')
+      .replace(/\$\{count\}/g, count)
+      // 也支持不带$符号的占位符格式（向后兼容）
+      .replace(/\{keyword\}/g, keyword)
+      .replace(/\{description\}/g, description || '')
+      .replace(/\{count\}/g, count);
+  }
 
   console.log('主题prompt: ', prompt)
 
@@ -629,7 +667,19 @@ async function callDeepSeekForThemes(keyword, description, count, model) {
 
 // 调用DeepSeek API生成详细内容
 async function callDeepSeekForDetailedContent(keyword, title, prompt, contentTemplate, model) {
-  const contentPrompt = `基于以下信息生成涂色书的详细内容文案：
+  console.log('🔍 callDeepSeekForDetailedContent 参数检查:')
+  console.log('- keyword:', keyword)
+  console.log('- title:', title)
+  console.log('- prompt:', prompt)
+  console.log('- contentTemplate:', typeof contentTemplate, contentTemplate?.substring ? contentTemplate.substring(0, 100) + '...' : contentTemplate)
+  console.log('- model:', model)
+
+  // 使用用户提供的模板作为AI提示词，如果没有则使用默认的
+  let contentPrompt = contentTemplate;
+
+  if (!contentPrompt || contentPrompt.trim() === '') {
+    // 默认的AI提示词模板
+    contentPrompt = `基于以下信息生成涂色书的详细内容文案：
 
 关键词：${keyword}
 标题：${title}
@@ -646,7 +696,18 @@ async function callDeepSeekForDetailedContent(keyword, title, prompt, contentTem
 返回格式为纯文本，用emoji图标分隔各部分：
 🎨 涂色技巧：...
 🎯 涂色挑战：...
-💡 填色书的好处：...`
+💡 填色书的好处：...`;
+  } else {
+    // 替换用户模板中的占位符
+    contentPrompt = contentPrompt
+      .replace(/\$\{keyword\}/g, keyword)
+      .replace(/\$\{title\}/g, title)
+      .replace(/\$\{prompt\}/g, prompt)
+      // 也支持不带$符号的占位符格式（向后兼容）
+      .replace(/\{keyword\}/g, keyword)
+      .replace(/\{title\}/g, title)
+      .replace(/\{prompt\}/g, prompt);
+  }
 
   console.log('文案prompt: ', contentPrompt)
 

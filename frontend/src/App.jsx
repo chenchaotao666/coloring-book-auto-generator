@@ -25,72 +25,201 @@ const getDisplayText = (field, preferredLang = 'zh') => {
 }
 
 function App() {
-  // 默认文案模板
-  const defaultTemplate = `【DeepSeek AI生成】
+  // 默认文案生成提示词模板
+  const defaultTemplate = `基于以下信息生成涂色书的详细内容文案：
 
-关于{keyword}涂色页的专业指导：
+关键词：\${keyword}
+标题：\${title}
+图片描述：\${prompt}
 
-🎨 涂色技巧：
-在给{keyword}上色时，建议采用层次渐进的方式。首先确定主色调，然后用相近色系进行深浅变化。{description}可以运用对比色突出重点区域。
+请生成包含以下三个部分的内容：
 
-🎯 创意提升：
-鼓励尝试不同的涂色技法，如点彩法、渐变法或混色技巧。这不仅能提高艺术表现力，还能增强专注力和耐心。
+1. 涂色技巧：针对这个\${keyword}主题的具体涂色建议和技巧
+2. 涂色挑战：适合这个主题的有趣挑战和创意建议  
+3. 填色书的好处：涂色这个主题对身心的益处
 
-💡 教育价值：
-通过{keyword}涂色活动，可以培养观察能力、手眼协调性和审美情趣，是寓教于乐的绝佳方式。
+请用温馨、专业的语调，内容要实用且有启发性。每个部分2-3句话即可。
 
-✨ 这个{keyword}涂色页融合了现代设计理念，既保持了传统涂色的乐趣，又加入了创新元素，让每一次涂色都成为独特的艺术创作体验。`
+返回格式为纯文本，用emoji图标分隔各部分：
+🎨 涂色技巧：...
+🎯 涂色挑战：...
+💡 填色书的好处：...`
 
-  // 预设模板选项
+  // 预设AI提示词模板选项
   const templatePresets = [
     {
-      name: '专业指导模板（默认）',
+      name: '标准三部分格式（默认）',
       content: defaultTemplate
     },
     {
-      name: '简洁实用模板',
-      content: `🎨 {keyword}涂色指南
+      name: '简洁实用提示词',
+      content: `为\${keyword}主题生成涂色指导内容：
 
-涂色建议：
-使用明亮的色彩为{keyword}上色，可以从浅色开始，逐渐加深。{description}
+主题：\${keyword}
+标题：\${title}
+特征：\${prompt}
 
-创意技巧：
-• 尝试使用渐变色彩
-• 注意色彩搭配的和谐
-• 可以添加背景装饰
+请生成简洁实用的涂色指导，包含：
+1. 基础涂色技巧和色彩建议
+2. 适合初学者的简单方法
+3. 涂色的放松和创意价值
 
-通过涂色{keyword}，可以提升创造力和专注力，享受艺术创作的乐趣。`
+用友善、鼓励的语调，每部分2句话，用🎨、🌟、💫等emoji分隔。`
     },
     {
-      name: '教育价值模板',
-      content: `📚 {keyword}涂色学习页
+      name: '教育导向提示词',
+      content: `针对\${keyword}主题创作教育性涂色内容：
 
-🎯 学习目标：
-通过{keyword}涂色活动，培养孩子的观察能力、色彩认知和手眼协调能力。{description}
+主题关键词：\${keyword}
+页面标题：\${title}  
+图像描述：\${prompt}
 
-🎨 涂色指导：
-1. 先观察{keyword}的特征和细节
-2. 选择合适的颜色组合
-3. 从大面积开始，再处理细节部分
-4. 保持画面整洁有序
+请从教育角度生成内容，包含：
+1. 🎯 学习目标：通过涂色培养的能力
+2. 📚 知识拓展：与主题相关的有趣知识
+3. 🌟 成长价值：涂色对儿童发展的积极作用
 
-🌟 教育意义：
-这个{keyword}涂色页不仅能够提供娱乐，还能够在涂色过程中学习相关知识，培养耐心和专注力。`
+语言要适合家长和老师使用，每部分3-4句话。`
     },
     {
-      name: '趣味互动模板',
-      content: `🎉 有趣的{keyword}涂色时光
+      name: '趣味互动提示词',
+      content: `为\${keyword}设计有趣的涂色体验：
 
-💫 涂色挑战：
-来为这个可爱的{keyword}穿上美丽的"衣服"吧！{description}
+涂色主题：\${keyword}
+作品标题：\${title}
+视觉元素：\${prompt}
 
-🎨 色彩建议：
-• 可以使用你最喜欢的颜色
-• 试试彩虹色的搭配
-• 或者模仿真实{keyword}的色彩
+创作充满趣味的内容：
+1. 🎉 涂色游戏：设计有趣的涂色挑战
+2. 🌈 创意建议：鼓励大胆的色彩实验  
+3. 🏆 成就感：完成后的自豪和分享快乐
 
-🏆 完成后的成就：
-当你完成这个{keyword}涂色页时，你就创造了一件独一无二的艺术作品！可以和家人朋友分享你的杰作。`
+用活泼、充满想象力的语言，让涂色变成一场冒险！`
+    },
+    {
+      name: '专业艺术提示词',
+      content: `为\${keyword}主题制作专业级涂色指导：
+
+艺术主题：\${keyword}
+作品名称：\${title}
+造型特点：\${prompt}
+
+请提供专业的艺术指导：
+1. 🎨 色彩理论：配色原理和色彩心理学应用
+2. 🖌️ 技法指导：渐变、混色、光影等高级技巧
+3. 🖼️ 艺术价值：提升审美和艺术鉴赏能力
+
+用专业但易懂的语言，适合有一定基础的涂色爱好者。`
+    }
+  ]
+
+  // 默认主题生成提示词模板
+  const defaultThemeTemplate = `请基于关键词"\${keyword}"\${description ? '和描述"' + description + '"' : ''}，生成\${count}个不同主题的涂色页概念。
+
+每个主题都应该：
+1. 围绕\${keyword}这个核心元素
+2. 有不同的创意角度和主题变化
+3. 适合制作成涂色页
+
+请以JSON数组格式返回，每个对象包含：
+- title: 有创意的标题
+- description: 简短描述（30字以内）
+- prompt: 详细的中文图像生成描述，用于AI生成涂色页图片
+
+示例格式：
+[
+  {
+    "title": "花园中的蝴蝶舞会",
+    "description": "蝴蝶在花丛中翩翩起舞的美妙场景",
+    "prompt": "详细的蝴蝶在花园中翩翩起舞的涂色页，复杂的线条艺术，花朵和蝴蝶，黑白轮廓线，适合涂色"
+  }
+]`
+
+  // 预设主题生成提示词模板选项
+  const themeTemplatePresets = [
+    {
+      name: '标准创意主题（默认）',
+      content: defaultThemeTemplate
+    },
+    {
+      name: '儿童友好主题',
+      content: `为儿童设计\${keyword}主题的涂色页，生成\${count}个适合儿童的创意主题：
+
+关键词：\${keyword}
+附加描述：\${description}
+
+要求：
+- 主题要适合3-12岁儿童
+- 内容积极正面，充满想象力
+- 难度适中，不要太复杂
+- 色彩鲜明，线条清晰
+
+为每个主题生成：
+1. 标题：简单易懂的儿童友好标题
+2. 描述：生动有趣的主题介绍
+3. AI提示词：适合儿童涂色的图像描述
+
+请返回JSON格式的\${count}个主题。`
+    },
+    {
+      name: '教育学习主题',
+      content: `结合\${keyword}主题创建具有教育意义的涂色页，生成\${count}个学习主题：
+
+学习主题：\${keyword}
+教育重点：\${description}
+
+设计要求：
+- 融入知识学习元素
+- 培养观察和认知能力
+- 寓教于乐的设计理念
+- 适合课堂或家庭教育使用
+
+每个主题包含：
+- 标题：体现学习目标的标题
+- 描述：说明教育价值和学习要点
+- AI提示词：结合教育元素的图像描述
+
+输出\${count}个教育主题的JSON格式数据。`
+    },
+    {
+      name: '艺术创意主题',
+      content: `以\${keyword}为灵感创作艺术性涂色主题，生成\${count}个富有创意的艺术主题：
+
+艺术灵感：\${keyword}
+创作方向：\${description}
+
+艺术要求：
+- 具有艺术美感和创意性
+- 线条优美，构图平衡
+- 适合培养艺术鉴赏力
+- 鼓励个性化表达
+
+设计内容：
+- 标题：富有艺术气息的标题
+- 描述：突出艺术特色和创作理念
+- AI提示词：详细的艺术风格描述
+
+请生成\${count}个艺术主题的JSON数据。`
+    },
+    {
+      name: '节日庆典主题',
+      content: `围绕\${keyword}设计节日庆典涂色主题，创建\${count}个节庆相关主题：
+
+节庆元素：\${keyword}
+庆典特色：\${description}
+
+节日设计：
+- 体现节日氛围和庆祝元素
+- 包含传统文化和现代元素
+- 营造欢乐祥和的气氛
+- 适合全家共同参与
+
+主题内容：
+- 标题：富有节日气氛的标题
+- 描述：突出庆典特色和文化内涵
+- AI提示词：包含节日元素的图像描述
+
+输出\${count}个节庆主题的JSON格式。`
     }
   ]
 
@@ -99,7 +228,8 @@ function App() {
     keyword: '',
     description: '',
     count: 1,
-    template: defaultTemplate, // 使用默认模板填充
+    template: defaultTemplate, // 文案生成提示词模板
+    themeTemplate: defaultThemeTemplate, // 主题生成提示词模板
     model: 'deepseek-chat'
   })
 
@@ -230,7 +360,8 @@ function App() {
           keyword: formData.keyword,
           description: formData.description,
           count: formData.count,
-          model: formData.model
+          model: formData.model,
+          themeTemplate: formData.themeTemplate // 添加用户的AI主题生成提示词模板
         }),
       })
 
@@ -347,7 +478,8 @@ function App() {
         body: JSON.stringify({
           items: itemsToGenerate,
           keyword: formData.keyword,
-          model: formData.model
+          model: formData.model,
+          template: formData.template // 添加用户的AI提示词模板
         }),
       })
 
@@ -2604,105 +2736,113 @@ function App() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="keyword" className="text-sm font-medium">关键词 *</Label>
-                        <Input
-                          id="keyword"
-                          placeholder="如：蜘蛛侠、超人、蝴蝶等"
-                          value={formData.keyword}
-                          onChange={(e) => handleInputChange('keyword', e.target.value)}
-                          className="h-10"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="description" className="text-sm font-medium">附加描述（可选）</Label>
-                        <Input
-                          id="description"
-                          placeholder="对关键词的补充描述"
-                          value={formData.description}
-                          onChange={(e) => handleInputChange('description', e.target.value)}
-                          className="h-10"
-                        />
-                      </div>
+                  {/* 基础设置 - 一排4个 */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="keyword" className="text-sm font-medium">关键词 *</Label>
+                      <Input
+                        id="keyword"
+                        placeholder="如：蜘蛛侠、超人、蝴蝶等"
+                        value={formData.keyword}
+                        onChange={(e) => handleInputChange('keyword', e.target.value)}
+                        className="h-10"
+                      />
                     </div>
 
+                    <div className="space-y-2">
+                      <Label htmlFor="description" className="text-sm font-medium">附加描述（可选）</Label>
+                      <Input
+                        id="description"
+                        placeholder="对关键词的补充描述"
+                        value={formData.description}
+                        onChange={(e) => handleInputChange('description', e.target.value)}
+                        className="h-10"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="count" className="text-sm font-medium">生成数量</Label>
+                      <Input
+                        id="count"
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={formData.count}
+                        onChange={(e) => handleInputChange('count', parseInt(e.target.value) || 1)}
+                        className="h-10"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="globalImageRatio" className="text-sm font-medium">图片比例</Label>
+                      <Select value={globalImageRatio} onValueChange={setGlobalImageRatio}>
+                        <SelectTrigger className="h-10">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1:1">正方形 (1:1)</SelectItem>
+                          <SelectItem value="3:2">横向 (3:2)</SelectItem>
+                          <SelectItem value="2:3">纵向 (2:3)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* 模型和API设置 - 一排4个 */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="model" className="text-sm font-medium">文案模型</Label>
+                      <Select value={formData.model} onValueChange={(value) => handleInputChange('model', value)}>
+                        <SelectTrigger className="h-10">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo</SelectItem>
+                          <SelectItem value="gpt-4">GPT-4</SelectItem>
+                          <SelectItem value="claude-3-haiku">Claude-3 Haiku</SelectItem>
+                          <SelectItem value="deepseek-chat">DeepSeek Chat</SelectItem>
+                          <SelectItem value="deepseek-coder">DeepSeek Coder</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="apiType" className="text-sm font-medium">图像生成API</Label>
+                      <Select value={selectedApiType} onValueChange={setSelectedApiType}>
+                        <SelectTrigger className="h-10">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt4o">GPT-4O 图像生成</SelectItem>
+                          <SelectItem value="flux-kontext">Flux Kontext 图像生成</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {selectedApiType === 'flux-kontext' ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="fluxModel" className="text-sm font-medium">Flux 模型</Label>
+                        <Select value={fluxModel} onValueChange={setFluxModel}>
+                          <SelectTrigger className="h-10">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="flux-kontext-pro">Flux Kontext Pro (标准)</SelectItem>
+                            <SelectItem value="flux-kontext-max">Flux Kontext Max (增强)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      <div></div> // 占位元素保持布局
+                    )}
+
+                    <div></div> // 占位元素保持布局
+                  </div>
+
+                  {/* 提示词设置 - 一排2个 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* 左侧：图像生成提示词 */}
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="count" className="text-sm font-medium">生成数量</Label>
-                          <Input
-                            id="count"
-                            type="number"
-                            min="1"
-                            max="20"
-                            value={formData.count}
-                            onChange={(e) => handleInputChange('count', parseInt(e.target.value) || 1)}
-                            className="h-10"
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="globalImageRatio" className="text-sm font-medium">图片比例</Label>
-                          <Select value={globalImageRatio} onValueChange={setGlobalImageRatio}>
-                            <SelectTrigger className="h-10">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="1:1">正方形 (1:1)</SelectItem>
-                              <SelectItem value="3:2">横向 (3:2)</SelectItem>
-                              <SelectItem value="2:3">纵向 (2:3)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="model" className="text-sm font-medium">文案模型</Label>
-                        <Select value={formData.model} onValueChange={(value) => handleInputChange('model', value)}>
-                          <SelectTrigger className="h-10">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo</SelectItem>
-                            <SelectItem value="gpt-4">GPT-4</SelectItem>
-                            <SelectItem value="claude-3-haiku">Claude-3 Haiku</SelectItem>
-                            <SelectItem value="deepseek-chat">DeepSeek Chat</SelectItem>
-                            <SelectItem value="deepseek-coder">DeepSeek Coder</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="apiType" className="text-sm font-medium">图像生成API</Label>
-                        <Select value={selectedApiType} onValueChange={setSelectedApiType}>
-                          <SelectTrigger className="h-10">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="gpt4o">GPT-4O 图像生成</SelectItem>
-                            <SelectItem value="flux-kontext">Flux Kontext 图像生成</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {selectedApiType === 'flux-kontext' && (
-                        <div className="space-y-2">
-                          <Label htmlFor="fluxModel" className="text-sm font-medium">Flux 模型</Label>
-                          <Select value={fluxModel} onValueChange={setFluxModel}>
-                            <SelectTrigger className="h-10">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="flux-kontext-pro">Flux Kontext Pro (标准)</SelectItem>
-                              <SelectItem value="flux-kontext-max">Flux Kontext Max (增强)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-
                       <div className="space-y-2">
                         <Label htmlFor="text2imagePrompt" className="text-sm font-medium">文生图提示词</Label>
                         <Textarea
@@ -2748,65 +2888,94 @@ function App() {
                         </p>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="template" className="text-sm font-medium">文案模板</Label>
-                      <div className="flex gap-2">
-                        <Select onValueChange={(value) => handleInputChange('template', value)}>
-                          <SelectTrigger className="h-6 w-36 text-xs">
-                            <SelectValue placeholder="选择预设模板" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {templatePresets.map((preset, index) => (
-                              <SelectItem key={index} value={preset.content} className="text-xs">
-                                {preset.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleInputChange('template', '')}
-                          className="text-xs h-6 px-2"
-                        >
-                          清空
-                        </Button>
-                      </div>
-                    </div>
-                    <Textarea
-                      id="template"
-                      placeholder="输入自定义文案模板，使用 {keyword} 和 {description} 作为占位符"
-                      value={formData.template}
-                      onChange={(e) => handleInputChange('template', e.target.value)}
-                      rows={12}
-                      className="resize-none text-sm"
-                    />
-                    <div className="text-xs text-gray-500 space-y-1">
-                      <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'{keyword}'}</code> 作为关键词占位符</p>
-                      <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'{description}'}</code> 作为描述占位符</p>
-                      <p>• 留空时将使用系统默认模板</p>
-                    </div>
-
-                    {/* 模板预览 */}
-                    {formData.template && formData.keyword && (
-                      <div className="mt-4 p-3 bg-gray-50 border rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <Label className="text-xs font-medium text-gray-600">模板预览效果：</Label>
-                          <span className="text-xs text-gray-500">基于当前关键词和描述</span>
+                    {/* 右侧：AI生成提示词 */}
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="themeTemplate" className="text-sm font-medium">AI主题生成提示词</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => handleInputChange('themeTemplate', value)}>
+                              <SelectTrigger className="h-6 w-40 text-xs">
+                                <SelectValue placeholder="选择预设提示词" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {themeTemplatePresets.map((preset, index) => (
+                                  <SelectItem key={index} value={preset.content} className="text-xs">
+                                    {preset.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleInputChange('themeTemplate', '')}
+                              className="text-xs h-6 px-2"
+                            >
+                              清空
+                            </Button>
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-700 whitespace-pre-wrap max-h-32 overflow-y-auto border rounded p-2 bg-white">
-                          {formData.template
-                            .replace(/\{keyword\}/g, formData.keyword || '[关键词]')
-                            .replace(/\{description\}/g, formData.description ? `特别是${formData.description}的部分，` : '')
-                          }
+                        <Textarea
+                          id="themeTemplate"
+                          placeholder="输入自定义AI提示词，用于生成主题内容。使用 ${keyword}、${description}、${count} 作为占位符"
+                          value={formData.themeTemplate}
+                          onChange={(e) => handleInputChange('themeTemplate', e.target.value)}
+                          rows={8}
+                          className="resize-none text-sm"
+                        />
+                        <div className="text-xs text-gray-500 space-y-1">
+                          <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'${keyword}'}</code>、<code className="bg-gray-100 px-1 rounded">{'${description}'}</code>、<code className="bg-gray-100 px-1 rounded">{'${count}'}</code> 作为占位符</p>
+                          <p>• 这个提示词将发送给AI来生成主题列表，留空时将使用系统默认提示词</p>
                         </div>
                       </div>
-                    )}
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="template" className="text-sm font-medium">AI文案生成提示词</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => handleInputChange('template', value)}>
+                              <SelectTrigger className="h-6 w-40 text-xs">
+                                <SelectValue placeholder="选择预设提示词" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {templatePresets.map((preset, index) => (
+                                  <SelectItem key={index} value={preset.content} className="text-xs">
+                                    {preset.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleInputChange('template', '')}
+                              className="text-xs h-6 px-2"
+                            >
+                              清空
+                            </Button>
+                          </div>
+                        </div>
+                        <Textarea
+                          id="template"
+                          placeholder="输入自定义AI提示词，用于生成文案内容。使用 ${keyword}、${title}、${prompt} 作为占位符"
+                          value={formData.template}
+                          onChange={(e) => handleInputChange('template', e.target.value)}
+                          rows={8}
+                          className="resize-none text-sm"
+                        />
+                        <div className="text-xs text-gray-500 space-y-1">
+                          <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'${keyword}'}</code>、<code className="bg-gray-100 px-1 rounded">{'${title}'}</code>、<code className="bg-gray-100 px-1 rounded">{'${prompt}'}</code> 作为占位符</p>
+                          <p>• 这个提示词将发送给AI来生成具体的文案内容，留空时将使用系统默认提示词</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
+
+
                 </CardContent>
               </Card>
 
