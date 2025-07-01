@@ -402,7 +402,8 @@ async function generateImagesConcurrently(taskId) {
           // 使用重构后的图片服务
           const result = await imageService.completeImageGeneration({
             type: 'text-to-image',
-            prompt: item.prompt,
+            aiPrompt: item.aiPrompt,  // AI提示词（单张图片描述）
+            text2imagePrompt: item.text2imagePrompt,  // 文生图提示词（通用描述）
             apiType: task.apiType,
             model: task.model,
             imageRatio: item.imageRatio || '1:1',
@@ -575,6 +576,8 @@ async function callDeepSeekForThemes(keyword, description, count, model) {
   }
 ]`
 
+  console.log('主题prompt: ', prompt)
+
   try {
     const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
       model: model,
@@ -644,6 +647,8 @@ async function callDeepSeekForDetailedContent(keyword, title, prompt, contentTem
 🎨 涂色技巧：...
 🎯 涂色挑战：...
 💡 填色书的好处：...`
+
+  console.log('文案prompt: ', contentPrompt)
 
   try {
     const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {

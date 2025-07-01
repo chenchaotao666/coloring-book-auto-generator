@@ -25,12 +25,81 @@ const getDisplayText = (field, preferredLang = 'zh') => {
 }
 
 function App() {
+  // 默认文案模板
+  const defaultTemplate = `【DeepSeek AI生成】
+
+关于{keyword}涂色页的专业指导：
+
+🎨 涂色技巧：
+在给{keyword}上色时，建议采用层次渐进的方式。首先确定主色调，然后用相近色系进行深浅变化。{description}可以运用对比色突出重点区域。
+
+🎯 创意提升：
+鼓励尝试不同的涂色技法，如点彩法、渐变法或混色技巧。这不仅能提高艺术表现力，还能增强专注力和耐心。
+
+💡 教育价值：
+通过{keyword}涂色活动，可以培养观察能力、手眼协调性和审美情趣，是寓教于乐的绝佳方式。
+
+✨ 这个{keyword}涂色页融合了现代设计理念，既保持了传统涂色的乐趣，又加入了创新元素，让每一次涂色都成为独特的艺术创作体验。`
+
+  // 预设模板选项
+  const templatePresets = [
+    {
+      name: '专业指导模板（默认）',
+      content: defaultTemplate
+    },
+    {
+      name: '简洁实用模板',
+      content: `🎨 {keyword}涂色指南
+
+涂色建议：
+使用明亮的色彩为{keyword}上色，可以从浅色开始，逐渐加深。{description}
+
+创意技巧：
+• 尝试使用渐变色彩
+• 注意色彩搭配的和谐
+• 可以添加背景装饰
+
+通过涂色{keyword}，可以提升创造力和专注力，享受艺术创作的乐趣。`
+    },
+    {
+      name: '教育价值模板',
+      content: `📚 {keyword}涂色学习页
+
+🎯 学习目标：
+通过{keyword}涂色活动，培养孩子的观察能力、色彩认知和手眼协调能力。{description}
+
+🎨 涂色指导：
+1. 先观察{keyword}的特征和细节
+2. 选择合适的颜色组合
+3. 从大面积开始，再处理细节部分
+4. 保持画面整洁有序
+
+🌟 教育意义：
+这个{keyword}涂色页不仅能够提供娱乐，还能够在涂色过程中学习相关知识，培养耐心和专注力。`
+    },
+    {
+      name: '趣味互动模板',
+      content: `🎉 有趣的{keyword}涂色时光
+
+💫 涂色挑战：
+来为这个可爱的{keyword}穿上美丽的"衣服"吧！{description}
+
+🎨 色彩建议：
+• 可以使用你最喜欢的颜色
+• 试试彩虹色的搭配
+• 或者模仿真实{keyword}的色彩
+
+🏆 完成后的成就：
+当你完成这个{keyword}涂色页时，你就创造了一件独一无二的艺术作品！可以和家人朋友分享你的杰作。`
+    }
+  ]
+
   // 表单状态
   const [formData, setFormData] = useState({
     keyword: '',
     description: '',
     count: 1,
-    template: '',
+    template: defaultTemplate, // 使用默认模板填充
     model: 'deepseek-chat'
   })
 
@@ -64,6 +133,12 @@ function App() {
 
   // 上色提示词状态
   const [coloringPrompt, setColoringPrompt] = useState('用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明')
+
+  // 文生图提示词状态
+  const [text2imagePrompt, setText2imagePrompt] = useState('生成适合儿童涂色的黑白线稿，线条简洁清晰，无填充色彩，风格简约卡通')
+
+  // 图生图提示词状态
+  const [imageToImagePrompt, setImageToImagePrompt] = useState('将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰')
 
   // 导航状态
   const [currentPage, setCurrentPage] = useState('generator') // 'generator'、'categories'、'tags' 或 'images'
@@ -380,12 +455,18 @@ function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          contents: contentList.map(item => ({
-            id: item.id,
-            title: getDisplayText(item.title),
-            prompt: getDisplayText(item.prompt),
-            imageRatio: item.imageRatio || globalImageRatio // 使用项目特定比例或全局比例
-          })),
+          contents: contentList.map(item => {
+            const aiPrompt = getDisplayText(item.prompt) || '生成涂色书图片'  // AI提示词（从用户输入的提示词字段获取）
+            const text2imagePromptValue = text2imagePrompt.trim() || '生成适合儿童涂色的黑白线稿，线条简洁清晰，无填充色彩，风格简约卡通'  // 文生图提示词（通用描述），提供默认值
+
+            return {
+              id: item.id,
+              title: getDisplayText(item.title),
+              aiPrompt: aiPrompt,  // AI提示词（单张图片描述）
+              text2imagePrompt: text2imagePromptValue,  // 文生图提示词（通用描述）
+              imageRatio: item.imageRatio || globalImageRatio // 使用项目特定比例或全局比例
+            }
+          }),
           apiType: selectedApiType, // 添加API类型
           model: selectedApiType === 'flux-kontext' ? fluxModel : undefined // 添加模型选择
         }),
@@ -613,8 +694,8 @@ function App() {
             message: `正在创建上色任务 ${i + 1}/${finalItemsToColor.length}...`
           }))
 
-          // 构造提示词
-          const prompt = getDisplayText(item.prompt) || getDisplayText(item.title) || '涂色页'
+          // 构造提示词 - 优先使用AI提示词字段
+          const prompt = getDisplayText(item.prompt) || '涂色页'
 
           // 调用上色API，使用图片URL
           const response = await fetch('/api/images/color-generate', {
@@ -1355,37 +1436,37 @@ function App() {
             case 'name':
               return {
                 ...item,
-                name: typeof item.name === 'object'
+                name: lang ? (typeof item.name === 'object'
                   ? { ...item.name, [lang]: value }
-                  : { [lang]: value }
+                  : { zh: typeof item.name === 'string' ? item.name : '', [lang]: value }) : value
               }
             case 'title':
               return {
                 ...item,
-                title: typeof item.title === 'object'
+                title: lang ? (typeof item.title === 'object'
                   ? { ...item.title, [lang]: value }
-                  : { [lang]: value }
+                  : { zh: typeof item.title === 'string' ? item.title : '', [lang]: value }) : value
               }
             case 'description':
               return {
                 ...item,
-                description: typeof item.description === 'object'
+                description: lang ? (typeof item.description === 'object'
                   ? { ...item.description, [lang]: value }
-                  : { [lang]: value }
+                  : { zh: typeof item.description === 'string' ? item.description : '', [lang]: value }) : value
               }
             case 'additionalInfo':
               return {
                 ...item,
-                content: typeof item.content === 'object'
+                content: lang ? (typeof item.content === 'object'
                   ? { ...item.content, [lang]: value }
-                  : { [lang]: value }
+                  : { zh: typeof item.content === 'string' ? item.content : '', [lang]: value }) : value
               } // additionalInfo对应content字段
             case 'prompt':
               return {
                 ...item,
-                prompt: typeof item.prompt === 'object'
+                prompt: lang ? (typeof item.prompt === 'object'
                   ? { ...item.prompt, [lang]: value }
-                  : { [lang]: value }
+                  : { zh: typeof item.prompt === 'string' ? item.prompt : '', [lang]: value }) : value
               }
             case 'ratio':
               return { ...item, imageRatio: value }
@@ -1462,8 +1543,8 @@ function App() {
 
     try {
 
-      // 构造提示词 - 使用用户自定义的上色提示词
-      const prompt = formData.prompt?.zh || formData.title?.zh || '涂色页'
+      // 构造提示词 - 优先使用AI提示词字段
+      const prompt = formData.prompt?.zh || '涂色页'
 
       // 调用上色API，直接使用图片URL而不是数据库ID
       const response = await fetch('/api/images/color-generate', {
@@ -1795,15 +1876,26 @@ function App() {
         message: '正在创建任务...'
       })))
 
-      // 使用formData中的内容作为提示词
-      const prompt = formData.title?.zh || formData.name?.zh || '生成涂色书图片'
+      // 获取AI提示词（用户输入的提示词）和文生图提示词（通用描述）
+      const aiPrompt = formData.prompt?.zh || '生成涂色书图片'  // AI提示词（从用户输入的提示词字段获取）
+      const text2imagePromptValue = text2imagePrompt.trim() || '生成适合儿童涂色的黑白线稿，线条简洁清晰，无填充色彩，风格简约卡通'  // 文生图提示词（通用描述），提供默认值
+
+      console.log('🔍 文生图参数调试:')
+      console.log('- formData:', formData)
+      console.log('- formData.title:', formData.title)
+      console.log('- formData.name:', formData.name)
+      console.log('- aiPrompt (AI提示词-单张图片描述):', aiPrompt)
+      console.log('- text2imagePromptValue (文生图提示词-通用描述):', text2imagePromptValue)
 
       const requestData = {
-        prompt: prompt,
+        aiPrompt: aiPrompt,  // AI提示词（单张图片描述）
+        text2imagePrompt: text2imagePromptValue,  // 文生图提示词（通用描述）
         apiType: selectedApiType,
         model: selectedApiType === 'flux-kontext' ? fluxModel : undefined,
-        ratio: formData.ratio || '1:1'
+        imageRatio: formData.ratio || '1:1'  // 修正参数名
       }
+
+      console.log('🚀 发送文生图请求数据:', JSON.stringify(requestData, null, 2))
 
       const response = await fetch('/api/images/text-to-image', {
         method: 'POST',
@@ -1886,34 +1978,45 @@ function App() {
       // 创建FormData对象上传图片
       const formDataObj = new FormData()
 
-      // 尝试多种方式获取prompt文本
-      let promptText = ''
-      if (formData.title && typeof formData.title === 'object') {
-        promptText = formData.title.zh || formData.title.en || ''
-      } else if (formData.title && typeof formData.title === 'string') {
-        promptText = formData.title
-      } else if (formData.name && typeof formData.name === 'object') {
-        promptText = formData.name.zh || formData.name.en || ''
-      } else if (formData.name && typeof formData.name === 'string') {
-        promptText = formData.name
+      // 从用户输入的AI提示词字段获取内容
+      let basePromptText = ''
+      if (formData.prompt && typeof formData.prompt === 'object') {
+        basePromptText = formData.prompt.zh || formData.prompt.en || ''
+      } else if (formData.prompt && typeof formData.prompt === 'string') {
+        basePromptText = formData.prompt
       }
 
-      // 如果还是空的，使用默认prompt
-      if (!promptText || promptText.trim() === '') {
-        promptText = '生成涂色书图片'
+      // 如果AI提示词为空，尝试从标题获取
+      if (!basePromptText || basePromptText.trim() === '') {
+        if (formData.title && typeof formData.title === 'object') {
+          basePromptText = formData.title.zh || formData.title.en || ''
+        } else if (formData.title && typeof formData.title === 'string') {
+          basePromptText = formData.title
+        }
       }
+
+      // 如果仍然为空，使用默认内容
+      if (!basePromptText || basePromptText.trim() === '') {
+        basePromptText = '生成涂色书图片'
+      }
+
+      // 获取AI提示词（用户输入的提示词）和图生图提示词（通用描述）
+      const aiPrompt = basePromptText  // AI提示词（基于用户输入的提示词字段）
+      const image2imagePromptValue = imageToImagePrompt.trim() || '将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰'  // 图生图提示词（通用描述），提供默认值
 
       formDataObj.append('image', uploadedFile)
-      formDataObj.append('prompt', promptText)
+      formDataObj.append('aiPrompt', basePromptText)  // AI提示词（单张图片描述）
+      formDataObj.append('image2imagePrompt', image2imagePromptValue)  // 图生图提示词（通用描述）
       formDataObj.append('apiType', selectedApiType)
       if (selectedApiType === 'flux-kontext' && fluxModel) {
         formDataObj.append('model', fluxModel)
       }
-      formDataObj.append('ratio', formData.ratio || '1:1')
+      formDataObj.append('imageRatio', formData.ratio || '1:1')  // 修正参数名
 
       console.log('准备发送图生图请求:')
       console.log('- 文件:', uploadedFile.name, uploadedFile.size)
-      console.log('- prompt:', promptText)
+      console.log('- aiPrompt (AI提示词-单张图片描述):', basePromptText)
+      console.log('- image2imagePrompt (图生图提示词-通用描述):', image2imagePromptValue)
       console.log('- apiType:', selectedApiType)
       console.log('- fluxModel:', fluxModel)
       console.log('- ratio:', formData.ratio || '1:1')
@@ -2557,7 +2660,7 @@ function App() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="model" className="text-sm font-medium">AI模型</Label>
+                        <Label htmlFor="model" className="text-sm font-medium">文案模型</Label>
                         <Select value={formData.model} onValueChange={(value) => handleInputChange('model', value)}>
                           <SelectTrigger className="h-10">
                             <SelectValue />
@@ -2601,6 +2704,36 @@ function App() {
                       )}
 
                       <div className="space-y-2">
+                        <Label htmlFor="text2imagePrompt" className="text-sm font-medium">文生图提示词</Label>
+                        <Textarea
+                          id="text2imagePrompt"
+                          placeholder="输入文生图提示词，留空将使用默认提示词"
+                          value={text2imagePrompt}
+                          onChange={(e) => setText2imagePrompt(e.target.value)}
+                          rows={3}
+                          className="resize-none text-sm"
+                        />
+                        <p className="text-xs text-gray-500">
+                          用于指导AI如何从文字生成涂色线稿图片
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="imageToImagePrompt" className="text-sm font-medium">图生图提示词</Label>
+                        <Textarea
+                          id="imageToImagePrompt"
+                          placeholder="输入图生图提示词，留空将使用默认提示词"
+                          value={imageToImagePrompt}
+                          onChange={(e) => setImageToImagePrompt(e.target.value)}
+                          rows={3}
+                          className="resize-none text-sm"
+                        />
+                        <p className="text-xs text-gray-500">
+                          用于指导AI如何将彩色图片转换为涂色线稿
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
                         <Label htmlFor="coloringPrompt" className="text-sm font-medium">上色提示词</Label>
                         <Textarea
                           id="coloringPrompt"
@@ -2618,15 +2751,61 @@ function App() {
                   </div>
 
                   <div className="mt-4 space-y-2">
-                    <Label htmlFor="template" className="text-sm font-medium">文案模板（可选）</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="template" className="text-sm font-medium">文案模板</Label>
+                      <div className="flex gap-2">
+                        <Select onValueChange={(value) => handleInputChange('template', value)}>
+                          <SelectTrigger className="h-6 w-36 text-xs">
+                            <SelectValue placeholder="选择预设模板" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {templatePresets.map((preset, index) => (
+                              <SelectItem key={index} value={preset.content} className="text-xs">
+                                {preset.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleInputChange('template', '')}
+                          className="text-xs h-6 px-2"
+                        >
+                          清空
+                        </Button>
+                      </div>
+                    </div>
                     <Textarea
                       id="template"
-                      placeholder="输入自定义文案模板，留空将使用默认模板"
+                      placeholder="输入自定义文案模板，使用 {keyword} 和 {description} 作为占位符"
                       value={formData.template}
                       onChange={(e) => handleInputChange('template', e.target.value)}
-                      rows={4}
-                      className="resize-none"
+                      rows={12}
+                      className="resize-none text-sm"
                     />
+                    <div className="text-xs text-gray-500 space-y-1">
+                      <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'{keyword}'}</code> 作为关键词占位符</p>
+                      <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'{description}'}</code> 作为描述占位符</p>
+                      <p>• 留空时将使用系统默认模板</p>
+                    </div>
+
+                    {/* 模板预览 */}
+                    {formData.template && formData.keyword && (
+                      <div className="mt-4 p-3 bg-gray-50 border rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <Label className="text-xs font-medium text-gray-600">模板预览效果：</Label>
+                          <span className="text-xs text-gray-500">基于当前关键词和描述</span>
+                        </div>
+                        <div className="text-xs text-gray-700 whitespace-pre-wrap max-h-32 overflow-y-auto border rounded p-2 bg-white">
+                          {formData.template
+                            .replace(/\{keyword\}/g, formData.keyword || '[关键词]')
+                            .replace(/\{description\}/g, formData.description ? `特别是${formData.description}的部分，` : '')
+                          }
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -3162,7 +3341,7 @@ function App() {
                           <div className="mt-4 border-t pt-4">
                             <ImageForm
                               formData={convertItemToFormData(item)}
-                              editingLanguages={['zh']} // 只显示中文
+                              editingLanguages={getExistingLanguages(item)} // 显示项目中已存在的语言
                               supportedLanguages={supportedLanguages}
                               categories={saveOptions.categories}
                               tags={saveOptions.tags}
@@ -3181,8 +3360,55 @@ function App() {
                               ]}
                               loading={false}
                               onInputChange={(field, lang, value) => handleContentFormChange(item.id, field, lang, value)}
-                              onAddLanguage={() => { }} // 暂时不支持添加语言
-                              onRemoveLanguage={() => { }} // 暂时不支持移除语言
+                              onAddLanguage={(lang) => {
+                                // 为特定项目添加语言支持
+                                setContentList(prevList =>
+                                  prevList.map(listItem => {
+                                    if (listItem.id === item.id) {
+                                      const updatedItem = { ...listItem }
+                                      // 为每个多语言字段添加新语言的空值
+                                      const multiLangFields = ['name', 'title', 'description', 'prompt', 'content']
+                                      multiLangFields.forEach(field => {
+                                        if (updatedItem[field]) {
+                                          if (typeof updatedItem[field] === 'string') {
+                                            // 如果是字符串，转换为对象
+                                            updatedItem[field] = { zh: updatedItem[field], [lang]: '' }
+                                          } else if (typeof updatedItem[field] === 'object') {
+                                            // 如果已经是对象，添加新语言
+                                            updatedItem[field] = { ...updatedItem[field], [lang]: '' }
+                                          }
+                                        } else {
+                                          // 如果字段不存在，创建包含中文和新语言的对象
+                                          updatedItem[field] = { zh: '', [lang]: '' }
+                                        }
+                                      })
+                                      return updatedItem
+                                    }
+                                    return listItem
+                                  })
+                                )
+                              }}
+                              onRemoveLanguage={(lang) => {
+                                // 从特定项目移除语言支持（除了中文）
+                                if (lang === 'zh') return // 不允许删除中文
+                                setContentList(prevList =>
+                                  prevList.map(listItem => {
+                                    if (listItem.id === item.id) {
+                                      const updatedItem = { ...listItem }
+                                      // 从每个多语言字段移除指定语言
+                                      const multiLangFields = ['name', 'title', 'description', 'prompt', 'content']
+                                      multiLangFields.forEach(field => {
+                                        if (updatedItem[field] && typeof updatedItem[field] === 'object') {
+                                          const { [lang]: removed, ...rest } = updatedItem[field]
+                                          updatedItem[field] = rest
+                                        }
+                                      })
+                                      return updatedItem
+                                    }
+                                    return listItem
+                                  })
+                                )
+                              }}
                               onSubmit={() => { }} // 不显示提交按钮
                               onCancel={() => { }} // 不显示取消按钮
                               formatMultiLangField={formatMultiLangField}

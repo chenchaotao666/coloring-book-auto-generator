@@ -318,11 +318,17 @@ async function downloadAndSaveImage(imageUrl, filename, imageType = 'TEXT_TO_IMA
 
 /**
  * 构建专业涂色页prompt
- * @param {string} userPrompt - 用户输入的prompt
+ * @param {string} aiPrompt - AI提示词（单张图片描述）
+ * @param {string} generalPrompt - 通用提示词（文生图或图生图的全局描述）
  * @returns {string} - 专业的涂色页prompt
  */
-function buildProfessionalColoringPagePrompt(userPrompt) {
-  return `${userPrompt}, coloring page style, black and white line art, simple line drawing, clean outlines, no shading, no fill, white background, suitable for coloring, cartoon style, vector art style, printable coloring page, kid-friendly design, clear line work, minimal details, bold outlines`;
+function buildProfessionalColoringPagePrompt(aiPrompt, generalPrompt) {
+  // 如果有用户自定义的通用提示词，使用用户的；否则使用默认的
+  const defaultGeneralPrompt = 'coloring page style, black and white line art, simple line drawing, clean outlines, no shading, no fill, white background, suitable for coloring, cartoon style, vector art style, printable coloring page, kid-friendly design, clear line work, minimal details, bold outlines';
+
+  const finalGeneralPrompt = generalPrompt && generalPrompt.trim() ? generalPrompt.trim() : defaultGeneralPrompt;
+
+  return `${aiPrompt}。 ${finalGeneralPrompt}`;
 }
 
 
@@ -336,22 +342,24 @@ function buildProfessionalColoringPagePrompt(userPrompt) {
 /**
  * 文生图 - 根据文本生成图片
  * @param {Object} options - 生成选项
- * @param {string} options.prompt - 文本prompt
+ * @param {string} options.aiPrompt - AI提示词（单张图片描述）
+ * @param {string} options.text2imagePrompt - 文生图提示词（通用描述）
  * @param {string} options.apiType - API类型 ('gpt4o' 或 'flux-kontext')
  * @param {string} options.model - 模型名称（Flux时需要）
  * @param {string} options.imageRatio - 图片比例
  * @param {Function} options.progressCallback - 进度回调
  * @returns {Object} - 任务信息
  */
-async function generateTextToImage({ prompt, apiType = 'gpt4o', model, imageRatio = '1:1', progressCallback }) {
+async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', progressCallback }) {
   try {
     console.log('开始文生图任务');
-    console.log('Prompt:', prompt);
+    console.log('AI提示词 (单张图片描述):', aiPrompt);
+    console.log('文生图提示词 (通用描述):', text2imagePrompt);
     console.log('API类型:', apiType);
     console.log('图片比例:', imageRatio);
 
-    // 构建专业涂色页prompt
-    const professionalPrompt = buildProfessionalColoringPagePrompt(prompt);
+    // 构建专业涂色页prompt - AI提示词 + 文生图提示词
+    const professionalPrompt = buildProfessionalColoringPagePrompt(aiPrompt, text2imagePrompt);
     console.log(`🔧 专业prompt已构建，长度: ${professionalPrompt.length} 字符`);
 
     let taskId;
@@ -397,24 +405,26 @@ async function generateTextToImage({ prompt, apiType = 'gpt4o', model, imageRati
  * 图生图 - 根据输入图片生成新图片
  * @param {Object} options - 生成选项
  * @param {string} options.imageUrl - 输入图片URL
- * @param {string} options.prompt - 文本prompt
+ * @param {string} options.aiPrompt - AI提示词（单张图片描述）
+ * @param {string} options.image2imagePrompt - 图生图提示词（通用描述）
  * @param {string} options.apiType - API类型
  * @param {string} options.model - 模型名称
  * @param {string} options.imageRatio - 图片比例
  * @returns {Object} - 任务信息
  */
-async function generateImageToImage({ imageUrl, prompt, apiType = 'gpt4o', model, imageRatio = '1:1' }) {
+async function generateImageToImage({ imageUrl, aiPrompt, image2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1' }) {
   try {
     console.log('开始图生图任务');
     console.log('输入图片URL:', imageUrl);
-    console.log('Prompt:', prompt);
+    console.log('AI提示词 (单张图片描述):', aiPrompt);
+    console.log('图生图提示词 (通用描述):', image2imagePrompt);
     console.log('API类型:', apiType);
 
     // 处理输入图片URL
     const publicImageUrl = await processImageUrl(imageUrl);
 
-    // 构建专业prompt
-    const professionalPrompt = buildProfessionalColoringPagePrompt(prompt);
+    // 构建专业prompt - AI提示词 + 图生图提示词
+    const professionalPrompt = image2imagePrompt;
 
     let taskId;
     if (apiType === 'flux-kontext') {
@@ -695,6 +705,9 @@ function processTaskStatus(taskStatus, apiType) {
  * 完整的图片生成流程（包含轮询和下载）
  * @param {Object} options - 生成选项
  * @param {string} options.type - 任务类型 ('text-to-image', 'image-to-image', 'image-coloring')
+ * @param {string} options.aiPrompt - AI提示词（单张图片描述）
+ * @param {string} options.text2imagePrompt - 文生图提示词（通用描述，可选）
+ * @param {string} options.image2imagePrompt - 图生图提示词（通用描述，可选）
  * @param {Function} options.progressCallback - 进度回调
  * @returns {string} - 本地图片路径
  */

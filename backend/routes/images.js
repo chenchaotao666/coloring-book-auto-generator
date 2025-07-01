@@ -607,19 +607,31 @@ router.get('/:id/tags', async (req, res) => {
 // 文生图API
 router.post('/text-to-image', async (req, res) => {
   try {
-    const { prompt, apiType = 'gpt4o', model, imageRatio = '1:1' } = req.body;
+    console.log('🔍 收到文生图请求 - req.body:', JSON.stringify(req.body, null, 2));
 
-    if (!prompt) {
+    const { aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1' } = req.body;
+
+    console.log('🔍 解构后的参数:', {
+      aiPrompt: aiPrompt,
+      text2imagePrompt: text2imagePrompt,
+      apiType: apiType,
+      model: model,
+      imageRatio: imageRatio
+    });
+
+    if (!aiPrompt) {
+      console.log('❌ aiPrompt参数缺失!');
       return res.status(400).json({
         success: false,
-        message: 'prompt参数是必需的'
+        message: 'aiPrompt参数是必需的'
       });
     }
 
-    console.log('收到文生图请求:', { prompt, apiType, model, imageRatio });
+    console.log('✅ 收到文生图请求:', { aiPrompt, text2imagePrompt, apiType, model, imageRatio });
 
     const result = await imageService.generateTextToImage({
-      prompt,
+      aiPrompt,
+      text2imagePrompt,
       apiType,
       model,
       imageRatio
@@ -647,7 +659,7 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
     console.log('req.body:', req.body);
     console.log('req.file:', req.file ? { originalname: req.file.originalname, size: req.file.size, mimetype: req.file.mimetype } : 'null');
 
-    const { prompt, apiType = 'gpt4o', model, ratio = '1:1' } = req.body;
+    const { aiPrompt, image2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1' } = req.body;
 
     let imageUrl = req.body.imageUrl; // 支持直接传URL
 
@@ -681,29 +693,30 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
     }
 
     console.log('参数验证 - imageUrl:', imageUrl);
-    console.log('参数验证 - prompt:', prompt);
+    console.log('参数验证 - aiPrompt:', aiPrompt);
     console.log('参数验证 - apiType:', apiType);
     console.log('参数验证 - model:', model);
-    console.log('参数验证 - ratio:', ratio);
+    console.log('参数验证 - imageRatio:', imageRatio);
 
-    if (!imageUrl || !prompt) {
-      const errorMsg = `参数验证失败 - imageUrl: ${imageUrl}, prompt: ${prompt}`;
+    if (!imageUrl || !aiPrompt) {
+      const errorMsg = `参数验证失败 - imageUrl: ${imageUrl}, aiPrompt: ${aiPrompt}`;
       console.error(errorMsg);
       return res.status(400).json({
         success: false,
-        message: '需要提供图片文件或imageUrl，以及prompt参数',
+        message: '需要提供图片文件或imageUrl，以及aiPrompt参数',
         debug: errorMsg
       });
     }
 
-    console.log('收到图生图请求:', { imageUrl, prompt, apiType, model, imageRatio: ratio });
+    console.log('收到图生图请求:', { imageUrl, aiPrompt, image2imagePrompt, apiType, model, imageRatio });
 
     const result = await imageService.generateImageToImage({
       imageUrl,
-      prompt,
+      aiPrompt,
+      image2imagePrompt,
       apiType,
       model,
-      imageRatio: ratio
+      imageRatio
     });
 
     // 如果用户上传了文件，在返回结果中包含彩色图片URL
