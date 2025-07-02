@@ -41,7 +41,7 @@ async function callFluxKontextAPI(data, endpoint = 'generate') {
       'Accept': 'application/json',
       'Authorization': `Bearer ${KIEAI_AUTH_TOKEN}`
     },
-    timeout: isRecordQuery ? 30000 : 120000,
+    timeout: isRecordQuery ? 60000 : 120000, // 增加查询超时时间到60秒
     validateStatus: function (status) {
       return status < 500;
     }
@@ -51,7 +51,7 @@ async function callFluxKontextAPI(data, endpoint = 'generate') {
     config.data = JSON.stringify(data);
   }
 
-  const maxRetries = isRecordQuery ? 1 : 2;
+  const maxRetries = isRecordQuery ? 3 : 2; // 增加查询重试次数
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -92,12 +92,20 @@ async function callFluxKontextAPI(data, endpoint = 'generate') {
       lastError = error;
       console.error(`❌ Flux Kontext ${endpoint} API调用失败 (尝试 ${attempt}/${maxRetries}):`, error.message);
 
-      if (attempt === maxRetries || (error.response && error.response.status >= 400 && error.response.status < 500)) {
+      // 检查是否应该重试
+      const isTimeout = error.code === 'ECONNABORTED' || error.message.includes('timeout');
+      const isClientError = error.response && error.response.status >= 400 && error.response.status < 500;
+      const shouldStop = attempt === maxRetries || (isClientError && !isTimeout);
+
+      if (shouldStop) {
         break;
       }
 
-      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-      console.log(`⏳ ${delay}ms后重试...`);
+      // 对超时错误使用较短的重试间隔
+      const delay = isTimeout
+        ? Math.min(2000 * attempt, 6000)
+        : Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+      console.log(`⏳ ${isTimeout ? '超时' : '网络错误'}，${delay}ms后重试...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
@@ -123,7 +131,7 @@ async function callGPT4OAPI(data, endpoint = 'generate') {
       'Accept': 'application/json',
       'Authorization': `Bearer ${KIEAI_AUTH_TOKEN}`
     },
-    timeout: isRecordQuery ? 30000 : 120000,
+    timeout: isRecordQuery ? 60000 : 120000, // 增加查询超时时间到60秒
     validateStatus: function (status) {
       return status < 500;
     }
@@ -133,7 +141,7 @@ async function callGPT4OAPI(data, endpoint = 'generate') {
     config.data = JSON.stringify(data);
   }
 
-  const maxRetries = isRecordQuery ? 1 : 2;
+  const maxRetries = isRecordQuery ? 3 : 2; // 增加查询重试次数
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -196,9 +204,16 @@ async function callGPT4OAPI(data, endpoint = 'generate') {
       lastError = error;
       console.error(`❌ GPT-4O ${endpoint} API调用失败 (尝试 ${attempt}/${maxRetries}):`, error.message);
 
-      if (attempt < maxRetries && !error.message.includes('API请求限制')) {
-        const delay = Math.min(3000 * attempt, 10000);
-        console.log(`⏳ ${delay}ms后重试...`);
+      // 对于超时错误，在查询状态时应该重试，在创建任务时应该快速重试
+      const isTimeout = error.code === 'ECONNABORTED' || error.message.includes('timeout');
+      const shouldRetry = attempt < maxRetries &&
+        !error.message.includes('API请求限制') &&
+        (isTimeout || error.response?.status >= 500);
+
+      if (shouldRetry) {
+        // 超时错误使用较短的重试间隔
+        const delay = isTimeout ? Math.min(2000 * attempt, 6000) : Math.min(3000 * attempt, 10000);
+        console.log(`⏳ ${isTimeout ? '超时' : '服务器错误'}，${delay}ms后重试...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -577,6 +592,20 @@ async function checkTaskStatus(taskId, apiType = 'gpt4o') {
 
   } catch (error) {
     console.error('查询任务状态失败:', error);
+
+    // 对超时错误进行特殊处理
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      console.warn(`⚠️ 任务状态查询超时: ${taskId}, 可能任务仍在处理中`);
+      // 返回一个"处理中"状态而不是抛出错误
+      return {
+        status: 'processing',
+        progress: 0.5,
+        message: `任务状态查询超时，任务可能仍在处理中...`,
+        completed: false,
+        timeout: true // 标记为超时
+      };
+    }
+
     throw error;
   }
 }
@@ -802,17 +831,23 @@ async function completeImageGeneration(options) {
       } catch (statusError) {
         console.warn(`查询任务状态失败 (${attempts}/${maxAttempts}):`, statusError.message);
 
-        // 网络错误时继续尝试
-        if (attempts < maxAttempts && (
-          statusError.message.includes('ECONNRESET') ||
+        // 检查是否是网络相关错误
+        const isNetworkError = statusError.code === 'ECONNABORTED' ||
           statusError.message.includes('timeout') ||
-          statusError.message.includes('ETIMEDOUT')
-        )) {
+          statusError.message.includes('ECONNRESET') ||
+          statusError.message.includes('ETIMEDOUT') ||
+          statusError.message.includes('ENOTFOUND') ||
+          statusError.message.includes('ECONNREFUSED');
+
+        // 如果是网络错误且还有重试机会，继续尝试
+        if (isNetworkError && attempts < maxAttempts) {
+          console.log(`🔄 网络错误，继续轮询 (${attempts}/${maxAttempts})`);
           continue;
         }
 
-        // 其他错误或超过一半尝试次数时抛出异常
-        if (attempts > maxAttempts / 2) {
+        // 对于非网络错误，如果超过一半尝试次数或已经到达最大次数，抛出异常
+        if (!isNetworkError || attempts >= maxAttempts) {
+          console.error(`❌ 轮询失败，不再重试 (${attempts}/${maxAttempts})`);
           throw statusError;
         }
       }

@@ -259,12 +259,19 @@ async function translateItems(type, items, targetLanguages) {
   }
 
   const results = {}
-  const maxRetries = 2
+  const maxRetries = 3 // 增加重试次数
   let lastError = null
+
+  // 检查API密钥
+  if (!DEEPSEEK_API_KEY || DEEPSEEK_API_KEY === 'your_deepseek_api_key_here') {
+    throw new Error('DeepSeek API密钥未配置或配置错误，请检查环境变量 DEEPSEEK_API_KEY')
+  }
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`AI翻译尝试 ${attempt}/${maxRetries}`)
+      console.log(`目标语言: ${targetLanguages.join(', ')}`)
+      console.log(`翻译项目数量: ${items.length}`)
 
       // 如果是重试，添加短暂延迟
       if (attempt > 1) {
@@ -422,20 +429,38 @@ async function translateItems(type, items, targetLanguages) {
 
       lastError = error
 
-      // 判断是否应该重试
-      const shouldRetry = (
-        attempt < maxRetries &&
-        (error.code === 'ECONNABORTED' ||
-          error.message.includes('aborted') ||
-          error.code === 'ECONNREFUSED' ||
-          error.response?.status >= 500)
-      )
+      // 判断是否应该重试 - 增加更多网络错误类型
+      const isNetworkError = error.code === 'ECONNABORTED' ||
+        error.message.includes('aborted') ||
+        error.code === 'ECONNREFUSED' ||
+        error.code === 'ENOTFOUND' ||
+        error.code === 'ETIMEDOUT' ||
+        error.code === 'ECONNRESET' ||
+        error.message.includes('timeout') ||
+        error.message.includes('network')
+
+      const isServerError = error.response?.status >= 500
+      const isRateLimitError = error.response?.status === 429
+
+      const shouldRetry = attempt < maxRetries && (isNetworkError || isServerError || isRateLimitError)
 
       if (shouldRetry) {
-        console.log(`将重试 AI翻译 (${attempt + 1}/${maxRetries})`)
+        // 根据错误类型调整延迟时间
+        let delayMs = 2000 * attempt // 基础延迟
+        if (isRateLimitError) {
+          delayMs = 5000 * attempt // 限流错误延迟更长
+        } else if (isNetworkError) {
+          delayMs = 3000 * attempt // 网络错误适中延迟
+        }
+
+        console.log(`将在 ${delayMs}ms 后重试 AI翻译 (${attempt + 1}/${maxRetries})`)
+        console.log(`重试原因: ${isNetworkError ? '网络错误' : isServerError ? '服务器错误' : isRateLimitError ? '限流错误' : '其他错误'}`)
+
+        await new Promise(resolve => setTimeout(resolve, delayMs))
         continue // 继续循环，进行重试
       } else {
         // 不应该重试或已达到最大重试次数，抛出错误
+        console.log(`不再重试，原因: ${attempt >= maxRetries ? '已达最大重试次数' : '非可重试错误'}`)
         break
       }
     }
