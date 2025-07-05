@@ -677,7 +677,7 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
 
       // 上传文件到公网存储（用户上传的彩色图片）
       try {
-        const { uploadFileAndGetUrl } = require('../utils/storageUtil');
+        const { uploadFileAndGetUrl, testImageDownload } = require('../utils/storageUtil');
         const storagePath = `chenchaotao/color/${filename}`;
         console.log('开始上传文件到存储，路径:', storagePath);
         imageUrl = await uploadFileAndGetUrl(req.file, storagePath);
@@ -780,7 +780,8 @@ router.post('/color-generate', async (req, res) => {
       prompt,
       coloringPrompt,
       apiType: finalApiType,
-      model: finalModel
+      model: finalModel,
+      imageRatio: options?.ratio || '1:1'
     });
 
     res.json({
@@ -1047,6 +1048,36 @@ router.get('/management/data', async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || '获取图片管理数据失败'
+    });
+  }
+});
+
+// 测试图片下载接口
+router.post('/test-download', async (req, res) => {
+  try {
+    const { imageUrl } = req.body;
+
+    if (!imageUrl) {
+      return res.status(400).json({
+        success: false,
+        message: '请提供图片URL'
+      });
+    }
+
+    console.log('🔍 开始测试图片下载:', imageUrl);
+    const testResults = await testImageDownload(imageUrl);
+
+    res.json({
+      success: true,
+      data: testResults,
+      message: '图片下载测试完成'
+    });
+
+  } catch (error) {
+    console.error('图片下载测试失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '图片下载测试失败'
     });
   }
 });

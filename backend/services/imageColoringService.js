@@ -384,7 +384,8 @@ async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4
         prompt: professionalPrompt,
         aspectRatio: imageRatio,
         model: model || 'flux-kontext-pro',
-        callBackUrl: null
+        callBackUrl: null,
+        uploadCn: true,
       };
       taskId = await callFluxKontextAPI(requestData, 'generate');
     } else {
@@ -394,7 +395,7 @@ async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4
         size: imageRatio,
         nVariants: 1,
         isEnhance: false,
-        uploadCn: false,
+        uploadCn: true,
         enableFallback: true
       };
       taskId = await callGPT4OAPI(requestData, 'generate');
@@ -447,8 +448,10 @@ async function generateImageToImage({ imageUrl, aiPrompt, image2imagePrompt, api
       const requestData = {
         inputImage: publicImageUrl,
         prompt: professionalPrompt,
+        aspectRatio: imageRatio,
         model: model || 'flux-kontext-pro',
-        callBackUrl: null
+        callBackUrl: null,
+        uploadCn: true
       };
       taskId = await callFluxKontextAPI(requestData, 'generate');
     } else {
@@ -459,7 +462,7 @@ async function generateImageToImage({ imageUrl, aiPrompt, image2imagePrompt, api
         size: imageRatio,
         callBackUrl: null,
         isEnhance: false,
-        uploadCn: false,
+        uploadCn: true,
         nVariants: 1,
         enableFallback: false
       };
@@ -492,7 +495,7 @@ async function generateImageToImage({ imageUrl, aiPrompt, image2imagePrompt, api
  * @param {string} options.model - 模型名称
  * @returns {Object} - 任务信息
  */
-async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType = 'gpt4o', model }) {
+async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType = 'gpt4o', model, imageRatio = '1:1' }) {
   try {
     console.log('开始图片上色任务');
     console.log('原始图片URL:', imageUrl);
@@ -521,6 +524,7 @@ async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType 
       const requestData = {
         inputImage: publicImageUrl,
         prompt: colorPrompt,
+        aspectRatio: imageRatio,
         model: model || 'flux-kontext-pro',
         callBackUrl: null
       };
@@ -533,7 +537,7 @@ async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType 
         size: '1:1',
         callBackUrl: null,
         isEnhance: false,
-        uploadCn: false,
+        uploadCn: true,
         nVariants: 1,
         enableFallback: false
       };

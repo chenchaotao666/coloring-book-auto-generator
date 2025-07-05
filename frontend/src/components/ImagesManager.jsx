@@ -112,12 +112,13 @@ const ImagesManager = () => {
 
   // 比例选项
   const ratioOptions = [
-    { value: '1:1', label: '正方形 (1:1)' },
-    { value: '3:2', label: '横向 (3:2)' },
-    { value: '2:3', label: '纵向 (2:3)' },
+    { value: '21:9', label: '超宽屏 (21:9)' },
+    { value: '16:9', label: '宽屏 (16:9)' },
     { value: '4:3', label: '横向 (4:3)' },
+    { value: '1:1', label: '正方形 (1:1)' },
     { value: '3:4', label: '纵向 (3:4)' },
-    { value: '16:9', label: '宽屏 (16:9)' }
+    { value: '9:16', label: '竖屏 (9:16)' },
+    { value: '16:21', label: '超高屏 (16:21)' }
   ]
 
   // 获取所有已有的语言版本
@@ -2048,7 +2049,7 @@ const ImagesManager = () => {
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                         <span>分类: {getCategoryName(image.categoryId)}</span>
                         <span>比例: {image.ratio}</span>
-                        {image.size && <span>尺寸: {image.size}</span>}
+                        {/* {image.size && <span>尺寸: {image.size}</span>} */}
                         <div className="flex items-center gap-1">
                           <span>热度:</span>
                           <span className="font-medium text-orange-600">{image.hotness || 0}</span>

@@ -195,7 +195,7 @@ const ImageForm = ({
               disabled={readOnly}
             />
           </div>
-          <div>
+          {/* <div>
             <Label>尺寸</Label>
             <Input
               value={formData.size}
@@ -203,7 +203,7 @@ const ImageForm = ({
               placeholder="如：512,512"
               readOnly={readOnly}
             />
-          </div>
+          </div> */}
           <div>
             <Label>热度值</Label>
             <Input
@@ -282,13 +282,13 @@ const ImageForm = ({
                 <img
                   src={formData.defaultUrl}
                   alt="默认图片预览"
-                  className="w-full h-40 object-contain rounded border bg-gray-50"
+                  className="w-full h-80 object-contain rounded border bg-gray-50"
                   onError={(e) => {
                     e.target.style.display = 'none'
                     e.target.nextSibling.style.display = 'flex'
                   }}
                 />
-                <div className="hidden w-full h-40 items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
+                <div className="hidden w-full h-80 items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
                   图片加载失败
                 </div>
               </div>
@@ -422,13 +422,13 @@ const ImageForm = ({
                 <img
                   src={formData.coloringUrl}
                   alt="上色结果预览"
-                  className="w-full h-40 object-contain rounded border bg-gray-50"
+                  className="w-full h-80 object-contain rounded border bg-gray-50"
                   onError={(e) => {
                     e.target.style.display = 'none'
                     e.target.nextSibling.style.display = 'flex'
                   }}
                 />
-                <div className="hidden w-full h-40 items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
+                <div className="hidden w-full h-80 items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
                   图片加载失败
                 </div>
               </div>
