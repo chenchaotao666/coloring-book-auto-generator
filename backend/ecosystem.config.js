@@ -3,7 +3,6 @@ module.exports = {
     {
       name: 'coloring-book-backend',
       script: 'server.js',
-      cwd: './backend',
       instances: 1,
       autorestart: true,
       watch: false,
