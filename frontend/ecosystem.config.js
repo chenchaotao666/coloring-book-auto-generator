@@ -17,9 +17,9 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000
       },
-      error_file: './logs/frontend-err.log',
-      out_file: './logs/frontend-out.log',
-      log_file: './logs/frontend-combined.log',
+      error_file: '/dev/null',
+      out_file: '/dev/null',
+      log_file: '/dev/null',
       time: true,
       log_date_format: 'YYYY-MM-DD HH:mm Z',
       merge_logs: true,
