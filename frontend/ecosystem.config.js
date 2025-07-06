@@ -2,8 +2,8 @@ module.exports = {
   apps: [
     {
       name: 'coloring-book-frontend',
-      script: 'npx',
-      args: 'serve -s dist -l 3001',
+      script: 'npm',
+      args: 'start',
       cwd: './frontend',
       instances: 1,
       autorestart: true,

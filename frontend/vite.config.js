@@ -13,11 +13,11 @@ export default defineConfig({
     port: 3001,
     proxy: {
       '/api': {
-        target: 'http://localhost:3002',
+        target: process.env.VITE_API_BASE_URL || 'http://localhost:3002',
         changeOrigin: true,
       },
       '/images': {
-        target: 'http://localhost:3002',
+        target: process.env.VITE_API_BASE_URL || 'http://localhost:3002',
         changeOrigin: true,
       },
     },
