@@ -312,7 +312,7 @@ router.post('/', async (req, res) => {
       description: description || {},
       type,
       ratio: ratio || '1:1',
-      isPublic: isPublic !== undefined ? isPublic : false,
+      isPublic: isPublic !== undefined ? isPublic : true,
       hotness: hotness || 0,
       prompt: prompt || {},
       userId: userId || null,
@@ -369,9 +369,9 @@ router.put('/:id', async (req, res) => {
       name: name ?
         (typeof name === 'object' ? name : { zh: name }) :
         {},
-      defaultUrl: defaultUrl || existingImage.defaultUrl,
-      colorUrl: colorUrl || existingImage.colorUrl,
-      coloringUrl: coloringUrl || existingImage.coloringUrl,
+      defaultUrl: defaultUrl !== undefined ? defaultUrl : existingImage.defaultUrl,
+      colorUrl: colorUrl !== undefined ? colorUrl : existingImage.colorUrl,
+      coloringUrl: coloringUrl !== undefined ? coloringUrl : existingImage.coloringUrl,
       title: title ?
         (typeof title === 'object' ? title : { zh: title }) :
         existingImage.title,
@@ -380,7 +380,7 @@ router.put('/:id', async (req, res) => {
         (existingImage.description || {}),
       type,
       ratio: ratio || '1:1',
-      isPublic: isPublic !== undefined ? isPublic : false,
+      isPublic: isPublic !== undefined ? isPublic : true,
       hotness: hotness !== undefined ? hotness : (existingImage.hotness || 0),
       prompt: prompt ?
         (typeof prompt === 'object' ? prompt : { zh: prompt }) :
@@ -393,6 +393,13 @@ router.put('/:id', async (req, res) => {
         (additionalInfo !== undefined ? additionalInfo : existingImage.additionalInfo),
       tagIds: tagIds !== undefined ? tagIds : []
     }
+
+    console.log(`🔧 PUT /api/images/${id} - 更新数据:`, {
+      id,
+      coloringUrl: coloringUrl,
+      coloringUrlType: typeof coloringUrl,
+      willUpdate: coloringUrl !== undefined
+    })
 
     const updatedImage = await ImageModel.update(id, imageData)
 
@@ -627,6 +634,27 @@ router.post('/text-to-image', async (req, res) => {
       });
     }
 
+    // 校验模型和比例的匹配性
+    if (apiType === 'gpt4o') {
+      const supportedRatios = ['1:1', '3:2', '2:3'];
+      if (!supportedRatios.includes(imageRatio)) {
+        console.log('❌ GPT-4O模型不支持的比例:', imageRatio);
+        return res.status(400).json({
+          success: false,
+          message: `GPT-4O模型只支持以下比例: ${supportedRatios.join(', ')}，当前比例: ${imageRatio}`
+        });
+      }
+    } else if (apiType === 'flux-kontext') {
+      const supportedRatios = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', '16:21'];
+      if (!supportedRatios.includes(imageRatio)) {
+        console.log('❌ Flux Kontext模型不支持的比例:', imageRatio);
+        return res.status(400).json({
+          success: false,
+          message: `Flux Kontext模型只支持以下比例: ${supportedRatios.join(', ')}，当前比例: ${imageRatio}`
+        });
+      }
+    }
+
     console.log('✅ 收到文生图请求:', { aiPrompt, text2imagePrompt, apiType, model, imageRatio });
 
     const result = await imageService.generateTextToImage({
@@ -706,6 +734,27 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
         message: '需要提供图片文件或imageUrl，以及aiPrompt参数',
         debug: errorMsg
       });
+    }
+
+    // 校验模型和比例的匹配性
+    if (apiType === 'gpt4o') {
+      const supportedRatios = ['1:1', '3:2', '2:3'];
+      if (!supportedRatios.includes(imageRatio)) {
+        console.log('❌ GPT-4O模型不支持的比例:', imageRatio);
+        return res.status(400).json({
+          success: false,
+          message: `GPT-4O模型只支持以下比例: ${supportedRatios.join(', ')}，当前比例: ${imageRatio}`
+        });
+      }
+    } else if (apiType === 'flux-kontext') {
+      const supportedRatios = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', '16:21'];
+      if (!supportedRatios.includes(imageRatio)) {
+        console.log('❌ Flux Kontext模型不支持的比例:', imageRatio);
+        return res.status(400).json({
+          success: false,
+          message: `Flux Kontext模型只支持以下比例: ${supportedRatios.join(', ')}，当前比例: ${imageRatio}`
+        });
+      }
     }
 
     console.log('收到图生图请求:', { imageUrl, aiPrompt, image2imagePrompt, apiType, model, imageRatio });
@@ -821,6 +870,31 @@ router.get('/task-status/:taskId', async (req, res) => {
     // 如果任务完成且有图片URL，自动下载并上传到指定目录
     let processedImageUrl = status.imageUrl;
     if (status.status === 'completed' && status.imageUrl) {
+      // // 如果是flux-kontext类型，需要调用download-url接口获取新的下载链接
+      // if (apiType === 'flux-kontext') {
+      //   try {
+      //     console.log('🔄 Flux-Kontext任务完成，正在获取新的下载链接...');
+
+      //     // 调用flux/kontext/download-url接口
+      //     const { callFluxKontextAPI } = require('../services/imageColoringService');
+      //     const downloadData = await callFluxKontextAPI({
+      //       taskId: taskId,
+      //       url: status.imageUrl
+      //     }, 'download-url');
+
+      //     if (downloadData && downloadData.url) {
+      //       status.imageUrl = downloadData.url;
+      //       processedImageUrl = downloadData.url;
+      //       console.log('✅ 获取到新的下载链接:', finalImageUrl);
+      //     } else {
+      //       console.warn('⚠️  获取新下载链接失败，使用原始URL');
+      //     }
+      //   } catch (downloadError) {
+      //     console.error('❌ 获取Flux-Kontext下载链接失败:', downloadError);
+      //     console.warn('⚠️  将使用原始URL继续处理');
+      //   }
+      // }
+
       // 检查缓存，避免重复处理同一张图片
       const cacheKey = `${taskId}-${status.imageUrl}`;
 
@@ -906,178 +980,6 @@ router.get('/task-status/:taskId', async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || '查询任务状态失败'
-    });
-  }
-});
-
-// 完整的图片生成流程API（包含轮询和下载）
-router.post('/complete-generation', async (req, res) => {
-  try {
-    const { type, ...options } = req.body;
-
-    if (!type || !['text-to-image', 'image-to-image', 'image-coloring'].includes(type)) {
-      return res.status(400).json({
-        success: false,
-        message: 'type参数必须是text-to-image、image-to-image或image-coloring之一'
-      });
-    }
-
-    console.log('收到完整图片生成请求:', { type, options });
-
-    const localPath = await imageService.completeImageGeneration({
-      type,
-      ...options
-    });
-
-    res.json({
-      success: true,
-      data: {
-        localPath,
-        url: `/${localPath}`
-      },
-      message: '图片生成完成'
-    });
-
-  } catch (error) {
-    console.error('完整图片生成API错误:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || '图片生成失败'
-    });
-  }
-});
-
-// 向后兼容的上色任务状态查询API
-router.get('/color-task/:taskId/:imageId', async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const { apiType = 'gpt4o' } = req.query;
-
-    console.log('查询上色任务状态 (兼容API):', { taskId, apiType });
-
-    const status = await imageService.checkTaskStatus(taskId, apiType);
-
-    // 如果任务完成且有图片URL，下载并上传到分类存储
-    let coloringUrl = null;
-    if (status.status === 'completed' && status.imageUrl) {
-      // 检查缓存，避免重复处理同一张图片
-      const cacheKey = `${taskId}-${status.imageUrl}`;
-
-      if (coloringImageCache.has(cacheKey)) {
-        console.log('📋 从缓存获取上色图片URL:', coloringImageCache.get(cacheKey));
-        coloringUrl = coloringImageCache.get(cacheKey);
-      } else {
-        try {
-          console.log('📥 任务完成，正在下载图片并上传到分类存储:', status.imageUrl);
-
-          // 生成唯一文件名
-          const { v4: uuidv4 } = require('uuid');
-          const filename = `image-coloring_${Date.now()}_${uuidv4().split('-')[0]}.png`;
-
-          // 使用新的分类存储功能上传图片
-          const { downloadAndUploadToCategory } = require('../utils/storageUtil');
-          const uploadResult = await downloadAndUploadToCategory(
-            status.imageUrl,
-            'IMAGE_COLORING',  // 上色图片分类
-            filename
-          );
-
-          coloringUrl = uploadResult.publicUrl;
-          console.log('✅ 上色图片已上传到分类存储:', coloringUrl);
-
-          // 缓存结果，有效期30分钟
-          coloringImageCache.set(cacheKey, coloringUrl);
-          setTimeout(() => {
-            coloringImageCache.delete(cacheKey);
-          }, 30 * 60 * 1000);
-
-        } catch (uploadError) {
-          console.error('❌ 上传上色图片到分类存储失败:', uploadError);
-          console.error(`   原始图片URL: ${status.imageUrl}`);
-          console.error(`   任务ID: ${taskId}`);
-
-          // 如果是网络相关错误，给出更友好的提示
-          if (uploadError.message && uploadError.message.includes('网络连接不稳定')) {
-            console.warn('⚠️  网络连接问题导致上色图片上传失败，将返回原始URL');
-          }
-
-          // 如果上传失败，仍然返回原始URL
-          coloringUrl = status.imageUrl;
-        }
-      }
-    }
-
-    // 调整返回结构以匹配前端期望
-    const responseData = {
-      ...status,
-      coloringUrl: coloringUrl  // 使用处理后的URL
-    };
-
-    res.json({
-      success: true,
-      data: responseData,
-      message: '查询上色任务状态成功'
-    });
-
-  } catch (error) {
-    console.error('查询上色任务状态错误:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || '查询上色任务状态失败'
-    });
-  }
-});
-
-// 获取图片管理相关数据
-router.get('/management/data', async (req, res) => {
-  try {
-    const [categories, tags] = await Promise.all([
-      CategoryModel.getAll(),
-      TagModel.getAll()
-    ]);
-
-    res.json({
-      success: true,
-      data: {
-        categories,
-        tags
-      }
-    });
-  } catch (error) {
-    console.error('获取图片管理数据失败:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || '获取图片管理数据失败'
-    });
-  }
-});
-
-// 测试图片下载接口
-router.post('/test-download', async (req, res) => {
-  try {
-    const { imageUrl } = req.body;
-
-    if (!imageUrl) {
-      return res.status(400).json({
-        success: false,
-        message: '请提供图片URL'
-      });
-    }
-
-    console.log('🔍 开始测试图片下载:', imageUrl);
-    const testResults = await testImageDownload(imageUrl);
-
-    res.json({
-      success: true,
-      data: testResults,
-      message: '图片下载测试完成'
-    });
-
-  } catch (error) {
-    console.error('图片下载测试失败:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || '图片下载测试失败'
     });
   }
 });

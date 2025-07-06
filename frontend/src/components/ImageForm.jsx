@@ -26,6 +26,7 @@ const ImageForm = ({
   showButtons = true,
   className = '',
   readOnly = false,
+  mode = 'edit', // 新增：'edit' 编辑模式 | 'generation' 生成图片模式
   onGenerateColoring = null,
   isGeneratingColoring = false,
   coloringTaskStatus = null,
@@ -190,7 +191,7 @@ const ImageForm = ({
               type="button"
               onClick={() => setActiveLanguage(langCode)}
               className={`px-3 py-2 text-sm rounded-t-lg border-b-2 transition-colors ${activeLanguage === langCode
-                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                ? 'border-blue-300 bg-blue-100 text-blue-700'
                 : 'border-transparent bg-gray-50 text-gray-600 hover:bg-gray-100'
                 }`}
             >
@@ -289,33 +290,37 @@ const ImageForm = ({
         <h3 className="text-lg font-medium">图片地址</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between min-h-[36px]">
               <Label>黑白涂色图URL</Label>
               <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleTextToImage}
-                  disabled={isGeneratingTextToImage || readOnly}
-                  className="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 border-blue-300 text-blue-700 disabled:bg-gray-100 disabled:text-gray-400"
-                >
-                  <ImageIcon className="w-3 h-3" />
-                  {isGeneratingTextToImage ? '生成中...' : '文生图'}
-                </Button>
-                {textToImageTaskStatus && textToImageTaskStatus.status !== 'failed' && (
-                  <div className="flex items-center gap-1 text-xs text-gray-600">
-                    <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 transition-all duration-300"
-                        style={{ width: `${textToImageTaskStatus.progress || 0}%` }}
-                      />
-                    </div>
-                    <span className="whitespace-nowrap">{textToImageTaskStatus.progress || 0}%</span>
-                  </div>
-                )}
-                {textToImageTaskStatus && textToImageTaskStatus.status === 'failed' && (
-                  <span className="text-xs text-red-500">生成失败</span>
+                {mode === 'edit' && (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleTextToImage}
+                      disabled={isGeneratingTextToImage || readOnly}
+                      className="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 border-blue-300 text-blue-700 disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      <ImageIcon className="w-3 h-3" />
+                      {isGeneratingTextToImage ? '生成中...' : '文生图'}
+                    </Button>
+                    {textToImageTaskStatus && textToImageTaskStatus.status !== 'failed' && (
+                      <div className="flex items-center gap-1 text-xs text-gray-600">
+                        <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 transition-all duration-300"
+                            style={{ width: `${textToImageTaskStatus.progress || 0}%` }}
+                          />
+                        </div>
+                        <span className="whitespace-nowrap">{textToImageTaskStatus.progress || 0}%</span>
+                      </div>
+                    )}
+                    {textToImageTaskStatus && textToImageTaskStatus.status === 'failed' && (
+                      <span className="text-xs text-red-500">生成失败</span>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -330,11 +335,13 @@ const ImageForm = ({
                 <img
                   src={formData.defaultUrl}
                   alt="默认图片预览"
-                  className="w-full object-contain rounded border bg-gray-50"
+                  className="w-full object-contain rounded border bg-gray-50 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => window.open(formData.defaultUrl, '_blank')}
                   onError={(e) => {
                     e.target.style.display = 'none'
                     e.target.nextSibling.style.display = 'flex'
                   }}
+                  title="点击查看原图"
                 />
                 <div className="hidden w-full items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
                   图片加载失败
@@ -343,37 +350,39 @@ const ImageForm = ({
             )}
           </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between min-h-[36px]">
               <Label>上色后图片URL</Label>
-              {onGenerateColoring && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleGenerateColoring}
-                    disabled={isGeneratingColoring || !formData.defaultUrl || readOnly}
-                    className="flex items-center gap-1 bg-orange-100 hover:bg-orange-200 border-orange-300 text-orange-700 disabled:bg-gray-100 disabled:text-gray-400"
-                  >
-                    <Palette className="w-3 h-3" />
-                    {isGeneratingColoring ? '生成中...' : '生成上色图片'}
-                  </Button>
-                  {coloringTaskStatus && coloringTaskStatus.status !== 'failed' && (
-                    <div className="flex items-center gap-1 text-xs text-gray-600">
-                      <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-purple-500 transition-all duration-300"
-                          style={{ width: `${coloringTaskStatus.progress || 0}%` }}
-                        />
+              <div className="flex items-center gap-2">
+                {onGenerateColoring && mode === 'edit' && (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleGenerateColoring}
+                      disabled={isGeneratingColoring || !formData.defaultUrl || readOnly}
+                      className="flex items-center gap-1 bg-orange-100 hover:bg-orange-200 border-orange-300 text-orange-700 disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      <Palette className="w-3 h-3" />
+                      {isGeneratingColoring ? '生成中...' : '生成上色图片'}
+                    </Button>
+                    {coloringTaskStatus && coloringTaskStatus.status !== 'failed' && (
+                      <div className="flex items-center gap-1 text-xs text-gray-600">
+                        <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-purple-500 transition-all duration-300"
+                            style={{ width: `${coloringTaskStatus.progress || 0}%` }}
+                          />
+                        </div>
+                        <span className="whitespace-nowrap">{coloringTaskStatus.progress || 0}%</span>
                       </div>
-                      <span className="whitespace-nowrap">{coloringTaskStatus.progress || 0}%</span>
-                    </div>
-                  )}
-                  {coloringTaskStatus && coloringTaskStatus.status === 'failed' && (
-                    <span className="text-xs text-red-500">生成失败</span>
-                  )}
-                </div>
-              )}
+                    )}
+                    {coloringTaskStatus && coloringTaskStatus.status === 'failed' && (
+                      <span className="text-xs text-red-500">生成失败</span>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
             <Input
               value={formData.coloringUrl}
@@ -386,11 +395,13 @@ const ImageForm = ({
                 <img
                   src={formData.coloringUrl}
                   alt="上色结果预览"
-                  className="w-full object-contain rounded border bg-gray-50"
+                  className="w-full object-contain rounded border bg-gray-50 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => window.open(formData.coloringUrl, '_blank')}
                   onError={(e) => {
                     e.target.style.display = 'none'
                     e.target.nextSibling.style.display = 'flex'
                   }}
+                  title="点击查看原图"
                 />
                 <div className="hidden w-full items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
                   图片加载失败
@@ -399,7 +410,7 @@ const ImageForm = ({
             )}
           </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between min-h-[36px]">
               <Label>彩色图片URL</Label>
               <div className="flex items-center gap-2">
                 <Button
@@ -439,7 +450,7 @@ const ImageForm = ({
             {/* 图片上传区域 */}
             {!readOnly && (
               <div className="mt-2">
-                <div className="text-sm font-medium text-gray-700 mb-2">上传参考图片</div>
+                <div className="text-sm font-medium text-gray-700 mb-2">上传彩色图片</div>
                 <div
                   className={`w-full h-32 bg-gray-50 rounded-lg border border-gray-200 flex flex-col items-center justify-center transition-colors relative cursor-pointer hover:bg-gray-100`}
                   onClick={() => document.getElementById(`imageUpload-${formData.id || 'new'}`)?.click()}
@@ -576,22 +587,24 @@ const ImageForm = ({
               placeholder="0-1000"
               readOnly={readOnly}
             />
-            <p className="text-xs text-gray-500 mt-1">热度值范围：0-1000</p>
+            <p className="text-xs text-gray-500 mt-1">热度值范围：0-1000，排序时使用</p>
           </div>
           <div>
             <Label>状态</Label>
             <div className="flex items-center gap-2 mt-2">
-              <input
-                type="checkbox"
-                id={`isPublic-${formData.id || 'new'}`}
-                checked={formData.isPublic}
-                onChange={readOnly ? undefined : (e) => onInputChange('isPublic', null, e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                disabled={readOnly}
-              />
-              <Label htmlFor={`isPublic-${formData.id || 'new'}`} className="text-sm font-medium text-gray-700">
-                公开图片
-              </Label>
+              <label htmlFor={`isPublic-${formData.id || 'new'}`} className="flex items-center gap-2 cursor-pointer p-1 -m-1">
+                <input
+                  type="checkbox"
+                  id={`isPublic-${formData.id || 'new'}`}
+                  checked={formData.isPublic}
+                  onChange={readOnly ? undefined : (e) => onInputChange('isPublic', null, e.target.checked)}
+                  className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  disabled={readOnly}
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  公开图片
+                </span>
+              </label>
             </div>
           </div>
         </div>

@@ -396,7 +396,6 @@ async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4
         nVariants: 1,
         isEnhance: false,
         uploadCn: true,
-        enableFallback: true
       };
       taskId = await callGPT4OAPI(requestData, 'generate');
     }
@@ -526,7 +525,8 @@ async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType 
         prompt: colorPrompt,
         aspectRatio: imageRatio,
         model: model || 'flux-kontext-pro',
-        callBackUrl: null
+        callBackUrl: null,
+        uploadCn: true,
       };
       taskId = await callFluxKontextAPI(requestData, 'generate');
     } else {
@@ -878,6 +878,9 @@ module.exports = {
 
   // 任务状态查询
   checkTaskStatus,
+
+  // API调用函数
+  callFluxKontextAPI,
 
   // 工具函数
   processImageUrl,

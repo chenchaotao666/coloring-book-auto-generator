@@ -1,20 +1,36 @@
 {
   "name": "coloring-book-auto-generator",
   "version": "1.0.0",
-  "description": "自动生成涂色书内容和图片的应用",
+  "description": "AI涂色书内容生成器",
   "scripts": {
-    "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build:backend": "cd backend && npm run build",
     "build:frontend": "cd frontend && npm run build",
-    "build": "npm run build:frontend",
-    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install"
+    "build": "npm run build:backend && npm run build:frontend",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:start:prod": "pm2 start ecosystem.config.js --env production",
+    "pm2:restart": "pm2 restart all",
+    "pm2:stop": "pm2 stop all",
+    "pm2:delete": "pm2 delete all",
+    "pm2:logs": "pm2 logs",
+    "pm2:monit": "pm2 monit",
+    "pm2:status": "pm2 status",
+    "deploy:setup": "npm run install:all && npm run build",
+    "deploy:prod": "npm run build && npm run pm2:start:prod"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
-  "dependencies": {
-    "axios": "^1.10.0",
-    "node-fetch": "^3.3.2"
-  }
+  "keywords": [
+    "coloring-book",
+    "ai",
+    "image-generation",
+    "react",
+    "node.js"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
 }

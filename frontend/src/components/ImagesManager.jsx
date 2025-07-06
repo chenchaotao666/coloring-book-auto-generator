@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { MultiSelect } from '@/components/ui/multi-select'
@@ -10,7 +11,6 @@ import {
   Check,
   CheckSquare,
   Edit3,
-  Eye,
   Image as ImageIcon,
   Languages,
   Palette,
@@ -46,6 +46,10 @@ const ImagesManager = () => {
   // 单个图片上色状态
   const [singleColoringTasks, setSingleColoringTasks] = useState(new Map()) // 存储单个图片的上色任务
 
+  // API选择相关状态
+  const [selectedApiType, setSelectedApiType] = useState('flux-kontext') // 'gpt4o' 或 'flux-kontext'
+  const [fluxModel, setFluxModel] = useState('flux-kontext-pro') // 'flux-kontext-pro' 或 'flux-kontext-max'
+
   // 分类和标签数据
   const [categories, setCategories] = useState([])
   const [tags, setTags] = useState([])
@@ -63,7 +67,7 @@ const ImagesManager = () => {
     coloringUrl: '',
     type: 'text2image',
     ratio: '1:1',
-    isPublic: false,
+    isPublic: true,
     categoryId: null,
     size: '',
     tagIds: []
@@ -117,16 +121,51 @@ const ImagesManager = () => {
     { value: 'image2coloring', label: '图片转涂色' }
   ]
 
-  // 比例选项
-  const ratioOptions = [
-    { value: '21:9', label: '超宽屏 (21:9)' },
-    { value: '16:9', label: '宽屏 (16:9)' },
-    { value: '4:3', label: '横向 (4:3)' },
-    { value: '1:1', label: '正方形 (1:1)' },
-    { value: '3:4', label: '纵向 (3:4)' },
-    { value: '9:16', label: '竖屏 (9:16)' },
-    { value: '16:21', label: '超高屏 (16:21)' }
-  ]
+  // 获取支持的比例选项（基于选择的API类型）
+  const getSupportedRatios = (apiType) => {
+    const allRatios = [
+      { value: '21:9', label: '超宽屏 (21:9) - Flux' },
+      { value: '16:9', label: '宽屏 (16:9) - Flux' },
+      { value: '4:3', label: '横向 (4:3) - Flux' },
+      { value: '3:2', label: '横向 (3:2) - 4O' },
+      { value: '1:1', label: '正方形 (1:1) - Flux/4O' },
+      { value: '2:3', label: '纵向 (2:3) - 4O' },
+      { value: '3:4', label: '纵向 (3:4) - Flux' },
+      { value: '9:16', label: '竖屏 (9:16) - Flux' },
+      { value: '16:21', label: '超高屏 (16:21) - Flux' }
+    ]
+
+    // GPT-4O只支持特定比例
+    if (apiType === 'gpt4o') {
+      const supportedValues = ['1:1', '3:2', '2:3']
+      return allRatios.filter(ratio => supportedValues.includes(ratio.value))
+    }
+
+    // Flux Kontext支持特定比例
+    if (apiType === 'flux-kontext') {
+      const supportedValues = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', '16:21']
+      return allRatios.filter(ratio => supportedValues.includes(ratio.value))
+    }
+
+    // 默认返回所有比例
+    return allRatios
+  }
+
+  // 校验比例是否与API类型匹配
+  const validateRatioForApiType = (ratio, apiType) => {
+    const supportedRatios = getSupportedRatios(apiType).map(r => r.value)
+    return supportedRatios.includes(ratio)
+  }
+
+  // 显示比例校验失败的提示
+  const showRatioValidationError = (ratio, apiType) => {
+    const supportedRatios = getSupportedRatios(apiType).map(r => r.value)
+    const modelName = apiType === 'gpt4o' ? 'GPT-4O' : 'Flux Kontext'
+    setError(`${modelName}模型不支持比例"${ratio}"，支持的比例: ${supportedRatios.join(', ')}`)
+  }
+
+  // 比例选项（动态获取）
+  const ratioOptions = getSupportedRatios(selectedApiType)
 
   // 获取所有已有的语言版本
   const getExistingLanguages = (formData) => {
@@ -269,6 +308,21 @@ const ImagesManager = () => {
     loadImages()
   }, [filters])
 
+  // 当API类型变化时，检查并调整表单中的图片比例
+  useEffect(() => {
+    if (formData.ratio) {
+      const supportedRatios = getSupportedRatios(selectedApiType)
+      const supportedValues = supportedRatios.map(r => r.value)
+
+      // 如果当前表单中的比例不被支持，自动切换到第一个支持的比例
+      if (!supportedValues.includes(formData.ratio)) {
+        const defaultRatio = supportedValues.includes('1:1') ? '1:1' : supportedValues[0]
+        setFormData(prev => ({ ...prev, ratio: defaultRatio }))
+        console.log(`ImagesManager: API类型变更为${selectedApiType}，自动调整图片比例为: ${defaultRatio}`)
+      }
+    }
+  }, [selectedApiType, formData.ratio])
+
   // 清除提示信息
   useEffect(() => {
     if (error || success) {
@@ -294,7 +348,7 @@ const ImagesManager = () => {
       coloringUrl: '',
       type: 'text2image',
       ratio: '1:1',
-      isPublic: false,
+      isPublic: true,
       hotness: 0,
       categoryId: null,
       size: '',
@@ -383,7 +437,7 @@ const ImagesManager = () => {
       coloringUrl: image.coloringUrl || '',
       type: image.type || 'text2image',
       ratio: image.ratio || '1:1',
-      isPublic: image.isPublic || false,
+      isPublic: image.isPublic !== undefined ? image.isPublic : true,
       hotness: image.hotness || 0,
       categoryId: image.categoryId || null,
       size: image.size || '',
@@ -487,18 +541,18 @@ const ImagesManager = () => {
   }
 
   // 手动上色功能
+  // 图片列表上色 - 完全独立的系统
   const handleManualColoring = async (imageId, imageData) => {
-    if (!(await confirm('确认为此图片生成上色版本？', {
-      title: '图片上色确认',
-      confirmText: '开始上色',
-      cancelText: '取消',
-      type: 'default'
-    }))) {
-      return
-    }
 
-    setLoading(true)
-    setError('')
+    console.log('🚀 图片列表上色开始 - 图片ID:', imageId, '标题:', imageData.title)
+
+    const taskKey = `list-${imageId}`
+    setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+      taskId: null,
+      progress: 0,
+      status: 'starting',
+      message: '正在创建上色任务...'
+    })))
 
     try {
       const prompt = imageData.prompt ?
@@ -522,21 +576,195 @@ const ImagesManager = () => {
 
       const data = await response.json()
 
-      if (data.success) {
-        setSuccess('上色任务已创建，正在处理中，请稍后刷新查看结果...')
-
-        // 3秒后自动刷新图片列表
-        setTimeout(() => {
-          loadImages()
-        }, 3000)
-      } else {
-        setError(data.message || '上色失败')
+      if (!response.ok) {
+        throw new Error(data.message || '上色任务创建失败')
       }
-    } catch (err) {
-      setError('网络错误：' + err.message)
-    } finally {
-      setLoading(false)
+
+      if (data.success && data.data.coloringResult?.taskId) {
+        const taskId = data.data.coloringResult.taskId
+        console.log('🚀 图片列表上色任务创建成功:', taskId)
+
+        setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: 10,
+          status: 'processing',
+          message: '任务已创建，正在上色中...'
+        })))
+
+        // 开始独立轮询
+        pollListColoringTask(taskId, imageId, imageData, taskKey)
+        return true
+      } else {
+        throw new Error(data.message || '创建上色任务失败')
+      }
+
+    } catch (error) {
+      console.error('🚀 图片列表上色错误:', error)
+      setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+        taskId: null,
+        progress: 0,
+        status: 'failed',
+        message: error.message
+      })))
+      setError(`上色失败: ${error.message}`)
+      setTimeout(() => {
+        setSingleColoringTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(taskKey)
+          return newMap
+        })
+      }, 3000)
+      return false
     }
+  }
+
+  // 图片列表上色的独立轮询函数
+  const pollListColoringTask = async (taskId, imageId, imageData, taskKey) => {
+    const maxAttempts = 60
+    let attempts = 0
+
+    console.log('🚀 开始轮询图片列表上色任务:', taskId, '图片ID:', imageId)
+
+    const poll = async () => {
+      try {
+        attempts++
+        console.log(`🚀 轮询图片列表上色 ${attempts}/${maxAttempts}:`, taskId)
+
+        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${selectedApiType}`)
+        const result = await response.json()
+
+        if (!response.ok) {
+          throw new Error(result.error || '获取任务状态失败')
+        }
+
+        const progress = Math.min(10 + attempts * 1.5, 90)
+        setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: progress,
+          status: 'processing',
+          message: `正在上色中... (${attempts}/${maxAttempts})`
+        })))
+
+        if (result.data && result.data.status === 'completed' && (result.data.coloringUrl || result.data.imageUrl)) {
+          const coloringUrl = result.data.coloringUrl || result.data.imageUrl
+          console.log('🚀 图片列表上色完成!', '图片ID:', imageId, 'URL:', coloringUrl)
+
+          // 立即更新数据库
+          try {
+            const updateResponse = await fetch(`/api/images/${imageId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...imageData,
+                coloringUrl: coloringUrl
+              })
+            })
+            const updateResult = await updateResponse.json()
+
+            if (updateResult.success) {
+              console.log('🚀 数据库更新成功!')
+
+              // 更新本地图片列表
+              setImages(prev => prev.map(img =>
+                img.id && img.id.toString() === imageId.toString()
+                  ? { ...img, coloringUrl: coloringUrl }
+                  : img
+              ))
+
+              // 如果这个图片正在编辑中，也更新表单
+              if (editingId && imageId.toString() === editingId.toString()) {
+                console.log('🚀 图片正在编辑中，同时更新表单')
+                setFormData(prev => ({
+                  ...prev,
+                  coloringUrl: coloringUrl
+                }))
+
+                // 强制刷新表单显示
+                setTimeout(() => {
+                  setFormData(prev => ({ ...prev, coloringUrl: coloringUrl }))
+                }, 100)
+              }
+
+              setSuccess(`图片上色完成！`)
+            } else {
+              console.error('🚀 数据库更新失败:', updateResult.message)
+            }
+          } catch (error) {
+            console.error('🚀 数据库更新异常:', error)
+          }
+
+          setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 100,
+            status: 'completed',
+            message: '上色完成！'
+          })))
+
+          setTimeout(() => {
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        } else if (result.data && result.data.status === 'failed') {
+          setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: result.data.error || '上色生成失败'
+          })))
+          setError(`上色生成失败: ${result.data.error || '未知错误'}`)
+          setTimeout(() => {
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+          return
+        }
+
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 3000)
+        } else {
+          setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: '上色生成超时'
+          })))
+          setError('上色生成超时，请重试')
+          setTimeout(() => {
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+        }
+      } catch (error) {
+        console.error('🚀 轮询图片列表上色失败:', error)
+        setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: 0,
+          status: 'failed',
+          message: error.message
+        })))
+        setError(`轮询失败: ${error.message}`)
+        setTimeout(() => {
+          setSingleColoringTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(taskKey)
+            return newMap
+          })
+        }, 3000)
+      }
+    }
+
+    poll()
   }
 
   // 单个图片上色功能（用于ImageForm）
@@ -546,59 +774,69 @@ const ImagesManager = () => {
       return
     }
 
-    console.log('🎨 开始单个图片上色:')
-    console.log('- formData.id:', formData.id)
-    console.log('- formData.defaultUrl:', formData.defaultUrl)
-
     try {
+      console.log('🎨 开始单个图片上色:', formData.title)
+
+      const taskKey = formData.id || 'new'
+
+      // 添加任务状态（模仿文生图的做法）
+      setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+        taskId: null,
+        progress: 0,
+        status: 'starting',
+        message: '正在创建上色任务...'
+      })))
+
       // 构造提示词
       const prompt = formData.prompt?.zh || formData.title?.zh || '涂色页'
 
-      // 调用上色API，直接使用图片URL而不是数据库ID
+      // 调用上色API
       const response = await fetch('/api/images/color-generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          imageUrl: formData.defaultUrl, // 直接使用图片URL
+          imageUrl: formData.defaultUrl,
           prompt: prompt,
           options: {
             ratio: formData.ratio || '1:1',
             isEnhance: false,
-            nVariants: 1
+            nVariants: 1,
+            apiType: selectedApiType,
+            model: selectedApiType === 'flux-kontext' ? fluxModel : undefined
           }
         }),
       })
 
       const data = await response.json()
 
+      if (!response.ok) {
+        // 更新任务状态为失败
+        setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+          taskId: null,
+          progress: 0,
+          status: 'failed',
+          message: data.message || '上色任务创建失败'
+        })))
+        throw new Error(data.message || '上色任务创建失败')
+      }
+
       if (data.success && data.data.coloringResult?.taskId) {
         const taskId = data.data.coloringResult.taskId
 
-        // 记录单个上色任务
-        setSingleColoringTasks(prev => {
-          const newMap = new Map(prev)
-          const taskData = {
-            imageUrl: formData.defaultUrl, // 使用图片URL而不是数据库ID
-            formDataId: formData.id,
-            imageId: formData.id || editingId, // 保留imageId用于兼容
-            defaultUrl: formData.defaultUrl,
-            status: 'processing',
-            createdAt: new Date()
-          }
-          newMap.set(taskId, taskData)
-          console.log('📝 创建上色任务记录:', {
-            taskId,
-            taskData
-          })
-          return newMap
-        })
+        console.log('✅ 上色任务创建成功:', taskId)
 
-        console.log(`单个图片上色任务已创建: ${taskId}`)
+        // 更新任务状态
+        setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: 10,
+          status: 'processing',
+          message: '任务已创建，正在上色中...'
+        })))
 
-        // 开始轮询单个上色任务状态
-        pollSingleColoringTask(taskId, formData.id || editingId)
+        // 开始轮询任务状态，传递图片ID而不是formData
+        pollColoringTask(taskId, formData.id, taskKey)
 
         return true
       } else {
@@ -606,29 +844,317 @@ const ImagesManager = () => {
       }
 
     } catch (error) {
-      console.error('单个图片上色失败:', error)
-      showError('上色失败: ' + error.message)
+      console.error('上色生成错误:', error)
+      const taskKey = formData.id || 'new'
+
+      // 更新任务状态为失败
+      setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+        taskId: null,
+        progress: 0,
+        status: 'failed',
+        message: error.message
+      })))
+
+      setError(`上色失败: ${error.message}`)
+
+      // 3秒后清除失败状态
+      setTimeout(() => {
+        setSingleColoringTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(taskKey)
+          return newMap
+        })
+      }, 3000)
+
       return false
     }
   }
 
-  // 轮询单个上色任务状态
+  // 轮询上色任务状态
+  const pollColoringTask = async (taskId, targetImageId, taskKey) => {
+    const maxAttempts = 60 // 最多轮询60次（约5分钟）
+    let attempts = 0
+
+    // 🔥 在轮询开始时就锁定目标图片信息，避免后续状态变化
+    const lockedTargetImageId = targetImageId
+    const lockedTargetImage = images.find(img => img.id && img.id.toString() === lockedTargetImageId.toString())
+    console.log('🔥 轮询开始，锁定目标图片ID:', lockedTargetImageId)
+    console.log('🔥 锁定的目标图片信息:', lockedTargetImage?.title)
+
+    const poll = async () => {
+      try {
+        attempts++
+        console.log(`轮询上色任务状态 ${attempts}/${maxAttempts}:`, taskId)
+
+        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${selectedApiType}`)
+        const result = await response.json()
+
+        if (!response.ok) {
+          throw new Error(result.error || '获取任务状态失败')
+        }
+
+        // 更新进度
+        const progress = Math.min(10 + attempts * 1.5, 90)
+        setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: progress,
+          status: 'processing',
+          message: `正在上色中... (${attempts}/${maxAttempts})`
+        })))
+
+        if (result.data && result.data.status === 'completed' && (result.data.coloringUrl || result.data.imageUrl)) {
+          // 任务完成，更新状态
+          setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 100,
+            status: 'completed',
+            message: '上色完成！'
+          })))
+
+          const coloringUrl = result.data.coloringUrl || result.data.imageUrl
+
+          console.log('🎯 上色完成，目标图片ID:', targetImageId)
+          console.log('🎯 当前编辑的图片ID:', editingId)
+          console.log('🎯 上色结果URL:', coloringUrl)
+
+          console.log('🔥 上色完成! 开始更新数据库和界面...')
+          console.log('🔥 锁定的目标图片ID:', lockedTargetImageId)
+          console.log('🔥 上色结果URL:', coloringUrl)
+
+          // 第一步：立即更新数据库
+          if (lockedTargetImageId && lockedTargetImage) {
+            try {
+              console.log('🔥 使用锁定的目标图片信息更新数据库:', lockedTargetImage.title)
+
+              const updateResponse = await fetch(`/api/images/${lockedTargetImageId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  ...lockedTargetImage,
+                  coloringUrl: coloringUrl
+                })
+              })
+              const updateResult = await updateResponse.json()
+
+              if (updateResult.success) {
+                console.log('🔥 数据库更新成功!')
+
+                // 第二步：立即更新本地images列表
+                setImages(prev => {
+                  const newImages = prev.map(img =>
+                    img.id && img.id.toString() === lockedTargetImageId.toString()
+                      ? { ...img, coloringUrl: coloringUrl }
+                      : img
+                  )
+                  console.log('🔥 本地图片列表已更新')
+                  return newImages
+                })
+
+                // 第三步：如果目标图片正在编辑中，更新表单
+                if (editingId && lockedTargetImageId.toString() === editingId.toString()) {
+                  console.log('🔥 目标图片正在编辑中，更新表单')
+                  setFormData(prev => {
+                    const newFormData = {
+                      ...prev,
+                      coloringUrl: coloringUrl
+                    }
+                    console.log('🔥 表单数据已更新:', newFormData)
+                    return newFormData
+                  })
+                  setSuccess('上色生成成功！图片URL已更新到输入框中。')
+                } else {
+                  console.log('🔥 目标图片不在编辑中，只更新数据库和列表')
+                  setSuccess(`图片上色完成！`)
+
+                  // 最终保险：3秒后重新加载图片列表确保数据一致
+                  setTimeout(() => {
+                    loadImages()
+                  }, 3000)
+                }
+
+              } else {
+                console.error('🔥 数据库更新失败:', updateResult.message)
+                setError(`数据库更新失败: ${updateResult.message}`)
+              }
+            } catch (error) {
+              console.error('🔥 数据库更新异常:', error)
+              setError(`数据库更新异常: ${error.message}`)
+            }
+          } else {
+            console.error('🔥 未找到目标图片:', lockedTargetImageId)
+            setError(`未找到目标图片: ${lockedTargetImageId}`)
+          }
+
+          // 3秒后清除任务状态
+          setTimeout(() => {
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        } else if (result.data && result.data.status === 'failed') {
+          // 更新任务状态为失败
+          setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: result.data.error || '上色生成失败'
+          })))
+
+          setError(`上色生成失败: ${result.data.error || '未知错误'}`)
+
+          // 3秒后清除失败状态
+          setTimeout(() => {
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+
+          return
+        }
+
+        // 继续轮询
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 3000)
+        } else {
+          // 超时处理
+          setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+            taskId: taskId,
+            progress: 0,
+            status: 'failed',
+            message: '上色生成超时'
+          })))
+
+          setError('上色生成超时，请重试')
+
+          // 3秒后清除超时状态
+          setTimeout(() => {
+            setSingleColoringTasks(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(taskKey)
+              return newMap
+            })
+          }, 3000)
+        }
+
+      } catch (error) {
+        console.error('轮询上色任务失败:', error)
+
+        // 更新任务状态为失败
+        setSingleColoringTasks(prev => new Map(prev.set(taskKey, {
+          taskId: taskId,
+          progress: 0,
+          status: 'failed',
+          message: error.message || '网络错误'
+        })))
+
+        setError(`上色生成失败: ${error.message}`)
+
+        // 3秒后清除失败状态
+        setTimeout(() => {
+          setSingleColoringTasks(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(taskKey)
+            return newMap
+          })
+        }, 3000)
+      }
+    }
+
+    // 开始轮询
+    poll()
+  }
+
+  // 更新图片上色URL的函数
+  const updateImageColoringUrl = async (imageId, coloringUrl) => {
+    try {
+      console.log(`💾 更新图片 ${imageId} 的上色URL: ${coloringUrl}`)
+
+      // 1. 获取当前图片信息
+      const currentImage = images.find(img => img.id?.toString() === imageId?.toString())
+      if (!currentImage) {
+        console.error('找不到图片:', imageId)
+        return
+      }
+
+      // 2. 更新数据库
+      const response = await fetch(`/api/images/${imageId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...currentImage,
+          coloringUrl
+        })
+      })
+
+      const result = await response.json()
+      if (!result.success) {
+        console.error('数据库更新失败:', result.message)
+        return
+      }
+
+      // 2. 更新本地状态
+      setImages(prev => prev.map(img =>
+        img.id?.toString() === imageId?.toString()
+          ? { ...img, coloringUrl }
+          : img
+      ))
+
+      // 3. 如果正在编辑这个图片，更新表单
+      if (editingId?.toString() === imageId?.toString()) {
+        setFormData(prev => ({ ...prev, coloringUrl }))
+      }
+
+      // 4. 重新加载图片列表确保一致性
+      setTimeout(() => {
+        loadImages()
+      }, 1000)
+
+      console.log(`✅ 图片 ${imageId} 更新完成`)
+    } catch (error) {
+      console.error('更新图片失败:', error)
+    }
+  }
+
+  // 轮询单个上色任务状态 (保留旧函数以防其他地方使用)
   const pollSingleColoringTask = async (taskId, imageId) => {
     const pollInterval = 3000 // 每3秒查询一次
     let pollCount = 0
     const maxPolls = 60 // 最多查询3分钟
 
-    console.log(`🚀 开始轮询单个上色任务: ${taskId} for imageId: ${imageId}`)
+    console.log(`🚀 ImagesManager - 开始轮询单个上色任务: ${taskId} for imageId: ${imageId}`)
+
+    // 验证任务是否存在且匹配
+    const taskExists = singleColoringTasks.has(taskId)
+    const taskData = singleColoringTasks.get(taskId)
+    if (!taskExists || !taskData) {
+      console.error(`❌ ImagesManager - 任务不存在或已被删除: ${taskId}`)
+      return
+    }
+
+    if (taskData.imageId?.toString() !== imageId?.toString()) {
+      console.error(`❌ ImagesManager - 任务imageId不匹配:`, {
+        taskId,
+        taskImageId: taskData.imageId,
+        expectedImageId: imageId
+      })
+      return
+    }
 
     const poll = async () => {
       try {
-        console.log(`🔄 轮询上色任务 ${taskId} - 第 ${pollCount + 1} 次`)
+        console.log(`🔄 ImagesManager - 轮询上色任务 ${taskId} - 第 ${pollCount + 1} 次`)
 
         // 使用新的任务状态查询API
-        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring`)
+        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${selectedApiType}`)
         const data = await response.json()
 
-        console.log(`📊 上色任务 ${taskId} 状态响应:`, data)
+        console.log(`📊 ImagesManager - 上色任务 ${taskId} 状态响应:`, data)
 
         if (data.success) {
           const status = data.data.status
@@ -655,17 +1181,159 @@ const ImagesManager = () => {
             // 获取上色后的图片URL
             const coloringUrl = data.data.coloringUrl || data.data.imageUrl
 
-            // 更新当前编辑表单的数据
-            if (editingId && editingId.toString() === imageId.toString()) {
-              setFormData(prev => ({
-                ...prev,
-                coloringUrl: coloringUrl
-              }))
-              console.log(`✅ 已更新编辑表单的coloringUrl: ${coloringUrl}`)
+            // 从当前状态获取任务信息，使用任务中存储的imageId
+            let currentTask = null
+            setSingleColoringTasks(prev => {
+              currentTask = prev.get(taskId)
+              return prev
+            })
+
+            if (!currentTask) {
+              console.error(`❌ ImagesManager - 任务不存在: ${taskId}`)
+              return
             }
 
-            // 重新加载图片列表以获取最新数据，确保覆盖之前的上色结果
-            loadImages()
+            // 使用任务中存储的imageId，而不是传入的参数
+            const actualImageId = currentTask.imageId
+            console.log(`🎯 ImagesManager - 使用任务中存储的imageId: ${actualImageId}`)
+            console.log(`🎯 ImagesManager - 开始强制更新coloringUrl: ${actualImageId} -> ${coloringUrl}`)
+            console.log(`🎯 ImagesManager - 任务信息:`, {
+              taskId,
+              传入的imageId: imageId,
+              任务中的imageId: actualImageId,
+              coloringUrl,
+              formDataSnapshot: currentTask.formDataSnapshot,
+              contextSnapshot: currentTask.contextSnapshot
+            })
+
+            // 1. 立即强制更新images列表
+            setImages(prevImages => {
+              console.log(`🔍 ImagesManager - 查找要更新的图片:`, {
+                actualImageId,
+                imageIdType: typeof actualImageId,
+                totalImages: prevImages.length,
+                imageIds: prevImages.map(img => ({ id: img.id, type: typeof img.id }))
+              })
+
+              let foundMatch = false
+              const newImages = prevImages.map(img => {
+                if (img.id && img.id.toString() === actualImageId.toString()) {
+                  foundMatch = true
+                  console.log(`✅ ImagesManager - 找到匹配的图片，开始更新:`, {
+                    imageId: img.id,
+                    title: img.title,
+                    oldColoringUrl: img.coloringUrl,
+                    newColoringUrl: coloringUrl
+                  })
+                  return { ...img, coloringUrl: coloringUrl }
+                }
+                return img
+              })
+
+              if (!foundMatch) {
+                console.error(`❌ ImagesManager - 未找到匹配的图片:`, {
+                  searchImageId: actualImageId,
+                  availableImages: prevImages.map(img => ({ id: img.id, title: img.title }))
+                })
+              }
+
+              console.log(`📋 ImagesManager - images列表更新完成，总数: ${newImages.length}，找到匹配: ${foundMatch}`)
+              return newImages
+            })
+
+            // 2. 立即强制更新编辑表单
+            if (editingId && editingId.toString() === actualImageId.toString()) {
+              setFormData(prev => {
+                console.log(`✅ ImagesManager - 强制更新编辑表单coloringUrl`)
+                console.log(`   旧值: ${prev.coloringUrl}`)
+                console.log(`   新值: ${coloringUrl}`)
+                return {
+                  ...prev,
+                  coloringUrl: coloringUrl
+                }
+              })
+            }
+
+            // 2.5. 强制触发formData重新渲染
+            setTimeout(() => {
+              if (editingId && editingId.toString() === actualImageId.toString()) {
+                setFormData(prev => {
+                  console.log(`🔄 ImagesManager - 再次强制更新formData确保UI刷新`)
+                  return { ...prev, coloringUrl: coloringUrl }
+                })
+              }
+            }, 50)
+
+            // 3. 强制触发重新渲染
+            setTimeout(() => {
+              console.log(`🔄 ImagesManager - 强制触发重新渲染`)
+              setImages(prev => [...prev]) // 强制重新渲染
+            }, 100)
+
+            // 4. 尝试更新数据库（异步，不影响UI更新）
+            setTimeout(async () => {
+              try {
+                console.log(`💾 ImagesManager - 异步更新数据库: ${actualImageId}`)
+
+                // 重新获取最新的images列表，避免闭包问题
+                const response = await fetch('/api/images')
+                const data = await response.json()
+                const freshImages = data.success ? data.data : []
+
+                console.log(`🔄 ImagesManager - 重新获取图片列表，总数: ${freshImages.length}`)
+                const currentImage = freshImages.find(img => img.id && img.id.toString() === actualImageId.toString())
+                if (currentImage) {
+                  console.log(`📝 ImagesManager - 当前图片信息:`, currentImage)
+                  console.log(`📝 ImagesManager - 新的coloringUrl:`, coloringUrl)
+
+                  const putData = {
+                    ...currentImage,
+                    coloringUrl: coloringUrl
+                  }
+
+                  console.log(`📝 ImagesManager - 完整PUT请求数据:`, putData)
+
+                  const updateResponse = await fetch(`/api/images/${actualImageId}`, {
+                    method: 'PUT',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(putData),
+                  })
+
+                  const updateData = await updateResponse.json()
+                  console.log(`📊 ImagesManager - 数据库更新响应:`, updateData)
+
+                  if (updateData.success) {
+                    console.log(`✅ ImagesManager - 数据库更新成功: ${actualImageId}`)
+                    console.log(`✅ ImagesManager - 更新后的图片数据:`, updateData.data)
+
+                    // 再次强制更新UI以确保显示最新数据
+                    setImages(prevImages => {
+                      return prevImages.map(img => {
+                        if (img.id && img.id.toString() === actualImageId.toString()) {
+                          console.log(`🔄 ImagesManager - 使用数据库返回的数据更新UI`)
+                          return { ...img, coloringUrl: updateData.data.coloringUrl }
+                        }
+                        return img
+                      })
+                    })
+
+                    // 如果当前正在编辑这个图片，也要更新formData
+                    if (editingId && editingId.toString() === actualImageId.toString()) {
+                      setFormData(prev => {
+                        console.log(`🔄 ImagesManager - 使用数据库返回的数据更新formData`)
+                        return { ...prev, coloringUrl: updateData.data.coloringUrl }
+                      })
+                    }
+                  } else {
+                    console.warn(`⚠️ ImagesManager - 数据库更新失败: ${updateData.message}`)
+                  }
+                }
+              } catch (updateError) {
+                console.error('ImagesManager - 数据库更新异常:', updateError)
+              }
+            }, 500)
 
             // 清除任务记录
             setSingleColoringTasks(prev => {
@@ -674,8 +1342,35 @@ const ImagesManager = () => {
               return newMap
             })
 
-            setSuccess('图片上色完成！上色结果已更新。')
-            console.log(`✅ 单个图片上色完成: ${taskId}`)
+            setSuccess('图片上色完成！上色结果已自动保存到数据库并更新界面显示。')
+            console.log(`✅ ImagesManager - 单个图片上色完成: ${taskId}`)
+
+            // 最后的保险措施：延迟再次检查并更新
+            setTimeout(() => {
+              console.log(`🔍 ImagesManager - 最后检查：确保coloringUrl已正确更新`)
+              const currentImage = images.find(img => img.id && img.id.toString() === actualImageId.toString())
+              if (currentImage && currentImage.coloringUrl !== coloringUrl) {
+                console.log(`⚠️ ImagesManager - 发现不一致，再次强制更新:`)
+                console.log(`   当前images中的coloringUrl: ${currentImage.coloringUrl}`)
+                console.log(`   应该是: ${coloringUrl}`)
+
+                setImages(prevImages => {
+                  return prevImages.map(img => {
+                    if (img.id && img.id.toString() === actualImageId.toString()) {
+                      return { ...img, coloringUrl: coloringUrl }
+                    }
+                    return img
+                  })
+                })
+
+                if (editingId && editingId.toString() === actualImageId.toString()) {
+                  setFormData(prev => ({ ...prev, coloringUrl: coloringUrl }))
+                }
+              } else {
+                console.log(`✅ ImagesManager - 最后检查通过，coloringUrl已正确更新`)
+              }
+            }, 2000)
+
             return
 
           } else if (status === 'failed') {
@@ -742,48 +1437,45 @@ const ImagesManager = () => {
   }
 
   // 检查是否有正在进行的单个上色任务
+  // 检查是否正在生成上色（模仿文生图的做法）
   const isGeneratingSingleColoring = (formData) => {
-    const imageId = formData.id || editingId
-    return Array.from(singleColoringTasks.values()).some(task => {
-      // 只检查processing状态的任务，不包括completed状态
-      if (task.status === 'completed') {
-        return false
-      }
-
-      // 多种匹配方式
-      const matches = (
-        task.imageId?.toString() === imageId?.toString() ||
-        task.formDataId === formData.id ||
-        (task.defaultUrl && (task.defaultUrl === formData.defaultUrl || task.defaultUrl === formData.imagePath)) ||
-        (task.imageUrl && (task.imageUrl === formData.defaultUrl || task.imageUrl === formData.imagePath))
-      )
-
-      if (matches) {
-        console.log(`🔍 找到匹配的上色任务:`, task)
-      }
-
-      return matches
-    })
+    const taskKey = formData.id || 'new'
+    const task = singleColoringTasks.get(taskKey)
+    return task && task.status !== 'completed' && task.status !== 'failed'
   }
 
-  // 获取上色任务状态
+  // 获取上色任务状态（模仿文生图的做法）
   const getColoringTaskStatus = (formData) => {
-    const imageId = formData.id || editingId
-    for (const [taskId, task] of singleColoringTasks) {
-      const matches = (
-        task.imageId?.toString() === imageId?.toString() ||
-        task.formDataId === formData.id ||
-        (task.defaultUrl && (task.defaultUrl === formData.defaultUrl || task.defaultUrl === formData.imagePath)) ||
-        (task.imageUrl && (task.imageUrl === formData.defaultUrl || task.imageUrl === formData.imagePath))
-      )
+    const taskKey = formData.id || 'new'
+    const task = singleColoringTasks.get(taskKey)
+    if (task) {
+      return {
+        taskId: task.taskId,
+        progress: task.progress || 0,
+        status: task.status || 'processing',
+        message: task.message || '正在上色中...'
+      }
+    }
+    return null
+  }
 
-      if (matches) {
-        return {
-          taskId: taskId,
-          progress: task.progress || 0,
-          status: task.status || 'processing',
-          message: task.message || '正在上色中...'
-        }
+  // 检查图片列表中的上色状态
+  const isGeneratingListColoring = (imageId) => {
+    const taskKey = `list-${imageId}`
+    const task = singleColoringTasks.get(taskKey)
+    return task && task.status !== 'completed' && task.status !== 'failed'
+  }
+
+  // 获取图片列表中的上色任务状态
+  const getListColoringTaskStatus = (imageId) => {
+    const taskKey = `list-${imageId}`
+    const task = singleColoringTasks.get(taskKey)
+    if (task) {
+      return {
+        taskId: task.taskId,
+        progress: task.progress || 0,
+        status: task.status || 'processing',
+        message: task.message || '正在上色中...'
       }
     }
     return null
@@ -1200,6 +1892,13 @@ const ImagesManager = () => {
     try {
       console.log('开始文生图生成:', formData)
 
+      // 校验比例是否与API类型匹配
+      const ratio = formData.ratio || '1:1'
+      if (!validateRatioForApiType(ratio, selectedApiType)) {
+        showRatioValidationError(ratio, selectedApiType)
+        return
+      }
+
       const taskKey = formData.id || 'new'
 
       // 添加任务状态
@@ -1211,11 +1910,15 @@ const ImagesManager = () => {
       })))
 
       // 使用formData中的内容作为提示词
-      const prompt = formData.title?.zh || formData.name?.zh || '生成涂色书图片'
+      const aiPrompt = formData.title?.zh || formData.name?.zh || '生成涂色书图片'
+      const text2imagePrompt = '生成适合儿童涂色的黑白线稿，线条简洁清晰，无填充色彩，风格简约卡通'
 
       const requestData = {
-        prompt: prompt,
-        ratio: formData.ratio || '1:1'
+        aiPrompt: aiPrompt,
+        text2imagePrompt: text2imagePrompt,
+        apiType: selectedApiType,
+        model: selectedApiType === 'flux-kontext' ? undefined : undefined, // 暂时不支持模型选择
+        imageRatio: formData.ratio || '1:1'
       }
 
       const response = await fetch('/api/images/text-to-image', {
@@ -1284,6 +1987,13 @@ const ImagesManager = () => {
     try {
       console.log('开始图生图生成:', formData, uploadedFile)
 
+      // 校验比例是否与API类型匹配
+      const ratio = formData.ratio || '1:1'
+      if (!validateRatioForApiType(ratio, selectedApiType)) {
+        showRatioValidationError(ratio, selectedApiType)
+        return
+      }
+
       const taskKey = formData.id || 'new'
 
       // 添加任务状态
@@ -1314,8 +2024,13 @@ const ImagesManager = () => {
       }
 
       formDataObj.append('image', uploadedFile)
-      formDataObj.append('prompt', promptText)
-      formDataObj.append('ratio', formData.ratio || '1:1')
+      formDataObj.append('aiPrompt', promptText)
+      formDataObj.append('image2imagePrompt', '将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰')
+      formDataObj.append('apiType', selectedApiType)
+      if (selectedApiType === 'flux-kontext') {
+        // 暂时不支持模型选择
+      }
+      formDataObj.append('imageRatio', formData.ratio || '1:1')
 
       const response = await fetch('/api/images/image-to-image', {
         method: 'POST',
@@ -1698,7 +2413,7 @@ const ImagesManager = () => {
         </div>
 
         {/* 筛选栏 */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 p-4 bg-gray-50 rounded-lg">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <Input
@@ -1742,6 +2457,15 @@ const ImagesManager = () => {
               <SelectItem value="all">全部状态</SelectItem>
               <SelectItem value="true">公开</SelectItem>
               <SelectItem value="false">私有</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={selectedApiType} onValueChange={setSelectedApiType}>
+            <SelectTrigger>
+              <SelectValue placeholder="图像生成API" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="gpt4o">GPT-4O 图像生成</SelectItem>
+              <SelectItem value="flux-kontext">Flux Kontext 图像生成</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -2030,11 +2754,19 @@ const ImagesManager = () => {
                         <img
                           src={image.defaultUrl}
                           alt={formatMultiLangField(image.title)}
-                          className="w-16 h-16 object-cover rounded border"
+                          className="w-16 h-16 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => {
+                            // 优先显示上色版本，然后是彩色版本，最后是线稿版本
+                            const urls = [image.defaultUrl, image.coloringUrl, image.colorUrl].filter(Boolean)
+                            if (urls.length > 0) {
+                              window.open(urls[0], '_blank')
+                            }
+                          }}
                           onError={(e) => {
                             e.target.style.display = 'none'
                             e.target.nextSibling.style.display = 'flex'
                           }}
+                          title="点击查看原图"
                         />
                       ) : null}
                       <div className="hidden w-16 h-16 items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
@@ -2089,7 +2821,7 @@ const ImagesManager = () => {
                     {/* 操作按钮 */}
                     <div className="flex items-center gap-2">
                       {/* 预览按钮 */}
-                      {(image.defaultUrl || image.colorUrl || image.coloringUrl) && (
+                      {/* {(image.defaultUrl || image.colorUrl || image.coloringUrl) && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -2104,7 +2836,7 @@ const ImagesManager = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
-                      )}
+                      )} */}
 
                       {/* 上色按钮 */}
                       {image.defaultUrl && !image.coloringUrl && (
@@ -2112,10 +2844,18 @@ const ImagesManager = () => {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleManualColoring(image.id, image)}
-                          className="flex items-center gap-1 text-orange-600 hover:text-orange-700"
-                          title="为图片生成上色版本"
+                          disabled={isGeneratingListColoring(image.id)}
+                          className="flex items-center gap-1 text-orange-600 hover:text-orange-700 disabled:opacity-50"
+                          title={isGeneratingListColoring(image.id) ?
+                            `正在上色中... ${getListColoringTaskStatus(image.id)?.progress || 0}%` :
+                            "为图片生成上色版本"}
                         >
-                          <Palette className="w-4 h-4" />
+                          <Palette className={`w-4 h-4 ${isGeneratingListColoring(image.id) ? 'animate-spin' : ''}`} />
+                          {isGeneratingListColoring(image.id) && (
+                            <span className="text-xs">
+                              {getListColoringTaskStatus(image.id)?.progress || 0}%
+                            </span>
+                          )}
                         </Button>
                       )}
 

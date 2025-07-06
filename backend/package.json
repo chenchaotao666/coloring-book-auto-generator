@@ -5,7 +5,20 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "npm run test:db && npm run check:deps",
+    "test:db": "node test-db-connection.js",
+    "check:deps": "npm audit --audit-level=moderate",
+    "build:prod": "npm install --only=production",
+    "prebuild": "echo 'Building backend...'",
+    "postbuild": "echo 'Backend build completed successfully!'",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:start:prod": "pm2 start ecosystem.config.js --env production",
+    "pm2:restart": "pm2 restart coloring-book-backend",
+    "pm2:stop": "pm2 stop coloring-book-backend",
+    "pm2:delete": "pm2 delete coloring-book-backend",
+    "pm2:logs": "pm2 logs coloring-book-backend",
+    "pm2:monit": "pm2 monit"
   },
   "dependencies": {
     "axios": "^1.6.2",

@@ -913,11 +913,13 @@ const CategoriesManager = () => {
                             <img
                               src={selectedImage.defaultUrl}
                               alt="黑白图片预览"
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => window.open(selectedImage.defaultUrl, '_blank')}
                               onError={(e) => {
                                 e.target.style.display = 'none'
                                 e.target.nextSibling.style.display = 'flex'
                               }}
+                              title="点击查看原图"
                             />
                             <div className="hidden w-full h-full items-center justify-center text-xs text-gray-400 bg-gray-100">
                               加载失败
@@ -936,11 +938,13 @@ const CategoriesManager = () => {
                             <img
                               src={selectedImage.coloringUrl}
                               alt="上色图片预览"
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => window.open(selectedImage.coloringUrl, '_blank')}
                               onError={(e) => {
                                 e.target.style.display = 'none'
                                 e.target.nextSibling.style.display = 'flex'
                               }}
+                              title="点击查看原图"
                             />
                             <div className="hidden w-full h-full items-center justify-center text-xs text-gray-400 bg-gray-100">
                               加载失败
@@ -1145,11 +1149,19 @@ const CategoriesManager = () => {
                                     <img
                                       src={previewUrl}
                                       alt="图片预览"
-                                      className="w-full h-full object-cover"
+                                      className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                      onClick={() => {
+                                        // 优先显示上色版本，然后是默认版本
+                                        const urls = [image.coloringUrl, image.defaultUrl].filter(Boolean)
+                                        if (urls.length > 0) {
+                                          window.open(urls[0], '_blank')
+                                        }
+                                      }}
                                       onError={(e) => {
                                         e.target.style.display = 'none'
                                         e.target.nextSibling.style.display = 'flex'
                                       }}
+                                      title="点击查看原图"
                                     />
                                   ) : null}
                                   <div className={`${hasPreviewUrl ? 'hidden' : 'flex'} w-full h-full items-center justify-center text-xs text-gray-400`}>

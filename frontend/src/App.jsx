@@ -259,7 +259,7 @@ function App() {
   const [imageTagSelections, setImageTagSelections] = useState(new Map())
 
   // API选择相关状态
-  const [selectedApiType, setSelectedApiType] = useState('gpt4o') // 'gpt4o' 或 'flux-kontext'
+  const [selectedApiType, setSelectedApiType] = useState('flux-kontext') // 'gpt4o' 或 'flux-kontext'
   const [fluxModel, setFluxModel] = useState('flux-kontext-pro') // 'flux-kontext-pro' 或 'flux-kontext-max'
 
   // 上色提示词状态
@@ -340,6 +340,40 @@ function App() {
   useEffect(() => {
     loadSaveOptions()
   }, [])
+
+  // 当API类型变化时，检查并调整图片比例
+  useEffect(() => {
+    const supportedRatios = getSupportedRatios(selectedApiType)
+    const supportedValues = supportedRatios.map(r => r.value)
+
+    // 如果当前选择的比例不被支持，自动切换到第一个支持的比例
+    if (!supportedValues.includes(globalImageRatio)) {
+      const defaultRatio = supportedValues.includes('1:1') ? '1:1' : supportedValues[0]
+      setGlobalImageRatio(defaultRatio)
+      console.log(`API类型变更为${selectedApiType}，自动调整图片比例为: ${defaultRatio}`)
+    }
+  }, [selectedApiType, globalImageRatio])
+
+  // 当contentList变化时，清理无效的选择状态
+  useEffect(() => {
+    if (contentList.length === 0) {
+      // 如果contentList为空，清空选择
+      setSelectedImages(prev => prev.size > 0 ? new Set() : prev)
+      return
+    }
+
+    const contentListIds = new Set(contentList.map(item => item.id))
+
+    setSelectedImages(prev => {
+      const validSelectedImages = new Set(Array.from(prev).filter(id => contentListIds.has(id)))
+
+      if (validSelectedImages.size !== prev.size) {
+        return validSelectedImages
+      }
+
+      return prev
+    })
+  }, [contentList])
 
 
 
@@ -475,18 +509,34 @@ function App() {
       return
     }
 
+    // 根据checkbox选择状态决定要处理的项目
+    let baseItems
+    if (selectedImages.size > 0) {
+      // 有选中项目，只处理选中的项目
+      baseItems = contentList.filter(item => selectedImages.has(item.id))
+      console.log(`📋 基于选择处理 ${baseItems.length} 个选中项目`)
+    } else {
+      // 没有选中项目，处理所有项目
+      baseItems = contentList
+      console.log(`📋 处理所有 ${baseItems.length} 个项目`)
+    }
+
     // 根据是否强制重新生成决定要处理的项目
     let itemsToGenerate
     if (forceRegenerate) {
-      // 强制重新生成：处理所有项目
-      itemsToGenerate = contentList
+      // 强制重新生成：处理基础项目
+      itemsToGenerate = baseItems
     } else {
       // 正常生成：只处理没有文案的项目
-      itemsToGenerate = contentList.filter(item => !item.content)
+      itemsToGenerate = baseItems.filter(item => !item.content)
     }
 
     if (itemsToGenerate.length === 0) {
-      showInfo('所有主题都已生成文案！')
+      if (selectedImages.size > 0) {
+        showInfo('选中的主题都已生成文案！')
+      } else {
+        showInfo('所有主题都已生成文案！')
+      }
       return
     }
 
@@ -601,6 +651,32 @@ function App() {
       return
     }
 
+    // 根据checkbox选择状态决定要处理的项目
+    let itemsToProcess
+    if (selectedImages.size > 0) {
+      // 有选中项目，只处理选中的项目
+      itemsToProcess = contentList.filter(item => selectedImages.has(item.id))
+      console.log(`📋 基于选择生成 ${itemsToProcess.length} 个选中项目的图片`)
+    } else {
+      // 没有选中项目，处理所有项目
+      itemsToProcess = contentList
+      console.log(`📋 生成所有 ${itemsToProcess.length} 个项目的图片`)
+    }
+
+    if (itemsToProcess.length === 0) {
+      showWarning('没有可生成图片的内容')
+      return
+    }
+
+    // 校验每个项目的比例是否与当前API类型匹配
+    for (const item of itemsToProcess) {
+      const ratio = item.imageRatio || globalImageRatio
+      if (!validateRatioForApiType(ratio, selectedApiType)) {
+        showRatioValidationError(ratio, selectedApiType)
+        return
+      }
+    }
+
     setIsGeneratingImages(true)
     setImageProgress(null)
 
@@ -612,7 +688,7 @@ function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          contents: contentList.map(item => {
+          contents: itemsToProcess.map(item => {
             const aiPrompt = getDisplayText(item.prompt) || '生成涂色书图片'  // AI提示词（从用户输入的提示词字段获取）
             const text2imagePromptValue = text2imagePrompt.trim() || '生成适合儿童涂色的黑白线稿，线条简洁清晰，无填充色彩，风格简约卡通'  // 文生图提示词（通用描述），提供默认值
 
@@ -786,13 +862,29 @@ function App() {
     console.log('- contentList 总数:', contentList.length)
     console.log('- contentList 内容:', contentList)
 
+    // 根据checkbox选择状态决定要处理的项目
+    let baseItems
+    if (selectedImages.size > 0) {
+      // 有选中项目，只处理选中的项目
+      baseItems = contentList.filter(item => selectedImages.has(item.id))
+      console.log(`📋 基于选择上色 ${baseItems.length} 个选中项目`)
+    } else {
+      // 没有选中项目，处理所有项目
+      baseItems = contentList
+      console.log(`📋 上色所有 ${baseItems.length} 个项目`)
+    }
+
     // 过滤出有图片的内容
-    const itemsWithImages = contentList.filter(item => item.imagePath)
+    const itemsWithImages = baseItems.filter(item => item.imagePath)
     console.log('- 有图片的项目数量:', itemsWithImages.length)
     console.log('- 有图片的项目:', itemsWithImages)
 
     if (itemsWithImages.length === 0) {
-      showWarning('没有可上色的图片！请先生成图片。')
+      if (selectedImages.size > 0) {
+        showWarning('选中的项目中没有可上色的图片！请先生成图片。')
+      } else {
+        showWarning('没有可上色的图片！请先生成图片。')
+      }
       return
     }
 
@@ -815,58 +907,19 @@ function App() {
         console.log('🔧 confirm 函数类型:', typeof confirm)
         console.log('🔧 confirm 函数:', confirm)
 
-        let recolorAll = false
-        try {
-          console.log('⏳ 准备调用 confirm 函数...')
-          recolorAll = await confirm(
-            `检测到所有 ${itemsWithColoring.length} 张图片都已有上色版本。\n\n` +
-            `是否要重新为所有图片生成新的上色版本？\n` +
-            `（这将覆盖现有的上色图片）`,
-            {
-              title: '重新上色确认',
-              confirmText: '重新上色所有图片',
-              cancelText: '取消',
-              type: 'warning'
-            }
-          )
-          console.log('✅ confirm 函数调用完成')
-          console.log('📋 重新上色确认对话框结果:', recolorAll)
-        } catch (error) {
-          console.error('❌ confirm 函数调用出错:', error)
-          showError('确认对话框出错: ' + error.message)
-          return
-        }
-
-        if (recolorAll) {
-          console.log('✅ 用户确认重新上色所有图片')
-          itemsToColor = itemsWithImages // 包含所有图片
-          console.log('📝 设置要上色的图片数量:', itemsToColor.length)
-        } else {
-          console.log('❌ 用户取消了重新上色操作')
-          return
-        }
+        const scopeText = selectedImages.size > 0 ? '选中的' : '所有'
+        // 默认重新上色所有图片
+        itemsToColor = itemsWithImages // 包含所有图片
       } else {
-        // 部分图片已上色的情况
-        const includeExisting = await confirm(
-          `检测到 ${itemsWithColoring.length} 张图片已有上色版本，${itemsWithoutColoring.length} 张图片未上色。\n\n` +
-          `点击"确定"将为所有 ${itemsWithImages.length} 张图片重新上色（覆盖现有上色）\n` +
-          `点击"取消"将只为 ${itemsWithoutColoring.length} 张未上色的图片上色`,
-          {
-            title: '批量上色确认',
-            confirmText: '重新上色所有图片',
-            cancelText: '只上色未上色的图片',
-            type: 'warning'
-          }
-        )
-
-        console.log('📋 确认对话框结果:', includeExisting)
-
-        if (includeExisting) {
-          itemsToColor = itemsWithImages // 包含所有图片
-        }
+        // 部分图片已上色的情况，默认重新上色所有图片
+        itemsToColor = itemsWithImages // 包含所有图片
       }
     } else if (itemsWithoutColoring.length === 0) {
-      showWarning('没有可上色的图片！请先生成图片。')
+      if (selectedImages.size > 0) {
+        showWarning('选中的项目中没有可上色的图片！请先生成图片。')
+      } else {
+        showWarning('没有可上色的图片！请先生成图片。')
+      }
       return
     }
 
@@ -875,25 +928,14 @@ function App() {
 
     if (itemsToColor.length === 0) {
       console.log('⚠️ 没有需要上色的图片，直接返回')
-      showWarning('没有需要上色的图片！')
+      if (selectedImages.size > 0) {
+        showWarning('选中的项目中没有需要上色的图片！')
+      } else {
+        showWarning('没有需要上色的图片！')
+      }
       return
     }
 
-    const finalConfirm = await confirm(`确认为 ${itemsToColor.length} 张图片生成上色版本？`, {
-      title: '批量上色确认',
-      confirmText: '开始上色',
-      cancelText: '取消',
-      type: 'default'
-    })
-
-    console.log('📋 最终确认对话框结果:', finalConfirm)
-
-    if (!finalConfirm) {
-      console.log('❌ 用户取消了上色操作')
-      return
-    }
-
-    console.log('✅ 用户确认开始上色，即将开始处理...')
     console.log('🚀 开始设置上色状态和进度...')
 
     console.log('📊 设置上色状态为 true')
@@ -1253,7 +1295,7 @@ function App() {
           prompt: formatMultiLangField(item.prompt),
           ratio: item.imageRatio || '1:1',
           type: item.type || 'text2image',
-          isPublic: item.isPublic !== undefined ? item.isPublic : false,
+          isPublic: item.isPublic !== undefined ? item.isPublic : true,
           hotness: item.hotness || 0,
           size: item.size || '',
           categoryId: categoryId,
@@ -1463,7 +1505,11 @@ function App() {
 
   // 全选/取消全选
   const toggleSelectAll = () => {
-    if (selectedImages.size === contentList.length) {
+    // 确保selectedImages中的项目都在contentList中存在
+    const contentListIds = new Set(contentList.map(item => item.id))
+    const validSelectedImages = new Set(Array.from(selectedImages).filter(id => contentListIds.has(id)))
+
+    if (validSelectedImages.size === contentList.length) {
       setSelectedImages(new Set()) // 取消全选
     } else {
       setSelectedImages(new Set(contentList.map(item => item.id))) // 全选
@@ -1482,37 +1528,96 @@ function App() {
   }
 
   // 删除内容项
-  const deleteContent = (id) => {
-    setContentList(prev => {
-      const newList = prev.filter(item => item.id !== id)
+  const deleteContent = async (id) => {
+    // 首先从contentList中找到要删除的项目
+    const itemToDelete = contentList.find(item => item.id === id)
+    if (!itemToDelete) {
+      console.warn('要删除的项目不存在:', id)
+      return
+    }
 
-      // 如果删除后列表为空，重置tab索引
-      if (newList.length === 0) {
-        setActiveContentTab(0)
-        return newList
-      }
+    try {
+      // 检查是否已保存到数据库
+      if (itemToDelete.databaseId || itemToDelete.savedToDatabase) {
+        console.log('🗑️ 删除已保存到数据库的记录:', {
+          id: id,
+          databaseId: itemToDelete.databaseId,
+          savedToDatabase: itemToDelete.savedToDatabase
+        })
 
-      // 如果删除的是当前活跃的tab，调整activeContentTab
-      const deletedIndex = prev.findIndex(item => item.id === id)
-      if (deletedIndex === activeContentTab) {
-        // 如果删除的是最后一个，切换到前一个
-        if (deletedIndex === newList.length) {
-          setActiveContentTab(Math.max(0, deletedIndex - 1))
+        // 调用API删除数据库记录
+        const response = await fetch(`/api/images/${itemToDelete.databaseId}`, {
+          method: 'DELETE'
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.message || '删除数据库记录失败')
         }
-        // 如果删除的不是最后一个，保持当前索引
-      } else if (deletedIndex < activeContentTab) {
-        // 如果删除的在当前tab之前，索引需要减1
-        setActiveContentTab(activeContentTab - 1)
-      }
-      return newList
-    })
 
-    // 清理编辑语言状态
-    setContentEditingLanguages(prev => {
-      const newMap = new Map(prev)
-      newMap.delete(id)
-      return newMap
-    })
+        const result = await response.json()
+        console.log('✅ 数据库记录删除成功:', result)
+        showSuccess('已删除数据库记录')
+      } else {
+        console.log('🗑️ 删除未保存的本地记录:', id)
+      }
+
+      // 从本地状态中删除项目
+      setContentList(prev => {
+        const newList = prev.filter(item => item.id !== id)
+
+        // 如果删除后列表为空，重置tab索引
+        if (newList.length === 0) {
+          setActiveContentTab(0)
+          return newList
+        }
+
+        // 如果删除的是当前活跃的tab，调整activeContentTab
+        const deletedIndex = prev.findIndex(item => item.id === id)
+        if (deletedIndex === activeContentTab) {
+          // 如果删除的是最后一个，切换到前一个
+          if (deletedIndex === newList.length) {
+            setActiveContentTab(Math.max(0, deletedIndex - 1))
+          }
+          // 如果删除的不是最后一个，保持当前索引
+        } else if (deletedIndex < activeContentTab) {
+          // 如果删除的在当前tab之前，索引需要减1
+          setActiveContentTab(activeContentTab - 1)
+        }
+        return newList
+      })
+
+      // 清理编辑语言状态
+      setContentEditingLanguages(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(id)
+        return newMap
+      })
+
+      // 清理相关的选择状态
+      setSelectedImages(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(id)
+        return newSet
+      })
+
+      // 清理分类和标签选择状态
+      setImageCategorySelections(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(id)
+        return newMap
+      })
+
+      setImageTagSelections(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(id)
+        return newMap
+      })
+
+    } catch (error) {
+      console.error('删除失败:', error)
+      showError('删除失败: ' + error.message)
+    }
   }
 
   // 开始编辑
@@ -1551,11 +1656,27 @@ function App() {
       return
     }
 
+    // 根据checkbox选择状态决定要处理的项目
+    let baseItems
+    if (selectedImages.size > 0) {
+      // 有选中项目，只处理选中的项目
+      baseItems = contentList.filter(item => selectedImages.has(item.id))
+      console.log(`📋 基于选择翻译 ${baseItems.length} 个选中项目`)
+    } else {
+      // 没有选中项目，处理所有项目
+      baseItems = contentList
+      console.log(`📋 翻译所有 ${baseItems.length} 个项目`)
+    }
+
     // 只为已经生成内容的项目生成国际化
-    const itemsWithContent = contentList.filter(item => item.content)
+    const itemsWithContent = baseItems.filter(item => item.content)
 
     if (itemsWithContent.length === 0) {
-      showWarning('没有可翻译的内容，请先生成文案')
+      if (selectedImages.size > 0) {
+        showWarning('选中的项目中没有可翻译的内容，请先生成文案')
+      } else {
+        showWarning('没有可翻译的内容，请先生成文案')
+      }
       return
     }
 
@@ -1819,6 +1940,13 @@ function App() {
     return singleTranslationTasks.has(taskKey)
   }
 
+  // 检查国际化是否完成
+  const isInternationalizationComplete = (item) => {
+    const existingLanguages = getExistingLanguages(item)
+    // 如果存在多个语言（除了中文），则认为国际化完成
+    return existingLanguages.length > 1
+  }
+
   // 格式化多语言字段
   const formatMultiLangField = (field) => {
     if (!field) return ''
@@ -1873,7 +2001,7 @@ function App() {
       coloringUrl: item.coloringUrl || '',  // 正确传递coloringUrl
       type: item.type || 'text2image',
       ratio: item.imageRatio || '1:1',
-      isPublic: item.isPublic !== undefined ? item.isPublic : false,
+      isPublic: item.isPublic !== undefined ? item.isPublic : true,
       hotness: item.hotness || 0,
       categoryId: categoryId,
       size: item.size || '',
@@ -2084,7 +2212,7 @@ function App() {
   }
 
   // 轮询单个上色任务状态
-  const pollSingleColoringTask = async (taskId, identifierId, apiType = 'gpt4o') => {
+  const pollSingleColoringTask = async (taskId, identifierId, apiType = 'flux-kontext') => {
     const pollInterval = 3000 // 每3秒查询一次
     let pollCount = 0
     const maxPolls = 180 // 最多查询9分钟
@@ -2219,19 +2347,13 @@ function App() {
                 })
               }
 
-              // 如果还是没有更新成功，强制更新最近的项目
-              if (!updated && contentList.length > 0) {
-                console.log(`⚠️ 所有匹配方式都失败，强制更新最后一个项目 [实例: ${pollInstanceId}]`)
-                setContentList(prev => {
-                  const newList = [...prev]
-                  const lastIndex = newList.length - 1
-                  if (lastIndex >= 0) {
-                    newList[lastIndex] = { ...newList[lastIndex], coloringUrl: coloringUrl }
-                    console.log(`✅ 强制更新项目:`, newList[lastIndex].id)
-                  }
-                  return newList
-                })
-                updated = true
+              // 如果还是没有更新成功，记录错误但不要强制更新任何项目
+              if (!updated) {
+                console.error(`❌ 所有匹配方式都失败，无法找到要更新的图片 [实例: ${pollInstanceId}]`)
+                console.error(`   taskId: ${taskId}`)
+                console.error(`   taskInfo:`, taskInfo)
+                console.error(`   coloringUrl: ${coloringUrl}`)
+                // 不要强制更新任何项目！这会导致更新错误的图片
               }
 
               // 如果正在查看详情弹框，也需要更新
@@ -2257,17 +2379,11 @@ function App() {
               }
 
             } else {
-              console.warn(`⚠️ 找不到任务信息，使用通用更新方式 [实例: ${pollInstanceId}]: ${taskId}`)
-              // 如果找不到任务信息，尝试通用更新
-              setContentList(prev => {
-                const newList = [...prev]
-                const lastIndex = newList.length - 1
-                if (lastIndex >= 0) {
-                  newList[lastIndex] = { ...newList[lastIndex], coloringUrl: coloringUrl }
-                  console.log(`✅ 通用更新项目:`, newList[lastIndex].id)
-                }
-                return newList
-              })
+              console.error(`❌ 找不到任务信息，无法更新任何图片 [实例: ${pollInstanceId}]: ${taskId}`)
+              console.error(`   这可能是因为任务信息丢失或不匹配`)
+              console.error(`   taskId: ${taskId}`)
+              console.error(`   coloringUrl: ${coloringUrl}`)
+              // 不要进行任何通用更新！这会导致更新错误的图片
             }
 
             // 添加用户友好的成功提示
@@ -2429,6 +2545,13 @@ function App() {
     try {
       console.log('开始文生图生成:', formData)
 
+      // 校验比例是否与API类型匹配
+      const ratio = formData.ratio || '1:1'
+      if (!validateRatioForApiType(ratio, selectedApiType)) {
+        showRatioValidationError(ratio, selectedApiType)
+        return
+      }
+
       // 添加任务状态
       setTextToImageTasks(prev => new Map(prev.set(formData.id, {
         taskId: null,
@@ -2527,6 +2650,13 @@ function App() {
       console.log('- formData.title:', formData.title)
       console.log('- formData.name:', formData.name)
       console.log('- uploadedFile:', uploadedFile)
+
+      // 校验比例是否与API类型匹配
+      const ratio = formData.ratio || '1:1'
+      if (!validateRatioForApiType(ratio, selectedApiType)) {
+        showRatioValidationError(ratio, selectedApiType)
+        return
+      }
 
       // 添加任务状态
       setImageToImageTasks(prev => new Map(prev.set(formData.id, {
@@ -3115,6 +3245,68 @@ function App() {
     return null
   }
 
+  // 获取支持的比例选项（基于选择的API类型）
+  const getSupportedRatios = (apiType) => {
+    const allRatios = [
+      { value: '21:9', label: '超宽屏 (21:9) - Flux' },
+      { value: '16:9', label: '宽屏 (16:9) - Flux' },
+      { value: '4:3', label: '横向 (4:3) - Flux' },
+      { value: '3:2', label: '横向 (3:2) - 4O' },
+      { value: '1:1', label: '正方形 (1:1) - Flux/4O' },
+      { value: '2:3', label: '纵向 (2:3) - 4O' },
+      { value: '3:4', label: '纵向 (3:4) - Flux' },
+      { value: '9:16', label: '竖屏 (9:16) - Flux' },
+      { value: '16:21', label: '超高屏 (16:21) - Flux' }
+    ]
+
+    // GPT-4O只支持特定比例
+    if (apiType === 'gpt4o') {
+      const supportedValues = ['1:1', '3:2', '2:3']
+      return allRatios.filter(ratio => supportedValues.includes(ratio.value))
+    }
+
+    // Flux Kontext支持特定比例
+    if (apiType === 'flux-kontext') {
+      const supportedValues = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', '16:21']
+      return allRatios.filter(ratio => supportedValues.includes(ratio.value))
+    }
+
+    // 默认返回所有比例
+    return allRatios
+  }
+
+  // 校验比例是否与API类型匹配
+  const validateRatioForApiType = (ratio, apiType) => {
+    const supportedRatios = getSupportedRatios(apiType).map(r => r.value)
+    return supportedRatios.includes(ratio)
+  }
+
+  // 显示比例校验失败的提示
+  const showRatioValidationError = (ratio, apiType) => {
+    const supportedRatios = getSupportedRatios(apiType).map(r => r.value)
+    const modelName = apiType === 'gpt4o' ? 'GPT-4O' : 'Flux Kontext'
+    showError(`${modelName}模型不支持比例"${ratio}"，支持的比例: ${supportedRatios.join(', ')}`)
+  }
+
+  // 获取选中状态的动态按钮文本
+  const getSelectionAwareButtonText = (baseText, isGenerating = false, generatingText = '') => {
+    if (isGenerating) return generatingText
+
+    const selectedCount = selectedImages.size
+    const totalCount = contentList.length
+
+    if (selectedCount === 0) {
+      // 没有选中，操作全部
+      return `${baseText}（全部 ${totalCount} 项）`
+    } else if (selectedCount === totalCount) {
+      // 全选状态
+      return `${baseText}（全选 ${totalCount} 项）`
+    } else {
+      // 部分选中
+      return `${baseText}（选中 ${selectedCount} 项）`
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-[90rem] mx-auto">
@@ -3214,19 +3406,33 @@ function App() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="globalImageRatio" className="text-sm font-medium">图片比例</Label>
-                      <Select value={globalImageRatio} onValueChange={setGlobalImageRatio}>
+                      <Label htmlFor="globalImageRatio" className="text-sm font-medium">
+                        图片比例
+                        {selectedApiType === 'gpt4o' && (
+                          <span className="text-xs text-orange-600 ml-1">(GPT-4O限制)</span>
+                        )}
+                      </Label>
+                      <Select
+                        value={globalImageRatio}
+                        onValueChange={(value) => {
+                          setGlobalImageRatio(value)
+                          // 如果选择了不支持的比例，给出提示
+                          const supportedRatios = getSupportedRatios(selectedApiType).map(r => r.value)
+                          if (!supportedRatios.includes(value)) {
+                            // 这种情况不应该发生，因为我们已经过滤了选项
+                            console.warn(`${selectedApiType}不支持的比例:`, value)
+                          }
+                        }}
+                      >
                         <SelectTrigger className="h-10">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="21:9">超宽屏 (21:9)</SelectItem>
-                          <SelectItem value="16:9">宽屏 (16:9)</SelectItem>
-                          <SelectItem value="4:3">横向 (4:3)</SelectItem>
-                          <SelectItem value="1:1">正方形 (1:1)</SelectItem>
-                          <SelectItem value="3:4">纵向 (3:4)</SelectItem>
-                          <SelectItem value="9:16">竖屏 (9:16)</SelectItem>
-                          <SelectItem value="16:21">超高屏 (16:21)</SelectItem>
+                          {getSupportedRatios(selectedApiType).map(ratio => (
+                            <SelectItem key={ratio.value} value={ratio.value}>
+                              {ratio.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -3459,7 +3665,7 @@ function App() {
                           size="sm"
                         >
                           <Edit3 className="w-4 h-4" />
-                          {isGeneratingContent ? '生成中...' : '生成文案'}
+                          {getSelectionAwareButtonText('生成文案', isGeneratingContent, '生成中...')}
                         </Button>
                       </div>
                     </div>
@@ -3500,7 +3706,7 @@ function App() {
                           size="sm"
                         >
                           <Languages className="w-4 h-4" />
-                          {isGeneratingInternationalization ? '生成中...' : '生成国际化'}
+                          {getSelectionAwareButtonText('生成国际化', isGeneratingInternationalization, '生成中...')}
                         </Button>
                       </div>
                     </div>
@@ -3525,7 +3731,7 @@ function App() {
                           className="w-full border-purple-300 text-purple-700 hover:bg-purple-50"
                           size="sm"
                         >
-                          {isGeneratingImages ? '生成中...' : '生成图片'}
+                          {getSelectionAwareButtonText('生成图片', isGeneratingImages, '生成中...')}
                         </Button>
                       </div>
                     </div>
@@ -3555,19 +3761,14 @@ function App() {
                           className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
                           size="sm"
                         >
-                          {isGeneratingColoring ? '上色中...' : '开始上色'}
+                          {getSelectionAwareButtonText('开始上色', isGeneratingColoring, '上色中...')}
                         </Button>
-                        {/* 调试信息 */}
-                        <div className="text-xs text-gray-500 mt-2">
-                          调试: 图片数量 {contentList.filter(item => item.imagePath).length}/{contentList.length},
-                          上色中: {isGeneratingColoring ? '是' : '否'}
-                        </div>
                       </div>
                     </div>
                   </div>
 
                   {/* 图片生成控制按钮 */}
-                  {isGeneratingImages && currentImageTaskId && (
+                  {/* {isGeneratingImages && currentImageTaskId && (
                     <div className="mt-4 flex justify-center gap-2">
                       {imageProgress?.status === 'paused' ? (
                         <Button
@@ -3591,7 +3792,7 @@ function App() {
                         </Button>
                       )}
                     </div>
-                  )}
+                  )} */}
 
                   {/* 生成进度显示 */}
                   {generationProgress && (
@@ -3628,11 +3829,6 @@ function App() {
                         </span>
                         <span className="text-sm text-purple-700">
                           {imageProgress.current}/{imageProgress.total}
-                          {imageProgress.currentBatch && imageProgress.totalBatches && (
-                            <span className="ml-2 text-xs">
-                              (批次: {imageProgress.currentBatch}/{imageProgress.totalBatches})
-                            </span>
-                          )}
                         </span>
                       </div>
                       <div className="w-full bg-purple-200 rounded-full h-2">
@@ -3784,62 +3980,13 @@ function App() {
                 </CardContent>
               </Card>
 
-              {/* 步骤3：保存设置（有内容时显示） */}
-              {contentList.length > 0 && (
-                <Card className="mb-6">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 font-semibold flex items-center justify-center text-sm">3</div>
-                      保存设置
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-3">
-                      <Button
-                        onClick={toggleSelectAll}
-                        variant="outline"
-                        className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 border-gray-300"
-                        size="sm"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        {selectedImages.size === contentList.length ? '取消全选' : '全选'}
-                      </Button>
-
-                      <Button
-                        onClick={handleSaveImages}
-                        disabled={selectedImages.size === 0 || isSaving}
-                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-400"
-                        size="sm"
-                      >
-                        <Save className="w-4 h-4" />
-                        {isSaving ? '保存中...' : (() => {
-                          const selectedItems = contentList.filter(item => selectedImages.has(item.id))
-                          const newItems = selectedItems.filter(item => !item.databaseId).length
-                          const updateItems = selectedItems.filter(item => item.databaseId).length
-
-                          if (newItems > 0 && updateItems > 0) {
-                            return `保存 (${selectedImages.size}) - 新增${newItems},更新${updateItems}`
-                          } else if (newItems > 0) {
-                            return `新增到数据库 (${newItems})`
-                          } else if (updateItems > 0) {
-                            return `更新数据库 (${updateItems})`
-                          } else {
-                            return `保存到数据库 (${selectedImages.size})`
-                          }
-                        })()}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
               {/* 生成的内容Tab显示 */}
               {contentList.length > 0 && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 font-semibold flex items-center justify-center text-sm">4</div>
+                        <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 font-semibold flex items-center justify-center text-sm">3</div>
                         生成的内容 ({contentList.length})
                       </div>
                       <div className="flex items-center gap-2">
@@ -3877,12 +4024,12 @@ function App() {
                             }`}
                         >
                           {/* Tab中的checkbox */}
-                          <label className="flex items-center cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                          <label className="flex items-center cursor-pointer p-1 -m-1" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={selectedImages.has(item.id)}
                               onChange={() => toggleImageSelection(item.id)}
-                              className="w-3 h-3 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
                             />
                           </label>
 
@@ -3898,11 +4045,17 @@ function App() {
 
                           {/* 状态指示器 */}
                           <div className="flex items-center gap-1">
+                            {item.content !== null && (
+                              <div className="w-2 h-2 bg-green-500 rounded-full" title="文案完成"></div>
+                            )}
+                            {isInternationalizationComplete(item) && (
+                              <div className="w-2 h-2 bg-teal-500 rounded-full" title="国际化完成"></div>
+                            )}
                             {item.imagePath && (
                               <div className="w-2 h-2 bg-blue-500 rounded-full" title="图片完成"></div>
                             )}
                             {item.coloringUrl && (
-                              <div className="w-2 h-2 bg-green-500 rounded-full" title="上色完成"></div>
+                              <div className="w-2 h-2 bg-purple-500 rounded-full" title="上色完成"></div>
                             )}
                             {(item.databaseId || item.savedToDatabase) && (
                               <div className="w-2 h-2 bg-emerald-500 rounded-full" title="已保存"></div>
@@ -3923,12 +4076,12 @@ function App() {
                               <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3 flex-1 min-w-0">
                                   {/* 选择checkbox */}
-                                  <label className="flex items-center cursor-pointer">
+                                  <label className="flex items-center cursor-pointer p-2 -m-2">
                                     <input
                                       type="checkbox"
                                       checked={selectedImages.has(item.id)}
                                       onChange={() => toggleImageSelection(item.id)}
-                                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                                      className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
                                     />
                                   </label>
 
@@ -3966,6 +4119,7 @@ function App() {
                                 {/* 状态和操作按钮 */}
                                 <div className="flex items-center gap-2 flex-shrink-0">
                                   {/* 状态指示器 */}
+                                  {/* 文案完成状态 */}
                                   {item.content === null ? (
                                     <span className="inline-flex items-center px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
                                       仅主题
@@ -3976,8 +4130,17 @@ function App() {
                                     </span>
                                   )}
 
+                                  {/* 国际化完成状态 */}
+                                  {isInternationalizationComplete(item) ? (
+                                    <span className="inline-flex items-center px-2 py-1 text-xs bg-teal-100 text-teal-800 rounded-full">
+                                      <Languages className="w-3 h-3 mr-1" />
+                                      国际化完成
+                                    </span>
+                                  ) : null}
+
+                                  {/* 图片完成状态 */}
                                   {item.imagePath ? (
-                                    <span className="inline-flex items-center px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                                    <span className="inline-flex items-center px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full">
                                       <ImageIcon className="w-3 h-3 mr-1" />
                                       图片完成
                                     </span>
@@ -3995,7 +4158,7 @@ function App() {
 
                                   {/* 上色状态指示器 */}
                                   {item.coloringUrl ? (
-                                    <span className="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                                    <span className="inline-flex items-center px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-full">
                                       <ImageIcon className="w-3 h-3 mr-1" />
                                       上色完成
                                     </span>
@@ -4027,7 +4190,31 @@ function App() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => deleteContent(item.id)}
+                                    onClick={async () => {
+                                      // 检查是否已保存到数据库
+                                      const isInDatabase = item.databaseId || item.savedToDatabase
+
+                                      let confirmMessage = '确认删除此项目？'
+                                      let confirmTitle = '删除确认'
+                                      let confirmType = 'warning'
+
+                                      if (isInDatabase) {
+                                        confirmMessage = '此项目已保存到数据库。删除后将无法恢复，确认删除？'
+                                        confirmTitle = '删除数据库记录'
+                                        confirmType = 'danger'
+                                      }
+
+                                      const confirmed = await confirm(confirmMessage, {
+                                        title: confirmTitle,
+                                        confirmText: '删除',
+                                        cancelText: '取消',
+                                        type: confirmType
+                                      })
+
+                                      if (confirmed) {
+                                        await deleteContent(item.id)
+                                      }
+                                    }}
                                     className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -4048,16 +4235,9 @@ function App() {
                                     { value: 'image2image', label: '图片转图片' },
                                     { value: 'image2coloring', label: '图片转涂色' }
                                   ]}
-                                  ratioOptions={[
-                                    { value: '21:9', label: '超宽屏 (21:9)' },
-                                    { value: '16:9', label: '宽屏 (16:9)' },
-                                    { value: '4:3', label: '横向 (4:3)' },
-                                    { value: '1:1', label: '正方形 (1:1)' },
-                                    { value: '3:4', label: '纵向 (3:4)' },
-                                    { value: '9:16', label: '竖屏 (9:16)' },
-                                    { value: '16:21', label: '超高屏 (16:21)' }
-                                  ]}
+                                  ratioOptions={getSupportedRatios(selectedApiType)}
                                   loading={false}
+                                  mode="generation" // 生成图片模式
                                   onInputChange={(field, lang, value) => handleContentFormChange(item.id, field, lang, value)}
                                   onAddLanguage={(lang) => {
                                     // 添加语言到编辑状态
@@ -4171,16 +4351,9 @@ function App() {
                   { value: 'image2image', label: '图片转图片' },
                   { value: 'image2coloring', label: '图片转涂色' }
                 ]}
-                ratioOptions={[
-                  { value: '21:9', label: '超宽屏 (21:9)' },
-                  { value: '16:9', label: '宽屏 (16:9)' },
-                  { value: '4:3', label: '横向 (4:3)' },
-                  { value: '1:1', label: '正方形 (1:1)' },
-                  { value: '3:4', label: '纵向 (3:4)' },
-                  { value: '9:16', label: '竖屏 (9:16)' },
-                  { value: '16:21', label: '超高屏 (16:21)' }
-                ]}
+                ratioOptions={getSupportedRatios(selectedApiType)}
                 loading={false}
+                mode="generation" // 生成图片模式
                 onInputChange={(field, lang, value) => {
                   // 更新查看详情的数据
                   setViewingContent(prev => {

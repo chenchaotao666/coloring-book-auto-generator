@@ -59,6 +59,26 @@ app.use('/api/internationalization', internationalizationRouter)
 const storageDir = path.join(__dirname, '../storage')
 const imagesDir = path.join(__dirname, '../images')
 
+// 提取多语言字段的显示文本
+const getDisplayText = (field, preferredLang = 'zh') => {
+  if (!field) return ''
+
+  if (typeof field === 'string') {
+    try {
+      const parsed = JSON.parse(field)
+      return parsed[preferredLang] || parsed.en || Object.values(parsed)[0] || ''
+    } catch {
+      return field
+    }
+  }
+
+  if (typeof field === 'object') {
+    return field[preferredLang] || field.en || Object.values(field)[0] || ''
+  }
+
+  return String(field)
+}
+
 const ensureDirectories = async () => {
   try {
     await fs.mkdir(storageDir, { recursive: true })
@@ -131,7 +151,7 @@ app.post('/api/generate-themes', async (req, res) => {
         totalItems: count
       })}\n\n`)
 
-      console.log(`✅ 主题生成完成 ${i + 1}/${count}: ${theme.title}`)
+      console.log(`✅ 主题生成完成 ${i + 1}/${count}: ${getDisplayText(theme.title)}`)
 
       // 添加延迟
       if (i < themes.length - 1) {
@@ -197,7 +217,7 @@ app.post('/api/generate-content', async (req, res) => {
         type: 'progress',
         current: i + 1,
         total: items.length,
-        message: `正在为"${item.title}"生成文案...`
+        message: `正在为"${getDisplayText(item.title)}"生成文案...`
       })}\n\n`)
 
       try {
@@ -219,7 +239,7 @@ app.post('/api/generate-content', async (req, res) => {
           totalItems: items.length
         })}\n\n`)
 
-        console.log(`✅ 文案生成完成 ${i + 1}/${items.length}: ${item.title}`)
+        console.log(`✅ 文案生成完成 ${i + 1}/${items.length}: ${getDisplayText(item.title)}`)
 
       } catch (contentError) {
         console.error(`生成第${i + 1}条文案失败:`, contentError)
@@ -364,7 +384,7 @@ app.post('/api/generate-images', async (req, res) => {
   contents.forEach(item => {
     progress.images[item.id] = {
       id: item.id,
-      title: item.title || `图片 ${item.id}`,
+      title: getDisplayText(item.title) || `图片 ${item.id}`,
       imageRatio: item.imageRatio || '1:1',
       status: 'pending',
       progress: 0,
@@ -400,7 +420,7 @@ async function generateImagesConcurrently(taskId) {
       const batch = contents.slice(start, end)
 
       progress.currentBatch = batchIndex + 1
-      progress.message = `正在处理第 ${progress.currentBatch}/${task.totalBatches} 批图片`
+      progress.message = `正在批量生成图片...`
       taskProgress.set(taskId, progress)
 
       const batchPromises = batch.map(async (item) => {
@@ -536,7 +556,7 @@ async function generateThemes(keyword, description, count, model, themeTemplate)
 
 // 第二步：生成详细内容文案
 async function generateDetailedContent(keyword, title, prompt, contentTemplate, model) {
-  console.log(`📝 为"${title}"生成详细内容文案...`)
+  console.log(`📝 为"${getDisplayText(title)}"生成详细内容文案...`)
 
   console.log('KEY + model: ', process.env.DEEPSEEK_API_KEY, model)
 
@@ -556,7 +576,8 @@ async function generateDetailedContent(keyword, title, prompt, contentTemplate, 
 
 // 生成默认内容文案
 function generateDefaultContent(keyword, title) {
-  return `【${title}】
+  const displayTitle = getDisplayText(title)
+  return `【${displayTitle}】
 
 🎨 涂色技巧：
 在给这个${keyword}主题上色时，建议从浅色开始，逐渐加深颜色层次。可以使用渐变技法来表现光影效果，让${keyword}更加生动立体。注意色彩的冷暖对比，这样能让作品更有视觉冲击力。
@@ -669,7 +690,7 @@ async function callDeepSeekForThemes(keyword, description, count, model, themeTe
 async function callDeepSeekForDetailedContent(keyword, title, prompt, contentTemplate, model) {
   console.log('🔍 callDeepSeekForDetailedContent 参数检查:')
   console.log('- keyword:', keyword)
-  console.log('- title:', title)
+  console.log('- title:', getDisplayText(title))
   console.log('- prompt:', prompt)
   console.log('- contentTemplate:', typeof contentTemplate, contentTemplate?.substring ? contentTemplate.substring(0, 100) + '...' : contentTemplate)
   console.log('- model:', model)
@@ -679,10 +700,11 @@ async function callDeepSeekForDetailedContent(keyword, title, prompt, contentTem
 
   if (!contentPrompt || contentPrompt.trim() === '') {
     // 默认的AI提示词模板
+    const displayTitle = getDisplayText(title)
     contentPrompt = `基于以下信息生成涂色书的详细内容文案：
 
 关键词：${keyword}
-标题：${title}
+标题：${displayTitle}
 图片描述：${prompt}
 
 请生成包含以下三个部分的内容：
@@ -699,13 +721,14 @@ async function callDeepSeekForDetailedContent(keyword, title, prompt, contentTem
 💡 填色书的好处：...`;
   } else {
     // 替换用户模板中的占位符
+    const displayTitle = getDisplayText(title)
     contentPrompt = contentPrompt
       .replace(/\$\{keyword\}/g, keyword)
-      .replace(/\$\{title\}/g, title)
+      .replace(/\$\{title\}/g, displayTitle)
       .replace(/\$\{prompt\}/g, prompt)
       // 也支持不带$符号的占位符格式（向后兼容）
       .replace(/\{keyword\}/g, keyword)
-      .replace(/\{title\}/g, title)
+      .replace(/\{title\}/g, displayTitle)
       .replace(/\{prompt\}/g, prompt);
   }
 

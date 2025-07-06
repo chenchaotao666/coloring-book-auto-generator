@@ -6,7 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "serve": "serve -s dist -l 3001",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:start:prod": "pm2 start ecosystem.config.js --env production",
+    "pm2:restart": "pm2 restart coloring-book-frontend",
+    "pm2:stop": "pm2 stop coloring-book-frontend",
+    "pm2:delete": "pm2 delete coloring-book-frontend",
+    "pm2:logs": "pm2 logs coloring-book-frontend",
+    "pm2:monit": "pm2 monit"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.0.2",
@@ -25,7 +33,8 @@
     "@vitejs/plugin-react": "^4.1.1",
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.31",
+    "serve": "^14.2.1",
     "tailwindcss": "^3.3.5",
     "vite": "^5.0.0"
   }
-} 
+}
