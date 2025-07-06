@@ -2860,7 +2860,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[90rem] mx-auto">
         {/* 导航栏 */}
         <div className="bg-white shadow-sm border-b">
           <div className="flex items-center justify-between p-4">
@@ -2905,7 +2905,7 @@ function App() {
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="pt-6 pb-6">
           {/* 根据当前页面显示不同内容 */}
           {currentPage === 'generator' ? (
             <div>
@@ -3524,7 +3524,7 @@ function App() {
                 <Card className="mb-6">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 font-semibold flex items-center justify-center text-sm">4</div>
+                      <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 font-semibold flex items-center justify-center text-sm">3</div>
                       保存设置
                     </CardTitle>
                   </CardHeader>
@@ -3573,7 +3573,7 @@ function App() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 font-semibold flex items-center justify-center text-sm">5</div>
+                      <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 font-semibold flex items-center justify-center text-sm">4</div>
                       生成的内容 ({contentList.length})
                     </CardTitle>
                   </CardHeader>
@@ -3697,8 +3697,6 @@ function App() {
                             </div>
                           </div>
 
-
-
                           {/* 详细信息区域 - 使用ImageForm组件 */}
                           <div className="mt-4 border-t pt-4">
                             <ImageForm
@@ -3783,7 +3781,7 @@ function App() {
                               formatMultiLangField={formatMultiLangField}
                               showButtons={false} // 不显示操作按钮
                               readOnly={false} // 设置为可编辑模式
-                              className="scale-90 origin-top" // 缩小以适应卡片
+                              className="scale-90 origin-top -mb-20" // 缩小以适应卡片，减少底部空白
                               onGenerateColoring={handleSingleImageColoring} // 添加上色回调
                               isGeneratingColoring={isGeneratingSingleColoring(convertItemToFormData(item))} // 添加上色状态
                               coloringTaskStatus={getColoringTaskStatus(convertItemToFormData(item))} // 添加上色任务状态
@@ -3803,8 +3801,6 @@ function App() {
                   </CardContent>
                 </Card>
               )}
-
-
             </div>
           ) : currentPage === 'categories' ? (
             <CategoriesManager />

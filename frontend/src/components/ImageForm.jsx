@@ -222,13 +222,13 @@ const ImageForm = ({
             <div className="flex items-center gap-2 mt-2">
               <input
                 type="checkbox"
-                id="isPublic"
+                id={`isPublic-${formData.id || 'new'}`}
                 checked={formData.isPublic}
                 onChange={readOnly ? undefined : (e) => onInputChange('isPublic', null, e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 disabled={readOnly}
               />
-              <Label htmlFor="isPublic" className="text-sm font-medium text-gray-700">
+              <Label htmlFor={`isPublic-${formData.id || 'new'}`} className="text-sm font-medium text-gray-700">
                 公开图片
               </Label>
             </div>
@@ -338,7 +338,7 @@ const ImageForm = ({
                 <div className="text-sm font-medium text-gray-700 mb-2">上传参考图片</div>
                 <div
                   className={`w-full h-32 bg-gray-50 rounded-lg border border-gray-200 flex flex-col items-center justify-center transition-colors relative cursor-pointer hover:bg-gray-100`}
-                  onClick={() => document.getElementById('imageUpload')?.click()}
+                  onClick={() => document.getElementById(`imageUpload-${formData.id || 'new'}`)?.click()}
                 >
                   {uploadedImageFile ? (
                     <div className="w-full h-full relative flex items-center justify-center">
@@ -368,7 +368,7 @@ const ImageForm = ({
                     </>
                   )}
                   <input
-                    id="imageUpload"
+                    id={`imageUpload-${formData.id || 'new'}`}
                     type="file"
                     accept="image/*"
                     className="hidden"
