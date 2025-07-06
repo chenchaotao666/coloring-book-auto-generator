@@ -43,16 +43,11 @@ const PORT = process.env.PORT || 3002
 
 // 中间件 - 增强CORS配置
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001',
-    'http://192.168.1.3:3001'  // 添加局域网IP
-  ],
+  origin: true,  // 允许所有来源，或者使用函数动态判断
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
+  optionsSuccessStatus: 200 // 支持旧版浏览器
 }))
 
 // 预检请求处理
