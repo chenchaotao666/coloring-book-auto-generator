@@ -42,13 +42,13 @@ const minioClient = new Minio.Client({
  * @param {number} retryCount - 重试次数（默认为3）
  * @returns {Promise<string>} 可访问的文件URL
  */
-async function uploadStreamAndGetUrl(source, uploadPath, retryCount = 5) {
+async function uploadStreamAndGetUrl(source, uploadPath, retryCount = 2) {
   const envConfig = getCurrentEnvConfig();
 
-  // 针对慢速服务器增加重试次数
+  // 针对慢速服务器也只重试2次
   if (typeof source === 'string' && source.includes('tempfile.aiquickdraw.com')) {
-    retryCount = Math.max(retryCount, 8); // 慢速服务器至少8次重试
-    console.log(`🐌 检测到慢速服务器，增加重试次数到 ${retryCount} 次`);
+    retryCount = Math.max(retryCount, 2); // 慢速服务器最多2次重试
+    console.log(`🐌 检测到慢速服务器，重试次数设为 ${retryCount} 次`);
   }
 
   if (envConfig.VERBOSE_LOGGING) {
@@ -149,8 +149,8 @@ async function uploadStreamAndGetUrl(source, uploadPath, retryCount = 5) {
             });
 
             if (!quickTestResult) {
-              console.log(`⚠️  快速连接测试失败，服务器可能不可达，减少重试次数`);
-              retryCount = Math.min(retryCount, 3); // 减少重试次数
+              console.log(`⚠️  快速连接测试失败，服务器可能不可达，保持重试次数为2次`);
+              retryCount = Math.min(retryCount, 2); // 减少重试次数
             }
           } catch (testError) {
             console.log(`⚠️  快速连接测试异常: ${testError.message}`);
@@ -573,7 +573,7 @@ async function uploadImageToCategory(source, imageType, filename) {
  * @param {number} retryCount - 重试次数（默认为3）
  * @returns {Promise<Object>} 包含公网URL和存储信息的对象
  */
-async function downloadAndUploadToCategory(imageUrl, imageType, filename = null, retryCount = 5) {
+async function downloadAndUploadToCategory(imageUrl, imageType, filename = null, retryCount = 2) {
   const envConfig = getCurrentEnvConfig();
 
   try {

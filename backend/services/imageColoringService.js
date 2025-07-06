@@ -51,7 +51,7 @@ async function callFluxKontextAPI(data, endpoint = 'generate') {
     config.data = JSON.stringify(data);
   }
 
-  const maxRetries = isRecordQuery ? 3 : 2; // 增加查询重试次数
+  const maxRetries = isRecordQuery ? 2 : 2; // 查询和生成都只重试2次
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -141,7 +141,7 @@ async function callGPT4OAPI(data, endpoint = 'generate') {
     config.data = JSON.stringify(data);
   }
 
-  const maxRetries = isRecordQuery ? 3 : 2; // 增加查询重试次数
+  const maxRetries = isRecordQuery ? 2 : 2; // 查询和生成都只重试2次
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {

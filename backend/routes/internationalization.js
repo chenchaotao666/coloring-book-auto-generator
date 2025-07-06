@@ -259,7 +259,7 @@ async function translateItems(type, items, targetLanguages) {
   }
 
   const results = {}
-  const maxRetries = 3 // 增加重试次数
+  const maxRetries = 2 // 重试次数
   let lastError = null
 
   // 检查API密钥

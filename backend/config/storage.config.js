@@ -34,7 +34,7 @@ const MINIO_CONFIG = {
   // 上传配置
   UPLOAD: {
     TIMEOUT: 15000, // 上传超时时间（毫秒）
-    RETRY_ATTEMPTS: 3, // 重试次数
+    RETRY_ATTEMPTS: 2, // 重试次数
     RETRY_DELAY: 1000, // 重试延迟（毫秒）
     DIRECT_UPLOAD: true, // 直接上传到公网，不保存本地
     LOCAL_BACKUP: false // 是否保留本地备份
@@ -103,7 +103,7 @@ const API_CONFIG = {
   // 网络请求配置
   REQUEST: {
     TIMEOUT: 30000, // 30秒
-    MAX_RETRIES: 3,
+    MAX_RETRIES: 2,
     RETRY_DELAY: 1000,
     USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
   },

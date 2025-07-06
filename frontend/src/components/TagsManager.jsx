@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MultiSelect } from '@/components/ui/multi-select'
@@ -29,6 +30,9 @@ const TagsManager = () => {
   const [internationalizationLoading, setInternationalizationLoading] = useState(false)
   const [internationalizationResults, setInternationalizationResults] = useState({})
   const [activeInternationalizationLanguage, setActiveInternationalizationLanguage] = useState('') // 国际化结果的活跃语言tab
+
+  // 确认对话框
+  const confirm = useConfirm()
 
   // 表单状态
   const [showForm, setShowForm] = useState(false)
@@ -257,7 +261,12 @@ const TagsManager = () => {
 
   // 删除标签
   const handleDelete = async (tagId, displayName) => {
-    if (!window.confirm(`确定要删除标签 "${displayName}" 吗？`)) {
+    if (!(await confirm(`确定要删除标签 "${displayName}" 吗？`, {
+      title: '删除标签',
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger'
+    }))) {
       return
     }
 

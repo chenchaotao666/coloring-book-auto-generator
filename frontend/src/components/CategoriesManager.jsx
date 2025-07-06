@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MultiSelect } from '@/components/ui/multi-select'
@@ -20,6 +21,9 @@ import {
 import React, { useEffect, useState } from 'react'
 
 const CategoriesManager = () => {
+  // 确认对话框
+  const confirm = useConfirm()
+
   // 状态管理
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(false)
@@ -316,7 +320,12 @@ const CategoriesManager = () => {
 
   // 删除分类
   const handleDelete = async (categoryId, displayName) => {
-    if (!window.confirm(`确定要删除分类 "${displayName}" 吗？`)) {
+    if (!(await confirm(`确定要删除分类 "${displayName}" 吗？`, {
+      title: '删除分类',
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger'
+    }))) {
       return
     }
 

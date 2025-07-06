@@ -4,6 +4,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useToast } from '@/components/ui/toast'
 import {
   AlertCircle,
   Check,
@@ -25,6 +26,12 @@ import ImageForm from './ImageForm'
 import InternationalizationEditor from './InternationalizationEditor'
 
 const ImagesManager = () => {
+  // Toast通知
+  const { showWarning, showError } = useToast()
+
+  // 确认对话框
+  const confirm = useConfirm()
+
   // 状态管理
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(false)
@@ -481,7 +488,12 @@ const ImagesManager = () => {
 
   // 手动上色功能
   const handleManualColoring = async (imageId, imageData) => {
-    if (!confirm('确认为此图片生成上色版本？')) {
+    if (!(await confirm('确认为此图片生成上色版本？', {
+      title: '图片上色确认',
+      confirmText: '开始上色',
+      cancelText: '取消',
+      type: 'default'
+    }))) {
       return
     }
 
@@ -530,7 +542,7 @@ const ImagesManager = () => {
   // 单个图片上色功能（用于ImageForm）
   const handleSingleImageColoring = async (formData) => {
     if (!formData.defaultUrl) {
-      alert('请先确保有默认图片URL')
+      showWarning('请先确保有默认图片URL')
       return
     }
 
@@ -595,7 +607,7 @@ const ImagesManager = () => {
 
     } catch (error) {
       console.error('单个图片上色失败:', error)
-      alert('上色失败: ' + error.message)
+      showError('上色失败: ' + error.message)
       return false
     }
   }
@@ -779,7 +791,12 @@ const ImagesManager = () => {
 
   // 删除图片
   const handleDelete = async (imageId, title) => {
-    if (!confirm(`确认删除图片 "${formatMultiLangField(title)}"？此操作不可恢复。`)) {
+    if (!(await confirm(`确认删除图片 "${formatMultiLangField(title)}"？此操作不可恢复。`, {
+      title: '删除图片',
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger'
+    }))) {
       return
     }
 
