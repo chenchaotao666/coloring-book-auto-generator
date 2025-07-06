@@ -32,8 +32,8 @@ module.exports = {
     },
     {
       name: 'coloring-book-frontend',
-      script: 'serve',
-      args: '-s dist -l 3000',
+      script: 'npx',
+      args: 'serve -s dist -l 3001',
       cwd: './frontend',
       instances: 1,
       autorestart: true,
@@ -41,11 +41,11 @@ module.exports = {
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'development',
-        PORT: 3000
+        PORT: 3001
       },
       env_production: {
         NODE_ENV: 'production',
-        PORT: 3000
+        PORT: 3001
       },
       error_file: '/dev/null',
       out_file: '/dev/null',
