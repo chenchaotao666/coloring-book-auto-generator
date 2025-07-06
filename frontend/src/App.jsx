@@ -8,6 +8,7 @@ import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
+import { apiFetch } from '@/config/api'
 import { AlertCircle, Check, CheckCircle, Clock, Edit3, Home, Image, ImageIcon, Languages, Palette, PlusCircle, Save, Settings, Tag, Trash2, X } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import CategoriesManager from './components/CategoriesManager'
@@ -398,11 +399,8 @@ function App() {
     setGenerationProgress({ current: 0, total: formData.count, message: '准备开始生成主题...' })
 
     try {
-      const response = await fetch('/api/generate-themes', {
+      const response = await apiFetch('/api/generate-themes', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           keyword: formData.keyword,
           description: formData.description,
@@ -545,11 +543,8 @@ function App() {
     setGenerationProgress({ current: 0, total: itemsToGenerate.length, message: `准备为${itemsToGenerate.length}个主题${actionText}文案...` })
 
     try {
-      const response = await fetch('/api/generate-content', {
+      const response = await apiFetch('/api/generate-content', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           items: itemsToGenerate,
           keyword: formData.keyword,
@@ -682,11 +677,8 @@ function App() {
 
     try {
       // 1. 创建图片生成任务，添加API选择参数
-      const response = await fetch('/api/generate-images', {
+      const response = await apiFetch('/api/generate-images', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           contents: itemsToProcess.map(item => {
             const aiPrompt = getDisplayText(item.prompt) || '生成涂色书图片'  // AI提示词（从用户输入的提示词字段获取）
@@ -737,7 +729,7 @@ function App() {
 
     const poll = async () => {
       try {
-        const response = await fetch(`/api/image-progress/${taskId}`)
+        const response = await apiFetch(`/api/image-progress/${taskId}`)
 
         if (!response.ok) {
           throw new Error('查询进度失败')
@@ -814,7 +806,7 @@ function App() {
     if (!currentImageTaskId) return
 
     try {
-      const response = await fetch(`/api/pause-image-generation/${currentImageTaskId}`, {
+      const response = await apiFetch(`/api/pause-image-generation/${currentImageTaskId}`, {
         method: 'POST'
       })
 
@@ -836,7 +828,7 @@ function App() {
     if (!currentImageTaskId) return
 
     try {
-      const response = await fetch(`/api/resume-image-generation/${currentImageTaskId}`, {
+      const response = await apiFetch(`/api/resume-image-generation/${currentImageTaskId}`, {
         method: 'POST'
       })
 
@@ -982,11 +974,8 @@ function App() {
           const prompt = getDisplayText(item.prompt) || '涂色页'
 
           // 调用上色API，使用图片URL
-          const response = await fetch('/api/images/color-generate', {
+          const response = await apiFetch('/api/images/color-generate', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
             body: JSON.stringify({
               imageUrl: imageUrl, // 直接使用图片URL
               prompt: prompt,
@@ -1101,7 +1090,7 @@ function App() {
         for (const [taskId, taskInfo] of taskEntries) {
           try {
             console.log(`🔍 检查上色任务状态: ${taskId}`)
-            const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${taskInfo.apiType || selectedApiType}`)
+            const response = await apiFetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${taskInfo.apiType || selectedApiType}`)
             const data = await response.json()
 
             console.log(`📊 任务 ${taskId} 状态响应:`, data)
@@ -1237,7 +1226,7 @@ function App() {
   // 获取保存选项（分类和标签）
   const loadSaveOptions = async () => {
     try {
-      const response = await fetch('/api/images/save-options')
+      const response = await apiFetch('/api/images/save-options')
       const data = await response.json()
 
       if (data.success) {
@@ -1326,11 +1315,8 @@ function App() {
       // 处理新增
       if (itemsToCreate.length > 0) {
         try {
-          const createResponse = await fetch('/api/images/save-generated', {
+          const createResponse = await apiFetch('/api/images/save-generated', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
             body: JSON.stringify({ images: itemsToCreate })
           })
 
@@ -1379,11 +1365,8 @@ function App() {
       if (itemsToUpdate.length > 0) {
         for (const imageData of itemsToUpdate) {
           try {
-            const updateResponse = await fetch(`/api/images/${imageData.id}`, {
+            const updateResponse = await apiFetch(`/api/images/${imageData.id}`, {
               method: 'PUT',
-              headers: {
-                'Content-Type': 'application/json'
-              },
               body: JSON.stringify(imageData)
             })
 
@@ -1546,7 +1529,7 @@ function App() {
         })
 
         // 调用API删除数据库记录
-        const response = await fetch(`/api/images/${itemToDelete.databaseId}`, {
+        const response = await apiFetch(`/api/images/${itemToDelete.databaseId}`, {
           method: 'DELETE'
         })
 
@@ -1696,11 +1679,8 @@ function App() {
         targetLanguages: selectedLanguages
       }
 
-      const response = await fetch('/api/internationalization', {
+      const response = await apiFetch('/api/internationalization', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(requestData)
       })
 
@@ -1862,11 +1842,8 @@ function App() {
         targetLanguages: [languageCode]
       }
 
-      const response = await fetch('/api/internationalization', {
+      const response = await apiFetch('/api/internationalization', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(requestData)
       })
 
@@ -2149,11 +2126,8 @@ function App() {
       const prompt = formData.prompt?.zh || '涂色页'
 
       // 调用上色API，直接使用图片URL而不是数据库ID
-      const response = await fetch('/api/images/color-generate', {
+      const response = await apiFetch('/api/images/color-generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           imageUrl: formData.defaultUrl, // 直接使用图片URL
           prompt: prompt,
@@ -2581,11 +2555,8 @@ function App() {
 
       console.log('🚀 发送文生图请求数据:', JSON.stringify(requestData, null, 2))
 
-      const response = await fetch('/api/images/text-to-image', {
+      const response = await apiFetch('/api/images/text-to-image', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(requestData)
       })
 
@@ -2712,7 +2683,7 @@ function App() {
       console.log('- fluxModel:', fluxModel)
       console.log('- ratio:', formData.ratio || '1:1')
 
-      const response = await fetch('/api/images/image-to-image', {
+      const response = await apiFetch('/api/images/image-to-image', {
         method: 'POST',
         body: formDataObj
       })
@@ -2804,7 +2775,7 @@ function App() {
         attempts++
         console.log(`轮询文生图任务状态 ${attempts}/${maxAttempts}:`, taskId)
 
-        const response = await fetch(`/api/images/task-status/${taskId}?taskType=text-to-image`)
+        const response = await apiFetch(`/api/images/task-status/${taskId}?taskType=text-to-image`)
         const result = await response.json()
 
         if (!response.ok) {
@@ -2995,7 +2966,7 @@ function App() {
         attempts++
         console.log(`轮询图生图任务状态 ${attempts}/${maxAttempts}:`, taskId)
 
-        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-to-image`)
+        const response = await apiFetch(`/api/images/task-status/${taskId}?taskType=image-to-image`)
         const result = await response.json()
 
         if (!response.ok) {

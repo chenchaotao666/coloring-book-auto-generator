@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { Textarea } from '@/components/ui/textarea'
+import { apiFetch } from '@/config/api'
 import {
   AlertCircle,
   Check,
@@ -68,7 +69,7 @@ const TagsManager = () => {
     setError('')
 
     try {
-      const response = await fetch('/api/tags')
+      const response = await apiFetch('/api/tags')
       const data = await response.json()
 
       if (data.success) {
@@ -225,20 +226,14 @@ const TagsManager = () => {
       let response
       if (editingId) {
         // 更新
-        response = await fetch(`/api/tags/${editingId}`, {
+        response = await apiFetch(`/api/tags/${editingId}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(requestData)
         })
       } else {
         // 新增
-        response = await fetch('/api/tags', {
+        response = await apiFetch('/api/tags', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(requestData)
         })
       }
@@ -274,7 +269,7 @@ const TagsManager = () => {
     setError('')
 
     try {
-      const response = await fetch(`/api/tags/${tagId}`, {
+      const response = await apiFetch(`/api/tags/${tagId}`, {
         method: 'DELETE'
       })
 
@@ -341,11 +336,8 @@ const TagsManager = () => {
         targetLanguages: selectedLanguages
       }
 
-      const response = await fetch('/api/internationalization', {
+      const response = await apiFetch('/api/internationalization', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(requestData)
       })
 
@@ -420,11 +412,8 @@ const TagsManager = () => {
     setError('')
 
     try {
-      const response = await fetch('/api/internationalization/save', {
+      const response = await apiFetch('/api/internationalization/save', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           type: 'tags',
           translations: internationalizationResults

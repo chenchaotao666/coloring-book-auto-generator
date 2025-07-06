@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { apiFetch } from '@/config/api'
 import {
   AlertCircle,
   Check,
@@ -75,7 +76,7 @@ const CategoriesManager = () => {
     setError('')
 
     try {
-      const response = await fetch('/api/categories')
+      const response = await apiFetch('/api/categories')
       const data = await response.json()
 
       if (data.success) {
@@ -93,7 +94,7 @@ const CategoriesManager = () => {
   // 加载图片列表
   const loadImages = async () => {
     try {
-      const response = await fetch('/api/images?limit=100') // 获取前100张图片
+      const response = await apiFetch('/api/images?limit=100') // 获取前100张图片
       const data = await response.json()
 
       if (data.success) {
@@ -284,20 +285,14 @@ const CategoriesManager = () => {
       let response
       if (editingId) {
         // 更新
-        response = await fetch(`/api/categories/${editingId}`, {
+        response = await apiFetch(`/api/categories/${editingId}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(requestData)
         })
       } else {
         // 新增
-        response = await fetch('/api/categories', {
+        response = await apiFetch('/api/categories', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(requestData)
         })
       }
@@ -333,7 +328,7 @@ const CategoriesManager = () => {
     setError('')
 
     try {
-      const response = await fetch(`/api/categories/${categoryId}`, {
+      const response = await apiFetch(`/api/categories/${categoryId}`, {
         method: 'DELETE'
       })
 
@@ -400,11 +395,8 @@ const CategoriesManager = () => {
         targetLanguages: selectedLanguages
       }
 
-      const response = await fetch('/api/internationalization', {
+      const response = await apiFetch('/api/internationalization', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(requestData)
       })
 
@@ -479,11 +471,8 @@ const CategoriesManager = () => {
     setError('')
 
     try {
-      const response = await fetch('/api/internationalization/save', {
+      const response = await apiFetch('/api/internationalization/save', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           type: 'categories',
           translations: internationalizationResults

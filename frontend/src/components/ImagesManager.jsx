@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
+import { apiFetch } from '@/config/api'
 import {
   AlertCircle,
   Check,
@@ -236,7 +237,7 @@ const ImagesManager = () => {
       queryParams.append('page', filters.page.toString())
       queryParams.append('limit', filters.limit.toString())
 
-      const response = await fetch(`/api/images?${queryParams}`)
+      const response = await apiFetch(`/api/images?${queryParams}`)
       const data = await response.json()
 
       if (data.success) {
@@ -258,8 +259,8 @@ const ImagesManager = () => {
   const loadCategoriesAndTags = async () => {
     try {
       const [categoriesRes, tagsRes] = await Promise.all([
-        fetch('/api/categories'),
-        fetch('/api/tags')
+        apiFetch('/api/categories'),
+        apiFetch('/api/tags')
       ])
 
       const [categoriesData, tagsData] = await Promise.all([
@@ -559,11 +560,8 @@ const ImagesManager = () => {
         (typeof imageData.prompt === 'object' ? imageData.prompt.zh || imageData.prompt.en || '' : imageData.prompt) :
         ''
 
-      const response = await fetch('/api/images/color-generate', {
+      const response = await apiFetch('/api/images/color-generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           imageId: imageId,
           prompt: prompt,
@@ -630,7 +628,7 @@ const ImagesManager = () => {
         attempts++
         console.log(`🚀 轮询图片列表上色 ${attempts}/${maxAttempts}:`, taskId)
 
-        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${selectedApiType}`)
+        const response = await apiFetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${selectedApiType}`)
         const result = await response.json()
 
         if (!response.ok) {
@@ -651,9 +649,8 @@ const ImagesManager = () => {
 
           // 立即更新数据库
           try {
-            const updateResponse = await fetch(`/api/images/${imageId}`, {
+            const updateResponse = await apiFetch(`/api/images/${imageId}`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 ...imageData,
                 coloringUrl: coloringUrl
@@ -791,11 +788,8 @@ const ImagesManager = () => {
       const prompt = formData.prompt?.zh || formData.title?.zh || '涂色页'
 
       // 调用上色API
-      const response = await fetch('/api/images/color-generate', {
+      const response = await apiFetch('/api/images/color-generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           imageUrl: formData.defaultUrl,
           prompt: prompt,
@@ -886,7 +880,7 @@ const ImagesManager = () => {
         attempts++
         console.log(`轮询上色任务状态 ${attempts}/${maxAttempts}:`, taskId)
 
-        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${selectedApiType}`)
+        const response = await apiFetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${selectedApiType}`)
         const result = await response.json()
 
         if (!response.ok) {
@@ -926,9 +920,8 @@ const ImagesManager = () => {
             try {
               console.log('🔥 使用锁定的目标图片信息更新数据库:', lockedTargetImage.title)
 
-              const updateResponse = await fetch(`/api/images/${lockedTargetImageId}`, {
+              const updateResponse = await apiFetch(`/api/images/${lockedTargetImageId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   ...lockedTargetImage,
                   coloringUrl: coloringUrl
@@ -1083,9 +1076,8 @@ const ImagesManager = () => {
       }
 
       // 2. 更新数据库
-      const response = await fetch(`/api/images/${imageId}`, {
+      const response = await apiFetch(`/api/images/${imageId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...currentImage,
           coloringUrl
@@ -1151,7 +1143,7 @@ const ImagesManager = () => {
         console.log(`🔄 ImagesManager - 轮询上色任务 ${taskId} - 第 ${pollCount + 1} 次`)
 
         // 使用新的任务状态查询API
-        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${selectedApiType}`)
+        const response = await apiFetch(`/api/images/task-status/${taskId}?taskType=image-coloring&apiType=${selectedApiType}`)
         const data = await response.json()
 
         console.log(`📊 ImagesManager - 上色任务 ${taskId} 状态响应:`, data)
@@ -1276,7 +1268,7 @@ const ImagesManager = () => {
                 console.log(`💾 ImagesManager - 异步更新数据库: ${actualImageId}`)
 
                 // 重新获取最新的images列表，避免闭包问题
-                const response = await fetch('/api/images')
+                const response = await apiFetch('/api/images')
                 const data = await response.json()
                 const freshImages = data.success ? data.data : []
 
@@ -1293,11 +1285,8 @@ const ImagesManager = () => {
 
                   console.log(`📝 ImagesManager - 完整PUT请求数据:`, putData)
 
-                  const updateResponse = await fetch(`/api/images/${actualImageId}`, {
+                  const updateResponse = await apiFetch(`/api/images/${actualImageId}`, {
                     method: 'PUT',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
                     body: JSON.stringify(putData),
                   })
 
@@ -1496,7 +1485,7 @@ const ImagesManager = () => {
     setError('')
 
     try {
-      const response = await fetch(`/api/images/${imageId}`, {
+      const response = await apiFetch(`/api/images/${imageId}`, {
         method: 'DELETE',
       })
 
@@ -1556,11 +1545,8 @@ const ImagesManager = () => {
         additionalInfo: formatMultiLangField(img.additionalInfo) // 添加文案内容字段
       }))
 
-      const response = await fetch('/api/internationalization', {
+      const response = await apiFetch('/api/internationalization', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           type: 'content',
           targetLanguages: selectedLanguages,
@@ -1684,11 +1670,8 @@ const ImagesManager = () => {
 
       // 批量更新
       const promises = updates.map(update =>
-        fetch(`/api/images/${update.id}`, {
+        apiFetch(`/api/images/${update.id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
           body: JSON.stringify(update),
         })
       )
@@ -1789,11 +1772,8 @@ const ImagesManager = () => {
         targetLanguages: [languageCode]
       }
 
-      const response = await fetch('/api/internationalization', {
+      const response = await apiFetch('/api/internationalization', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(requestData)
       })
 
@@ -1921,11 +1901,8 @@ const ImagesManager = () => {
         imageRatio: formData.ratio || '1:1'
       }
 
-      const response = await fetch('/api/images/text-to-image', {
+      const response = await apiFetch('/api/images/text-to-image', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(requestData)
       })
 
@@ -2032,7 +2009,7 @@ const ImagesManager = () => {
       }
       formDataObj.append('imageRatio', formData.ratio || '1:1')
 
-      const response = await fetch('/api/images/image-to-image', {
+      const response = await apiFetch('/api/images/image-to-image', {
         method: 'POST',
         body: formDataObj
       })
@@ -2110,7 +2087,7 @@ const ImagesManager = () => {
         attempts++
         console.log(`轮询文生图任务状态 ${attempts}/${maxAttempts}:`, taskId)
 
-        const response = await fetch(`/api/images/task-status/${taskId}?taskType=text-to-image`)
+        const response = await apiFetch(`/api/images/task-status/${taskId}?taskType=text-to-image`)
         const result = await response.json()
 
         if (!response.ok) {
@@ -2239,7 +2216,7 @@ const ImagesManager = () => {
         attempts++
         console.log(`轮询图生图任务状态 ${attempts}/${maxAttempts}:`, taskId)
 
-        const response = await fetch(`/api/images/task-status/${taskId}?taskType=image-to-image`)
+        const response = await apiFetch(`/api/images/task-status/${taskId}?taskType=image-to-image`)
         const result = await response.json()
 
         if (!response.ok) {

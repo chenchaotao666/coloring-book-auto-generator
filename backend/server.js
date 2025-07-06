@@ -39,10 +39,25 @@ const COLORING_PAGE_CONFIG = {
 }
 
 const app = express()
-const PORT = process.env.PORT || 3005
+const PORT = process.env.PORT || 3002
 
-// 中间件
-app.use(cors())
+// 中间件 - 增强CORS配置
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+    'http://192.168.1.3:3001'  // 添加局域网IP
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}))
+
+// 预检请求处理
+app.options('*', cors())
+
 app.use(express.json({ limit: '10mb' }))
 
 // 静态文件服务 - 提供图片访问
@@ -1100,9 +1115,9 @@ app.get('/api/health', (req, res) => {
 })
 
 // 启动服务器
-app.listen(3006, async () => {
-  console.log(`服务器运行在端口 3006`)
-  console.log(`健康检查: http://localhost:3006/api/health`)
+app.listen(PORT, async () => {
+  console.log(`服务器运行在端口 ${PORT}`)
+  console.log(`健康检查: http://localhost:${PORT}/api/health`)
 
   // 测试数据库连接
   console.log('正在测试数据库连接...')
