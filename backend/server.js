@@ -350,7 +350,7 @@ app.post('/api/resume-image-generation/:taskId', (req, res) => {
 
 // 生成图片的API（使用重构后的服务）
 app.post('/api/generate-images', async (req, res) => {
-  const { contents, apiType = 'gpt4o', model } = req.body
+  const { contents, apiType = 'gpt4o', model, imageFormat = 'png' } = req.body
   const taskId = uuidv4()
   const BATCH_SIZE = 5
 
@@ -371,6 +371,7 @@ app.post('/api/generate-images', async (req, res) => {
     contents: contents,
     apiType: apiType,
     model: model,
+    imageFormat: imageFormat,
     currentBatch: 0,
     totalBatches: Math.ceil(contents.length / BATCH_SIZE),
     results: {}
@@ -447,6 +448,7 @@ async function generateImagesConcurrently(taskId) {
             apiType: task.apiType,
             model: task.model,
             imageRatio: item.imageRatio || '1:1',
+            imageFormat: task.imageFormat,
             progressCallback: (imageProgress) => {
               const currentProgress = taskProgress.get(taskId)
               if (currentProgress && currentProgress.images[item.id]) {

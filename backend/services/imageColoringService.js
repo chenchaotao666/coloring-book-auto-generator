@@ -365,7 +365,7 @@ function buildProfessionalColoringPagePrompt(aiPrompt, generalPrompt) {
  * @param {Function} options.progressCallback - 进度回调
  * @returns {Object} - 任务信息
  */
-async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', progressCallback }) {
+async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png', progressCallback }) {
   try {
     console.log('开始文生图任务');
     console.log('AI提示词 (单张图片描述):', aiPrompt);
@@ -374,30 +374,68 @@ async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4
     console.log('图片比例:', imageRatio);
 
     // 构建专业涂色页prompt - AI提示词 + 文生图提示词
-    const professionalPrompt = buildProfessionalColoringPagePrompt(aiPrompt, text2imagePrompt);
+    let professionalPrompt = buildProfessionalColoringPagePrompt(aiPrompt, text2imagePrompt);
     console.log(`🔧 专业prompt已构建，长度: ${professionalPrompt.length} 字符`);
 
     let taskId;
     if (apiType === 'flux-kontext') {
-      // Flux Kontext文生图
-      const requestData = {
-        prompt: professionalPrompt,
-        aspectRatio: imageRatio,
-        model: model || 'flux-kontext-pro',
-        callBackUrl: null,
-        uploadCn: true,
-      };
-      taskId = await callFluxKontextAPI(requestData, 'generate');
+      // Flux Kontext支持的比例
+      const supportedRatios = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', '16:21'];
+
+      if (supportedRatios.includes(imageRatio)) {
+        // 支持的比例，正常传递aspectRatio参数
+        const requestData = {
+          prompt: professionalPrompt,
+          aspectRatio: imageRatio,
+          model: model || 'flux-kontext-pro',
+          callBackUrl: null,
+          uploadCn: true,
+          outputFormat: imageFormat || 'png',
+        };
+        taskId = await callFluxKontextAPI(requestData, 'generate');
+      } else {
+        // 不支持的比例，在prompt前面添加"landscape x:x"，不传递aspectRatio参数
+        const landscapePrompt = `landscape ${imageRatio}, ${professionalPrompt}`;
+        console.log(`🔧 Flux不支持比例${imageRatio}，在prompt前添加landscape描述`);
+
+        const requestData = {
+          prompt: landscapePrompt,
+          // 不传递aspectRatio参数
+          model: model || 'flux-kontext-pro',
+          callBackUrl: null,
+          uploadCn: true,
+          outputFormat: imageFormat || 'png',
+        };
+        taskId = await callFluxKontextAPI(requestData, 'generate');
+      }
     } else {
-      // GPT-4O文生图
-      const requestData = {
-        prompt: professionalPrompt,
-        size: imageRatio,
-        nVariants: 1,
-        isEnhance: false,
-        uploadCn: true,
-      };
-      taskId = await callGPT4OAPI(requestData, 'generate');
+      // GPT-4O支持的比例
+      const supportedRatios = ['1:1', '3:2', '2:3'];
+
+      if (supportedRatios.includes(imageRatio)) {
+        // 支持的比例，正常传递size参数
+        const requestData = {
+          prompt: professionalPrompt,
+          size: imageRatio,
+          nVariants: 1,
+          isEnhance: false,
+          uploadCn: true,
+        };
+        taskId = await callGPT4OAPI(requestData, 'generate');
+      } else {
+        // 不支持的比例，在prompt前面添加"landscape x:x"，不传递size参数
+        const landscapePrompt = `landscape ${imageRatio}, ${professionalPrompt}`;
+        console.log(`🔧 GPT-4O不支持比例${imageRatio}，在prompt前添加landscape描述`);
+
+        const requestData = {
+          prompt: landscapePrompt,
+          // 不传递size参数
+          nVariants: 1,
+          isEnhance: false,
+          uploadCn: true,
+        };
+        taskId = await callGPT4OAPI(requestData, 'generate');
+      }
     }
 
     console.log(`📋 文生图任务创建成功，taskId: ${taskId}`);
@@ -427,7 +465,7 @@ async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4
  * @param {string} options.imageRatio - 图片比例
  * @returns {Object} - 任务信息
  */
-async function generateImageToImage({ imageUrl, aiPrompt, image2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1' }) {
+async function generateImageToImage({ imageUrl, aiPrompt, image2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png' }) {
   try {
     console.log('开始图生图任务');
     console.log('输入图片URL:', imageUrl);
@@ -443,29 +481,71 @@ async function generateImageToImage({ imageUrl, aiPrompt, image2imagePrompt, api
 
     let taskId;
     if (apiType === 'flux-kontext') {
-      // Flux Kontext图生图
-      const requestData = {
-        inputImage: publicImageUrl,
-        prompt: professionalPrompt,
-        aspectRatio: imageRatio,
-        model: model || 'flux-kontext-pro',
-        callBackUrl: null,
-        uploadCn: true
-      };
-      taskId = await callFluxKontextAPI(requestData, 'generate');
+      // Flux Kontext支持的比例
+      const supportedRatios = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', '16:21'];
+
+      if (supportedRatios.includes(imageRatio)) {
+        // 支持的比例，正常传递aspectRatio参数
+        const requestData = {
+          inputImage: publicImageUrl,
+          prompt: professionalPrompt,
+          aspectRatio: imageRatio,
+          model: model || 'flux-kontext-pro',
+          callBackUrl: null,
+          uploadCn: true,
+          outputFormat: imageFormat || 'png'
+        };
+        taskId = await callFluxKontextAPI(requestData, 'generate');
+      } else {
+        // 不支持的比例，在prompt前面添加"landscape x:x"，不传递aspectRatio参数
+        const landscapePrompt = `landscape ${imageRatio}, ${professionalPrompt}`;
+        console.log(`🔧 Flux图生图不支持比例${imageRatio}，在prompt前添加landscape描述`);
+
+        const requestData = {
+          inputImage: publicImageUrl,
+          prompt: landscapePrompt,
+          // 不传递aspectRatio参数
+          model: model || 'flux-kontext-pro',
+          callBackUrl: null,
+          uploadCn: true,
+          outputFormat: imageFormat || 'png'
+        };
+        taskId = await callFluxKontextAPI(requestData, 'generate');
+      }
     } else {
-      // GPT-4O图生图
-      const requestData = {
-        filesUrl: [publicImageUrl],
-        prompt: professionalPrompt,
-        size: imageRatio,
-        callBackUrl: null,
-        isEnhance: false,
-        uploadCn: true,
-        nVariants: 1,
-        enableFallback: false
-      };
-      taskId = await callGPT4OAPI(requestData, 'generate');
+      // GPT-4O支持的比例
+      const supportedRatios = ['1:1', '3:2', '2:3'];
+
+      if (supportedRatios.includes(imageRatio)) {
+        // 支持的比例，正常传递size参数
+        const requestData = {
+          filesUrl: [publicImageUrl],
+          prompt: professionalPrompt,
+          size: imageRatio,
+          callBackUrl: null,
+          isEnhance: false,
+          uploadCn: true,
+          nVariants: 1,
+          enableFallback: false
+        };
+        taskId = await callGPT4OAPI(requestData, 'generate');
+      } else {
+        // 不支持的比例，在prompt前面添加"landscape x:x"，不传递size参数
+        const landscapePrompt = `landscape ${imageRatio}, ${professionalPrompt}`;
+        console.log(`🔧 GPT-4O图生图不支持比例${imageRatio}，在prompt前添加landscape描述`);
+
+        const requestData = {
+          filesUrl: [publicImageUrl],
+          prompt: landscapePrompt,
+          // 不传递size参数
+          callBackUrl: null,
+          isEnhance: false,
+          uploadCn: true,
+          nVariants: 1,
+          enableFallback: false
+        };
+        taskId = await callGPT4OAPI(requestData, 'generate');
+      }
     }
 
     console.log(`📋 图生图任务创建成功，taskId: ${taskId}`);
@@ -494,7 +574,7 @@ async function generateImageToImage({ imageUrl, aiPrompt, image2imagePrompt, api
  * @param {string} options.model - 模型名称
  * @returns {Object} - 任务信息
  */
-async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType = 'gpt4o', model, imageRatio = '1:1' }) {
+async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png' }) {
   try {
     console.log('开始图片上色任务');
     console.log('原始图片URL:', imageUrl);
@@ -527,6 +607,7 @@ async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType 
         model: model || 'flux-kontext-pro',
         callBackUrl: null,
         uploadCn: true,
+        outputFormat: imageFormat || 'png'
       };
       taskId = await callFluxKontextAPI(requestData, 'generate');
     } else {

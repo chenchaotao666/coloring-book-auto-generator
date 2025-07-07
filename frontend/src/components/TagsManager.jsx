@@ -19,6 +19,7 @@ import {
   Trash2
 } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
+import { eventBus } from '../utils/eventBus'
 
 const TagsManager = () => {
   // 状态管理
@@ -244,6 +245,9 @@ const TagsManager = () => {
         setSuccess(editingId ? '标签更新成功！' : '标签创建成功！')
         resetForm()
         loadTags() // 重新加载列表
+
+        // 触发标签更新事件，通知主应用刷新saveOptions
+        eventBus.emit('tagUpdated', { action: editingId ? 'update' : 'create', id: editingId || data.data?.id })
       } else {
         setError(data.message || '操作失败')
       }
@@ -278,6 +282,9 @@ const TagsManager = () => {
       if (data.success) {
         setSuccess('标签删除成功！')
         loadTags() // 重新加载列表
+
+        // 触发标签更新事件，通知主应用刷新saveOptions
+        eventBus.emit('tagUpdated', { action: 'delete', id: tagId })
       } else {
         setError(data.message || '删除失败')
       }

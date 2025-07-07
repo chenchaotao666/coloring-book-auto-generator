@@ -616,14 +616,15 @@ router.post('/text-to-image', async (req, res) => {
   try {
     console.log('🔍 收到文生图请求 - req.body:', JSON.stringify(req.body, null, 2));
 
-    const { aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1' } = req.body;
+    const { aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png' } = req.body;
 
     console.log('🔍 解构后的参数:', {
       aiPrompt: aiPrompt,
       text2imagePrompt: text2imagePrompt,
       apiType: apiType,
       model: model,
-      imageRatio: imageRatio
+      imageRatio: imageRatio,
+      imageFormat: imageFormat
     });
 
     if (!aiPrompt) {
@@ -634,26 +635,7 @@ router.post('/text-to-image', async (req, res) => {
       });
     }
 
-    // 校验模型和比例的匹配性
-    if (apiType === 'gpt4o') {
-      const supportedRatios = ['1:1', '3:2', '2:3'];
-      if (!supportedRatios.includes(imageRatio)) {
-        console.log('❌ GPT-4O模型不支持的比例:', imageRatio);
-        return res.status(400).json({
-          success: false,
-          message: `GPT-4O模型只支持以下比例: ${supportedRatios.join(', ')}，当前比例: ${imageRatio}`
-        });
-      }
-    } else if (apiType === 'flux-kontext') {
-      const supportedRatios = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', '16:21'];
-      if (!supportedRatios.includes(imageRatio)) {
-        console.log('❌ Flux Kontext模型不支持的比例:', imageRatio);
-        return res.status(400).json({
-          success: false,
-          message: `Flux Kontext模型只支持以下比例: ${supportedRatios.join(', ')}，当前比例: ${imageRatio}`
-        });
-      }
-    }
+    // 注意：现在服务层可以处理所有比例，通过在prompt中添加landscape描述来支持不标准的比例
 
     console.log('✅ 收到文生图请求:', { aiPrompt, text2imagePrompt, apiType, model, imageRatio });
 
@@ -662,7 +644,8 @@ router.post('/text-to-image', async (req, res) => {
       text2imagePrompt,
       apiType,
       model,
-      imageRatio
+      imageRatio,
+      imageFormat
     });
 
     res.json({
@@ -687,7 +670,7 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
     console.log('req.body:', req.body);
     console.log('req.file:', req.file ? { originalname: req.file.originalname, size: req.file.size, mimetype: req.file.mimetype } : 'null');
 
-    const { aiPrompt, image2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1' } = req.body;
+    const { aiPrompt, image2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png' } = req.body;
 
     let imageUrl = req.body.imageUrl; // 支持直接传URL
 
@@ -725,6 +708,7 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
     console.log('参数验证 - apiType:', apiType);
     console.log('参数验证 - model:', model);
     console.log('参数验证 - imageRatio:', imageRatio);
+    console.log('参数验证 - imageFormat:', imageFormat);
 
     if (!imageUrl || !aiPrompt) {
       const errorMsg = `参数验证失败 - imageUrl: ${imageUrl}, aiPrompt: ${aiPrompt}`;
@@ -736,26 +720,7 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
       });
     }
 
-    // 校验模型和比例的匹配性
-    if (apiType === 'gpt4o') {
-      const supportedRatios = ['1:1', '3:2', '2:3'];
-      if (!supportedRatios.includes(imageRatio)) {
-        console.log('❌ GPT-4O模型不支持的比例:', imageRatio);
-        return res.status(400).json({
-          success: false,
-          message: `GPT-4O模型只支持以下比例: ${supportedRatios.join(', ')}，当前比例: ${imageRatio}`
-        });
-      }
-    } else if (apiType === 'flux-kontext') {
-      const supportedRatios = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', '16:21'];
-      if (!supportedRatios.includes(imageRatio)) {
-        console.log('❌ Flux Kontext模型不支持的比例:', imageRatio);
-        return res.status(400).json({
-          success: false,
-          message: `Flux Kontext模型只支持以下比例: ${supportedRatios.join(', ')}，当前比例: ${imageRatio}`
-        });
-      }
-    }
+    // 注意：现在服务层可以处理所有比例，通过在prompt中添加landscape描述来支持不标准的比例
 
     console.log('收到图生图请求:', { imageUrl, aiPrompt, image2imagePrompt, apiType, model, imageRatio });
 
@@ -765,7 +730,8 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
       image2imagePrompt,
       apiType,
       model,
-      imageRatio
+      imageRatio,
+      imageFormat
     });
 
     // 如果用户上传了文件，在返回结果中包含彩色图片URL

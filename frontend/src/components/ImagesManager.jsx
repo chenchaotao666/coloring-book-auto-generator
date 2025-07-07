@@ -49,6 +49,7 @@ const ImagesManager = () => {
 
   // API选择相关状态
   const [selectedApiType, setSelectedApiType] = useState('flux-kontext') // 'gpt4o' 或 'flux-kontext'
+  const [imageFormat, setImageFormat] = useState('jpeg') // 图片格式选择 'jpeg' 或 'png'
   const [fluxModel, setFluxModel] = useState('flux-kontext-pro') // 'flux-kontext-pro' 或 'flux-kontext-max'
 
   // 分类和标签数据
@@ -125,44 +126,30 @@ const ImagesManager = () => {
   // 获取支持的比例选项（基于选择的API类型）
   const getSupportedRatios = (apiType) => {
     const allRatios = [
-      { value: '21:9', label: '超宽屏 (21:9) - Flux' },
-      { value: '16:9', label: '宽屏 (16:9) - Flux' },
-      { value: '4:3', label: '横向 (4:3) - Flux' },
-      { value: '3:2', label: '横向 (3:2) - 4O' },
-      { value: '1:1', label: '正方形 (1:1) - Flux/4O' },
-      { value: '2:3', label: '纵向 (2:3) - 4O' },
-      { value: '3:4', label: '纵向 (3:4) - Flux' },
-      { value: '9:16', label: '竖屏 (9:16) - Flux' },
-      { value: '16:21', label: '超高屏 (16:21) - Flux' }
+      { value: '21:9', label: '超宽屏 (21:9)' },
+      { value: '16:9', label: '宽屏 (16:9)' },
+      { value: '4:3', label: '横向 (4:3)' },
+      { value: '3:2', label: '横向 (3:2)' },
+      { value: '1:1', label: '正方形 (1:1)' },
+      { value: '2:3', label: '纵向 (2:3)' },
+      { value: '3:4', label: '纵向 (3:4)' },
+      { value: '9:16', label: '竖屏 (9:16)' },
+      { value: '16:21', label: '超高屏 (16:21)' }
     ]
 
-    // GPT-4O只支持特定比例
-    if (apiType === 'gpt4o') {
-      const supportedValues = ['1:1', '3:2', '2:3']
-      return allRatios.filter(ratio => supportedValues.includes(ratio.value))
-    }
-
-    // Flux Kontext支持特定比例
-    if (apiType === 'flux-kontext') {
-      const supportedValues = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', '16:21']
-      return allRatios.filter(ratio => supportedValues.includes(ratio.value))
-    }
-
-    // 默认返回所有比例
+    // 现在所有API都支持所有比例（通过在prompt中添加landscape描述）
     return allRatios
   }
 
-  // 校验比例是否与API类型匹配
+  // 校验比例是否与API类型匹配（现在所有比例都支持）
   const validateRatioForApiType = (ratio, apiType) => {
-    const supportedRatios = getSupportedRatios(apiType).map(r => r.value)
-    return supportedRatios.includes(ratio)
+    return true // 现在所有比例都支持
   }
 
-  // 显示比例校验失败的提示
+  // 显示比例校验失败的提示（现在不再需要）
   const showRatioValidationError = (ratio, apiType) => {
-    const supportedRatios = getSupportedRatios(apiType).map(r => r.value)
-    const modelName = apiType === 'gpt4o' ? 'GPT-4O' : 'Flux Kontext'
-    setError(`${modelName}模型不支持比例"${ratio}"，支持的比例: ${supportedRatios.join(', ')}`)
+    // 现在所有比例都支持，这个函数不会被调用
+    console.warn('showRatioValidationError被调用，但现在应该支持所有比例')
   }
 
   // 比例选项（动态获取）
@@ -1891,14 +1878,18 @@ const ImagesManager = () => {
 
       // 使用formData中的内容作为提示词
       const aiPrompt = formData.title?.zh || formData.name?.zh || '生成涂色书图片'
-      const text2imagePrompt = '生成适合儿童涂色的黑白线稿，线条简洁清晰，无填充色彩，风格简约卡通'
+      const text2imagePrompt = `1、生成适合儿童涂色的黑白线稿，线条简洁清晰。
+2、内容要简单，减少细节，应该简约卡通。
+3、不要有彩色内容。
+4、外部轮廓，采用比较粗的线条。`
 
       const requestData = {
         aiPrompt: aiPrompt,
         text2imagePrompt: text2imagePrompt,
         apiType: selectedApiType,
-        model: selectedApiType === 'flux-kontext' ? undefined : undefined, // 暂时不支持模型选择
-        imageRatio: formData.ratio || '1:1'
+        model: selectedApiType === 'flux-kontext' ? fluxModel : undefined, // 使用实际模型选择
+        imageRatio: formData.ratio || '1:1',
+        imageFormat: selectedApiType === 'flux-kontext' ? imageFormat : undefined // 添加图片格式
       }
 
       const response = await apiFetch('/api/images/text-to-image', {
@@ -2004,8 +1995,11 @@ const ImagesManager = () => {
       formDataObj.append('aiPrompt', promptText)
       formDataObj.append('image2imagePrompt', '将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰')
       formDataObj.append('apiType', selectedApiType)
-      if (selectedApiType === 'flux-kontext') {
-        // 暂时不支持模型选择
+      if (selectedApiType === 'flux-kontext' && fluxModel) {
+        formDataObj.append('model', fluxModel)
+      }
+      if (selectedApiType === 'flux-kontext' && imageFormat) {
+        formDataObj.append('imageFormat', imageFormat)
       }
       formDataObj.append('imageRatio', formData.ratio || '1:1')
 
@@ -2158,15 +2152,17 @@ const ImagesManager = () => {
         if (attempts < maxAttempts) {
           setTimeout(poll, 3000)
         } else {
-          // 超时处理
+          // 超时处理 - 将任务标记为失败
+          console.warn(`⏰ 文生图任务轮询超时: ${taskId} (${attempts}/${maxAttempts})`)
+
           setTextToImageTasks(prev => new Map(prev.set(taskKey, {
             taskId: taskId,
             progress: 0,
             status: 'failed',
-            message: '文生图生成超时'
+            message: `文生图生成超时 (轮询${attempts}次后放弃)`
           })))
 
-          setError('文生图生成超时，请重试')
+          setError(`文生图生成超时，已轮询${attempts}次仍未完成，请重试`)
 
           // 3秒后清除超时状态
           setTimeout(() => {
@@ -2176,6 +2172,8 @@ const ImagesManager = () => {
               return newMap
             })
           }, 3000)
+
+          return // 确保不继续执行后续轮询
         }
 
       } catch (error) {
@@ -2287,15 +2285,17 @@ const ImagesManager = () => {
         if (attempts < maxAttempts) {
           setTimeout(poll, 3000)
         } else {
-          // 超时处理
+          // 超时处理 - 将任务标记为失败
+          console.warn(`⏰ 图生图任务轮询超时: ${taskId} (${attempts}/${maxAttempts})`)
+
           setImageToImageTasks(prev => new Map(prev.set(taskKey, {
             taskId: taskId,
             progress: 0,
             status: 'failed',
-            message: '图生图生成超时'
+            message: `图生图生成超时 (轮询${attempts}次后放弃)`
           })))
 
-          setError('图生图生成超时，请重试')
+          setError(`图生图生成超时，已轮询${attempts}次仍未完成，请重试`)
 
           // 3秒后清除超时状态
           setTimeout(() => {
@@ -2305,6 +2305,8 @@ const ImagesManager = () => {
               return newMap
             })
           }, 3000)
+
+          return // 确保不继续执行后续轮询
         }
 
       } catch (error) {

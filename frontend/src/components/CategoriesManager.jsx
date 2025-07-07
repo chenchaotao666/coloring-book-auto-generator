@@ -20,6 +20,7 @@ import {
   Trash2
 } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
+import { eventBus } from '../utils/eventBus'
 
 const CategoriesManager = () => {
   // 确认对话框
@@ -303,6 +304,9 @@ const CategoriesManager = () => {
         setSuccess(editingId ? '分类更新成功！' : '分类创建成功！')
         resetForm()
         loadCategories() // 重新加载列表
+
+        // 触发分类更新事件，通知主应用刷新saveOptions
+        eventBus.emit('categoryUpdated', { action: editingId ? 'update' : 'create', id: editingId || data.data?.id })
       } else {
         setError(data.message || '操作失败')
       }
@@ -337,6 +341,9 @@ const CategoriesManager = () => {
       if (data.success) {
         setSuccess('分类删除成功！')
         loadCategories() // 重新加载列表
+
+        // 触发分类更新事件，通知主应用刷新saveOptions
+        eventBus.emit('categoryUpdated', { action: 'delete', id: categoryId })
       } else {
         setError(data.message || '删除失败')
       }

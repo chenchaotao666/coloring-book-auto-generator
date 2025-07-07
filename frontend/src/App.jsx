@@ -15,6 +15,7 @@ import CategoriesManager from './components/CategoriesManager'
 import ImageForm from './components/ImageForm'
 import ImagesManager from './components/ImagesManager'
 import TagsManager from './components/TagsManager'
+import { eventBus } from './utils/eventBus'
 
 // 工具函数：从多语言对象中提取显示文本
 const getDisplayText = (field, preferredLang = 'zh') => {
@@ -261,13 +262,17 @@ function App() {
 
   // API选择相关状态
   const [selectedApiType, setSelectedApiType] = useState('flux-kontext') // 'gpt4o' 或 'flux-kontext'
+  const [imageFormat, setImageFormat] = useState('jpeg') // 图片格式选择 'jpeg' 或 'png'
   const [fluxModel, setFluxModel] = useState('flux-kontext-pro') // 'flux-kontext-pro' 或 'flux-kontext-max'
 
   // 上色提示词状态
   const [coloringPrompt, setColoringPrompt] = useState('用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明')
 
   // 文生图提示词状态
-  const [text2imagePrompt, setText2imagePrompt] = useState('生成适合儿童涂色的黑白线稿，线条简洁清晰，无填充色彩，风格简约卡通')
+  const [text2imagePrompt, setText2imagePrompt] = useState(`1、生成适合儿童涂色的黑白线稿，线条简洁清晰。
+2、内容要简单，减少细节，应该简约卡通。
+3、不要有彩色内容。
+4、外部轮廓，采用比较粗的线条。`)
 
   // 图生图提示词状态
   const [imageToImagePrompt, setImageToImagePrompt] = useState('将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰')
@@ -340,6 +345,26 @@ function App() {
   // 组件挂载时加载保存选项
   useEffect(() => {
     loadSaveOptions()
+
+    // 监听分类和标签更新事件
+    const handleCategoryUpdate = () => {
+      console.log('📂 接收到分类更新事件，刷新saveOptions')
+      loadSaveOptions()
+    }
+
+    const handleTagUpdate = () => {
+      console.log('🏷️ 接收到标签更新事件，刷新saveOptions')
+      loadSaveOptions()
+    }
+
+    eventBus.on('categoryUpdated', handleCategoryUpdate)
+    eventBus.on('tagUpdated', handleTagUpdate)
+
+    // 清理事件监听
+    return () => {
+      eventBus.off('categoryUpdated', handleCategoryUpdate)
+      eventBus.off('tagUpdated', handleTagUpdate)
+    }
   }, [])
 
   // 当API类型变化时，检查并调整图片比例
@@ -682,7 +707,7 @@ function App() {
         body: JSON.stringify({
           contents: itemsToProcess.map(item => {
             const aiPrompt = getDisplayText(item.prompt) || '生成涂色书图片'  // AI提示词（从用户输入的提示词字段获取）
-            const text2imagePromptValue = text2imagePrompt.trim() || '生成适合儿童涂色的黑白线稿，线条简洁清晰，无填充色彩，风格简约卡通'  // 文生图提示词（通用描述），提供默认值
+            const text2imagePromptValue = text2imagePrompt.trim()  // 文生图提示词（通用描述），提供默认值
 
             return {
               id: item.id,
@@ -693,7 +718,8 @@ function App() {
             }
           }),
           apiType: selectedApiType, // 添加API类型
-          model: selectedApiType === 'flux-kontext' ? fluxModel : undefined // 添加模型选择
+          model: selectedApiType === 'flux-kontext' ? fluxModel : undefined, // 添加模型选择
+          imageFormat: selectedApiType === 'flux-kontext' ? imageFormat : undefined // 添加图片格式选择
         }),
       })
 
@@ -985,7 +1011,8 @@ function App() {
                 isEnhance: false,
                 nVariants: 1,
                 apiType: selectedApiType, // 添加API类型
-                model: selectedApiType === 'flux-kontext' ? fluxModel : undefined // 添加模型选择
+                model: selectedApiType === 'flux-kontext' ? fluxModel : undefined, // 添加模型选择
+                imageFormat: selectedApiType === 'flux-kontext' ? imageFormat : undefined // 添加图片格式
               }
             }),
           })
@@ -2137,7 +2164,8 @@ function App() {
             isEnhance: false,
             nVariants: 1,
             apiType: selectedApiType, // 添加API类型
-            model: selectedApiType === 'flux-kontext' ? fluxModel : undefined // 添加模型选择
+            model: selectedApiType === 'flux-kontext' ? fluxModel : undefined, // 添加模型选择
+            imageFormat: selectedApiType === 'flux-kontext' ? imageFormat : undefined // 添加图片格式
           }
         }),
       })
@@ -2536,7 +2564,7 @@ function App() {
 
       // 获取AI提示词（用户输入的提示词）和文生图提示词（通用描述）
       const aiPrompt = formData.prompt?.zh || '生成涂色书图片'  // AI提示词（从用户输入的提示词字段获取）
-      const text2imagePromptValue = text2imagePrompt.trim() || '生成适合儿童涂色的黑白线稿，线条简洁清晰，无填充色彩，风格简约卡通'  // 文生图提示词（通用描述），提供默认值
+      const text2imagePromptValue = text2imagePrompt.trim()  // 文生图提示词（通用描述），提供默认值
 
       console.log('🔍 文生图参数调试:')
       console.log('- formData:', formData)
@@ -2550,7 +2578,8 @@ function App() {
         text2imagePrompt: text2imagePromptValue,  // 文生图提示词（通用描述）
         apiType: selectedApiType,
         model: selectedApiType === 'flux-kontext' ? fluxModel : undefined,
-        imageRatio: formData.ratio || '1:1'  // 修正参数名
+        imageRatio: formData.ratio || '1:1',  // 修正参数名
+        imageFormat: selectedApiType === 'flux-kontext' ? imageFormat : undefined // 添加图片格式
       }
 
       console.log('🚀 发送文生图请求数据:', JSON.stringify(requestData, null, 2))
@@ -2672,6 +2701,9 @@ function App() {
       formDataObj.append('apiType', selectedApiType)
       if (selectedApiType === 'flux-kontext' && fluxModel) {
         formDataObj.append('model', fluxModel)
+      }
+      if (selectedApiType === 'flux-kontext' && imageFormat) {
+        formDataObj.append('imageFormat', imageFormat)
       }
       formDataObj.append('imageRatio', formData.ratio || '1:1')  // 修正参数名
 
@@ -2906,15 +2938,17 @@ function App() {
         if (attempts < maxAttempts) {
           setTimeout(poll, 3000) // 3秒后再次轮询
         } else {
-          // 超时处理
+          // 超时处理 - 将任务标记为失败
+          console.warn(`⏰ 文生图任务轮询超时: ${taskId} (${attempts}/${maxAttempts})`)
+
           setTextToImageTasks(prev => new Map(prev.set(formData.id, {
             taskId: taskId,
             progress: 0,
             status: 'failed',
-            message: '文生图生成超时'
+            message: `文生图生成超时 (轮询${attempts}次后放弃)`
           })))
 
-          showWarning('文生图生成超时，请重试')
+          showError(`文生图生成超时，已轮询${attempts}次仍未完成，请重试`)
 
           // 3秒后清除超时状态
           setTimeout(() => {
@@ -2925,6 +2959,8 @@ function App() {
               return newMap
             })
           }, 3000)
+
+          return // 确保不继续执行后续轮询
         }
 
       } catch (error) {
@@ -3100,15 +3136,17 @@ function App() {
         if (attempts < maxAttempts) {
           setTimeout(poll, 3000) // 3秒后再次轮询
         } else {
-          // 超时处理
+          // 超时处理 - 将任务标记为失败
+          console.warn(`⏰ 图生图任务轮询超时: ${taskId} (${attempts}/${maxAttempts})`)
+
           setImageToImageTasks(prev => new Map(prev.set(formData.id, {
             taskId: taskId,
             progress: 0,
             status: 'failed',
-            message: '图生图生成超时'
+            message: `图生图生成超时 (轮询${attempts}次后放弃)`
           })))
 
-          showWarning('图生图生成超时，请重试')
+          showError(`图生图生成超时，已轮询${attempts}次仍未完成，请重试`)
 
           // 3秒后清除超时状态
           setTimeout(() => {
@@ -3119,6 +3157,8 @@ function App() {
               return newMap
             })
           }, 3000)
+
+          return // 确保不继续执行后续轮询
         }
 
       } catch (error) {
@@ -3454,6 +3494,23 @@ function App() {
                       <div></div>
                     )}
 
+                    {selectedApiType === 'flux-kontext' ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="imageFormat" className="text-sm font-medium">图片格式</Label>
+                        <Select value={imageFormat} onValueChange={setImageFormat}>
+                          <SelectTrigger className="h-10">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="jpeg">JPEG (推荐)</SelectItem>
+                            <SelectItem value="png">PNG (无损)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      <div></div>
+                    )}
+
                     <div></div>
                   </div>
 
@@ -3468,7 +3525,7 @@ function App() {
                           placeholder="输入文生图提示词，留空将使用默认提示词"
                           value={text2imagePrompt}
                           onChange={(e) => setText2imagePrompt(e.target.value)}
-                          rows={3}
+                          rows={5}
                           className="resize-none text-sm"
                         />
                       </div>
@@ -3480,7 +3537,7 @@ function App() {
                           placeholder="输入图生图提示词，留空将使用默认提示词"
                           value={imageToImagePrompt}
                           onChange={(e) => setImageToImagePrompt(e.target.value)}
-                          rows={3}
+                          rows={5}
                           className="resize-none text-sm"
                         />
                       </div>
@@ -3492,7 +3549,7 @@ function App() {
                           placeholder="输入上色提示词，留空将使用默认提示词"
                           value={coloringPrompt}
                           onChange={(e) => setColoringPrompt(e.target.value)}
-                          rows={3}
+                          rows={5}
                           className="resize-none text-sm"
                         />
                       </div>
