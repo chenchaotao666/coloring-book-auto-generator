@@ -272,7 +272,7 @@ function App() {
   const [text2imagePrompt, setText2imagePrompt] = useState(`1、生成适合儿童涂色的黑白线稿，线条简洁清晰。
 2、内容要简单，减少细节，应该简约卡通。
 3、不要有彩色内容。
-4、外部轮廓，采用比较粗的线条。`)
+4、主体内容的轮廓，采用比较粗的线条。`)
 
   // 图生图提示词状态
   const [imageToImagePrompt, setImageToImagePrompt] = useState('将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰')
