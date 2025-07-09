@@ -76,7 +76,7 @@ const ImagesManager = () => {
   })
 
   // 多语言编辑状态
-  const [editingLanguages, setEditingLanguages] = useState(['zh']) // 默认编辑中文
+  const [editingLanguages, setEditingLanguages] = useState([]) // 不强制默认语言
 
   // 筛选状态
   const [filters, setFilters] = useState({
@@ -98,6 +98,7 @@ const ImagesManager = () => {
 
   // 支持的语言
   const supportedLanguages = [
+    { code: 'zh', name: '中文' },
     { code: 'en', name: '英语' },
     { code: 'ja', name: '日语' },
     { code: 'ko', name: '韩语' },
@@ -157,7 +158,7 @@ const ImagesManager = () => {
 
   // 获取所有已有的语言版本
   const getExistingLanguages = (formData) => {
-    const allLanguages = new Set(['zh']) // 中文是必须的
+    const allLanguages = new Set()
 
       // 检查各个多语言字段中存在的语言
       ;['name', 'title', 'description', 'prompt', 'additionalInfo'].forEach(field => {
@@ -170,7 +171,8 @@ const ImagesManager = () => {
         }
       })
 
-    return Array.from(allLanguages)
+    // 如果没有找到任何语言，默认返回中文
+    return Array.from(allLanguages).length > 0 ? Array.from(allLanguages) : ['zh']
   }
 
   // 添加语言版本
@@ -192,7 +194,7 @@ const ImagesManager = () => {
 
   // 移除语言版本
   const removeLanguage = (langCode) => {
-    if (langCode !== 'zh' && editingLanguages.includes(langCode)) {
+    if (editingLanguages.includes(langCode)) {
       setEditingLanguages(editingLanguages.filter(lang => lang !== langCode))
 
       // 移除该语言的字段
@@ -326,11 +328,11 @@ const ImagesManager = () => {
   const resetForm = () => {
     setFormData({
       id: null,
-      name: { zh: '' },
-      title: { zh: '' },
-      description: { zh: '' },
-      prompt: { zh: '' },
-      additionalInfo: { zh: '' },
+      name: {},
+      title: {},
+      description: {},
+      prompt: {},
+      additionalInfo: {},
       defaultUrl: '',
       colorUrl: '',
       coloringUrl: '',
@@ -342,7 +344,7 @@ const ImagesManager = () => {
       size: '',
       tagIds: []
     })
-    setEditingLanguages(['zh']) // 重置为只编辑中文
+    setEditingLanguages([]) // 不强制默认语言
     setEditingId(null)
     setShowForm(false)
   }
@@ -456,7 +458,7 @@ const ImagesManager = () => {
     const existingLangs = getExistingLanguages(parsedFormData)
     const translationLangs = imageTranslations ? Object.keys(imageTranslations) : []
     const allLanguages = Array.from(new Set([...existingLangs, ...translationLangs]))
-    setEditingLanguages(allLanguages.length > 0 ? allLanguages : ['zh'])
+    setEditingLanguages(allLanguages)
 
     setEditingId(image.id)
     setShowForm(true)

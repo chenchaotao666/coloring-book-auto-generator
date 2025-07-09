@@ -82,7 +82,7 @@ const ImageForm = ({
   }
 
   const handleGenerateTranslation = () => {
-    if (onGenerateTranslation && activeLanguage !== 'zh') {
+    if (onGenerateTranslation && activeLanguage) {
       onGenerateTranslation(formData.id, activeLanguage, formData)
     }
   }
@@ -139,26 +139,19 @@ const ImageForm = ({
                 <MultiSelect
                   options={supportedLanguages.map(lang => ({
                     value: lang.code,
-                    label: lang.name + (lang.code === 'zh' ? ' *' : '')
+                    label: lang.name
                   }))}
                   value={editingLanguages}
                   onChange={(selectedLanguages) => {
-                    // 确保中文始终被包含
-                    const languagesWithChinese = selectedLanguages.includes('zh')
-                      ? selectedLanguages
-                      : ['zh', ...selectedLanguages]
-
                     // 移除的语言
-                    const removedLanguages = editingLanguages.filter(lang => !languagesWithChinese.includes(lang))
+                    const removedLanguages = editingLanguages.filter(lang => !selectedLanguages.includes(lang))
 
                     // 新增的语言
-                    const addedLanguages = languagesWithChinese.filter(lang => !editingLanguages.includes(lang))
+                    const addedLanguages = selectedLanguages.filter(lang => !editingLanguages.includes(lang))
 
                     // 处理移除的语言
                     removedLanguages.forEach(lang => {
-                      if (lang !== 'zh') { // 不允许移除中文
-                        onRemoveLanguage(lang)
-                      }
+                      onRemoveLanguage(lang)
                     })
 
                     // 处理新增的语言
@@ -167,8 +160,8 @@ const ImageForm = ({
                     })
 
                     // 如果当前活跃语言被移除，切换到第一个语言
-                    if (removedLanguages.includes(activeLanguage) && languagesWithChinese.length > 0) {
-                      setActiveLanguage(languagesWithChinese[0])
+                    if (removedLanguages.includes(activeLanguage) && selectedLanguages.length > 0) {
+                      setActiveLanguage(selectedLanguages[0])
                     }
 
                     // 如果有新增语言，切换到最新添加的语言
@@ -196,7 +189,6 @@ const ImageForm = ({
                 }`}
             >
               {supportedLanguages.find(l => l.code === langCode)?.name || langCode.toUpperCase()}
-              {langCode === 'zh' && <span className="text-red-500 ml-1">*</span>}
             </button>
           ))}
         </div>
@@ -207,16 +199,15 @@ const ImageForm = ({
             <h4 className="font-medium text-gray-700 flex items-center gap-2">
               <Languages className="w-4 h-4" />
               {supportedLanguages.find(l => l.code === activeLanguage)?.name || activeLanguage.toUpperCase()}
-              {activeLanguage === 'zh' && <span className="text-red-500">*</span>}
             </h4>
             {/* 生成国际化按钮 */}
-            {onGenerateTranslation && !readOnly && activeLanguage !== 'zh' && (
+            {onGenerateTranslation && !readOnly && activeLanguage && formData.id && (
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 onClick={handleGenerateTranslation}
-                disabled={readOnly}
+                disabled={readOnly || !formData.id || !activeLanguage || (isGeneratingTranslation && isGeneratingTranslation(formData, activeLanguage))}
                 className="flex items-center gap-1 text-xs bg-purple-100 hover:bg-purple-200 border-purple-300 text-purple-700 disabled:bg-gray-100 disabled:text-gray-400"
               >
                 <RefreshCw className={`w-3 h-3 ${isGeneratingTranslation && isGeneratingTranslation(formData, activeLanguage) ? 'animate-spin' : ''}`} />
@@ -228,22 +219,20 @@ const ImageForm = ({
             {/* 左侧：名称、标题、描述、AI提示词 */}
             <div className="space-y-4">
               <div>
-                <Label>名称{activeLanguage === 'zh' ? '*' : ''}</Label>
+                <Label>名称</Label>
                 <Input
                   value={(formData.name && formData.name[activeLanguage]) || ''}
                   onChange={readOnly ? undefined : (e) => onInputChange('name', activeLanguage, e.target.value)}
                   placeholder={`输入${supportedLanguages.find(l => l.code === activeLanguage)?.name || activeLanguage}名称`}
-                  required={activeLanguage === 'zh'}
                   readOnly={readOnly}
                 />
               </div>
               <div>
-                <Label>标题{activeLanguage === 'zh' ? '*' : ''}</Label>
+                <Label>标题</Label>
                 <Input
                   value={(formData.title && formData.title[activeLanguage]) || ''}
                   onChange={readOnly ? undefined : (e) => onInputChange('title', activeLanguage, e.target.value)}
                   placeholder={`输入${supportedLanguages.find(l => l.code === activeLanguage)?.name || activeLanguage}标题`}
-                  required={activeLanguage === 'zh'}
                   readOnly={readOnly}
                 />
               </div>

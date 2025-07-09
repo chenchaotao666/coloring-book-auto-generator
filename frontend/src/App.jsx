@@ -18,11 +18,17 @@ import TagsManager from './components/TagsManager'
 import { eventBus } from './utils/eventBus'
 
 // 工具函数：从多语言对象中提取显示文本
-const getDisplayText = (field, preferredLang = 'zh') => {
+const getDisplayText = (field, preferredLang = 'zh', forTranslation = false) => {
   if (!field) return ''
   if (typeof field === 'string') return field
   if (typeof field === 'object') {
-    return field[preferredLang] || field.zh || field.en || Object.values(field)[0] || ''
+    if (forTranslation) {
+      // 生成国际化时，优先使用英文，如果没有英文再使用中文
+      return field.en || field.zh || Object.values(field)[0] || ''
+    } else {
+      // 正常显示时，使用指定的优先语言
+      return field[preferredLang] || field.zh || field.en || Object.values(field)[0] || ''
+    }
   }
   return ''
 }
@@ -233,7 +239,9 @@ function App() {
     count: 1,
     template: defaultTemplate, // 文案生成提示词模板
     themeTemplate: defaultThemeTemplate, // 主题生成提示词模板
-    model: 'deepseek-chat'
+    model: 'deepseek-chat',
+    themeLanguage: 'en', // 主题生成语言选择，默认英文
+    contentLanguage: 'en' // 文案生成语言选择，默认英文
   })
 
   // 生成的内容列表
@@ -281,7 +289,8 @@ function App() {
   const [currentPage, setCurrentPage] = useState('generator') // 'generator'、'categories'、'tags' 或 'images'
 
   // 国际化相关状态
-  const [selectedLanguages, setSelectedLanguages] = useState([])
+  // 默认选中中文作为国际化语言
+  const [selectedLanguages, setSelectedLanguages] = useState(['zh'])
   const [isGeneratingInternationalization, setIsGeneratingInternationalization] = useState(false)
 
   // 查看详情相关状态
@@ -306,6 +315,7 @@ function App() {
 
   // 支持的语言配置
   const supportedLanguages = [
+    { code: 'zh', name: '中文' },
     { code: 'en', name: '英语' },
     { code: 'ja', name: '日语' },
     { code: 'ko', name: '韩语' },
@@ -431,7 +441,8 @@ function App() {
           description: formData.description,
           count: formData.count,
           model: formData.model,
-          themeTemplate: formData.themeTemplate // 添加用户的AI主题生成提示词模板
+          themeTemplate: formData.themeTemplate, // 添加用户的AI主题生成提示词模板
+          language: formData.themeLanguage // 添加主题生成语言选择
         }),
       })
 
@@ -551,7 +562,16 @@ function App() {
       itemsToGenerate = baseItems
     } else {
       // 正常生成：只处理没有文案的项目
-      itemsToGenerate = baseItems.filter(item => !item.content)
+      itemsToGenerate = baseItems.filter(item => {
+        if (!item.content) return true // 如果content为null/undefined，需要生成
+        if (typeof item.content === 'string') return !item.content.trim() // 如果是字符串，检查是否为空
+        if (typeof item.content === 'object') {
+          // 如果是对象，检查是否有任何语言的内容
+          return Object.keys(item.content).length === 0 ||
+            Object.values(item.content).every(val => !val || !val.trim())
+        }
+        return false
+      })
     }
 
     if (itemsToGenerate.length === 0) {
@@ -574,7 +594,8 @@ function App() {
           items: itemsToGenerate,
           keyword: formData.keyword,
           model: formData.model,
-          template: formData.template // 添加用户的AI提示词模板
+          template: formData.template, // 添加用户的AI提示词模板
+          language: formData.contentLanguage // 添加文案生成语言选择
         }),
       })
 
@@ -614,12 +635,26 @@ function App() {
                   break
 
                 case 'content_generated':
-                  // 更新对应项目的文案
-                  setContentList(prev => prev.map(item =>
-                    item.id === data.id
-                      ? { ...item, content: data.content }
-                      : item
-                  ))
+                  // 更新对应项目的文案，根据选择的语言存储
+                  setContentList(prev => prev.map(item => {
+                    if (item.id === data.id) {
+                      // 如果content还不是多语言对象，先转换
+                      const currentContent = item.content || {}
+                      const updatedContent = typeof currentContent === 'string'
+                        ? { [formData.contentLanguage]: currentContent }
+                        : currentContent
+
+                      // 将新生成的内容存储到选择的语言中
+                      return {
+                        ...item,
+                        content: {
+                          ...updatedContent,
+                          [formData.contentLanguage]: data.content
+                        }
+                      }
+                    }
+                    return item
+                  }))
 
                   setGenerationProgress(prev => ({
                     ...prev,
@@ -706,7 +741,8 @@ function App() {
         method: 'POST',
         body: JSON.stringify({
           contents: itemsToProcess.map(item => {
-            const aiPrompt = getDisplayText(item.prompt) || '生成涂色书图片'  // AI提示词（从用户输入的提示词字段获取）
+            // 优先使用英文提示词，如果没有则使用中文
+            const aiPrompt = getDisplayText(item.prompt, 'zh', true) || '生成涂色书图片'  // AI提示词（从用户输入的提示词字段获取）
             const text2imagePromptValue = text2imagePrompt.trim()  // 文生图提示词（通用描述），提供默认值
 
             return {
@@ -1678,14 +1714,14 @@ function App() {
       console.log(`📋 翻译所有 ${baseItems.length} 个项目`)
     }
 
-    // 只为已经生成内容的项目生成国际化
-    const itemsWithContent = baseItems.filter(item => item.content)
+    // 使用所有基础项目进行国际化（包括标题、描述等基本信息）
+    const itemsToTranslate = baseItems
 
-    if (itemsWithContent.length === 0) {
+    if (itemsToTranslate.length === 0) {
       if (selectedImages.size > 0) {
-        showWarning('选中的项目中没有可翻译的内容，请先生成文案')
+        showWarning('选中的项目中没有可翻译的内容')
       } else {
-        showWarning('没有可翻译的内容，请先生成文案')
+        showWarning('没有可翻译的内容')
       }
       return
     }
@@ -1693,17 +1729,46 @@ function App() {
     setIsGeneratingInternationalization(true)
 
     try {
+      // 收集所有项目的基础语言
+      const itemBaseLanguages = new Set()
+      const itemsWithBaseLanguage = itemsToTranslate.map(item => {
+        // 检查是否有英文内容
+        const hasEnglish = ['name', 'title', 'description', 'prompt', 'content'].some(field => {
+          const content = item[field]
+          return content && typeof content === 'object' && content.en && content.en.trim()
+        })
+
+        // 如果有英文内容，优先使用英文；否则使用中文
+        const baseLanguage = hasEnglish ? 'en' : 'zh'
+        itemBaseLanguages.add(baseLanguage)
+
+        return {
+          item,
+          baseLanguage,
+          translationData: {
+            id: item.id,
+            name: getDisplayText(item.name || item.title, baseLanguage),
+            title: getDisplayText(item.title, baseLanguage),
+            description: getDisplayText(item.description, baseLanguage),
+            prompt: getDisplayText(item.prompt, baseLanguage),
+            additionalInfo: getDisplayText(item.content, baseLanguage) || '' // 将content作为additionalInfo传递
+          }
+        }
+      })
+
+      // 从选中的语言中移除所有基础语言
+      const effectiveTargetLanguages = selectedLanguages.filter(lang => !itemBaseLanguages.has(lang))
+
+      if (effectiveTargetLanguages.length === 0) {
+        showWarning('移除基础语言后没有需要翻译的目标语言')
+        setIsGeneratingInternationalization(false)
+        return
+      }
+
       const requestData = {
         type: 'content', // 自定义类型，用于内容翻译
-        items: itemsWithContent.map(item => ({
-          id: item.id,
-          name: getDisplayText(item.name || item.title),
-          title: getDisplayText(item.title),
-          description: getDisplayText(item.description),
-          prompt: getDisplayText(item.prompt),
-          additionalInfo: getDisplayText(item.content) // 将content作为additionalInfo传递
-        })),
-        targetLanguages: selectedLanguages
+        items: itemsWithBaseLanguage.map(({ translationData }) => translationData),
+        targetLanguages: effectiveTargetLanguages
       }
 
       const response = await apiFetch('/api/internationalization', {
@@ -1765,7 +1830,7 @@ function App() {
         //   setActiveInternationalizationLanguage(selectedLanguages[0])
         // }
 
-        showSuccess(`成功为 ${itemsWithContent.length} 个内容生成了 ${selectedLanguages.length} 种语言的翻译，翻译结果已自动应用到各项目的多语言内容中`)
+        showSuccess(`成功为 ${itemsToTranslate.length} 个内容生成了 ${selectedLanguages.length} 种语言的翻译，翻译结果已自动应用到各项目的多语言内容中`)
       } else {
         showError('国际化失败: ' + data.message)
       }
@@ -1785,7 +1850,7 @@ function App() {
 
   // 获取所有已有的语言版本
   const getExistingLanguages = (formData) => {
-    const allLanguages = new Set(['zh']) // 中文是必须的
+    const allLanguages = new Set()
 
       // 检查各个多语言字段中存在的语言
       ;['name', 'title', 'description', 'prompt'].forEach(field => {
@@ -1798,7 +1863,8 @@ function App() {
         }
       })
 
-    return Array.from(allLanguages)
+    // 如果没有找到任何语言，默认返回中文
+    return Array.from(allLanguages).length > 0 ? Array.from(allLanguages) : ['zh']
   }
 
   // 获取或初始化内容项的编辑语言
@@ -1816,7 +1882,7 @@ function App() {
   // 添加语言到特定内容项
   const addLanguageToContent = (itemId, lang) => {
     setContentEditingLanguages(prev => {
-      const currentLanguages = prev.get(itemId) || ['zh']
+      const currentLanguages = prev.get(itemId) || []
       if (!currentLanguages.includes(lang)) {
         return new Map(prev.set(itemId, [...currentLanguages, lang]))
       }
@@ -1826,16 +1892,15 @@ function App() {
 
   // 从特定内容项移除语言
   const removeLanguageFromContent = (itemId, lang) => {
-    if (lang === 'zh') return // 不允许删除中文
     setContentEditingLanguages(prev => {
-      const currentLanguages = prev.get(itemId) || ['zh']
+      const currentLanguages = prev.get(itemId) || []
       return new Map(prev.set(itemId, currentLanguages.filter(l => l !== lang)))
     })
   }
 
   // 处理单个翻译生成
   const handleGenerateTranslation = async (itemId, languageCode, originalItem) => {
-    if (!itemId || !languageCode || languageCode === 'zh') return
+    if (!itemId || !languageCode) return
 
     const taskKey = `${itemId}-${languageCode}`
 
@@ -1847,13 +1912,33 @@ function App() {
     })
 
     try {
-      // 获取中文内容作为源内容
+      // 检查是否有英文内容
+      const hasEnglish = ['name', 'title', 'description', 'prompt', 'content'].some(field => {
+        const content = originalItem[field]
+        return content && typeof content === 'object' && content.en && content.en.trim()
+      })
+
+      // 如果有英文内容，优先使用英文；否则使用中文
+      const baseLanguage = hasEnglish ? 'en' : 'zh'
+
+      // 如果目标语言就是基础语言，则不需要翻译
+      if (languageCode === baseLanguage) {
+        showWarning(`当前内容已经有${baseLanguage === 'en' ? '英文' : '中文'}内容，无需翻译`)
+        setSingleTranslationTasks(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(taskKey)
+          return newMap
+        })
+        return
+      }
+
+      // 获取源内容
       const sourceContent = {
-        name: getDisplayText(originalItem.name || originalItem.title),
-        title: getDisplayText(originalItem.title),
-        description: getDisplayText(originalItem.description),
-        prompt: getDisplayText(originalItem.prompt),
-        additionalInfo: getDisplayText(originalItem.content) // content对应additionalInfo
+        name: getDisplayText(originalItem.name || originalItem.title, baseLanguage),
+        title: getDisplayText(originalItem.title, baseLanguage),
+        description: getDisplayText(originalItem.description, baseLanguage),
+        prompt: getDisplayText(originalItem.prompt, baseLanguage),
+        additionalInfo: getDisplayText(originalItem.content, baseLanguage) // content对应additionalInfo
       }
 
       const requestData = {
@@ -1939,7 +2024,7 @@ function App() {
 
   // 检查是否正在生成特定翻译
   const isGeneratingTranslation = (formData, languageCode) => {
-    if (!formData.id || !languageCode || languageCode === 'zh') return false
+    if (!formData.id || !languageCode) return false
     const taskKey = `${formData.id}-${languageCode}`
     return singleTranslationTasks.has(taskKey)
   }
@@ -1947,7 +2032,7 @@ function App() {
   // 检查国际化是否完成
   const isInternationalizationComplete = (item) => {
     const existingLanguages = getExistingLanguages(item)
-    // 如果存在多个语言（除了中文），则认为国际化完成
+    // 如果存在多个语言，则认为国际化完成
     return existingLanguages.length > 1
   }
 
@@ -2563,7 +2648,15 @@ function App() {
       })))
 
       // 获取AI提示词（用户输入的提示词）和文生图提示词（通用描述）
-      const aiPrompt = formData.prompt?.zh || '生成涂色书图片'  // AI提示词（从用户输入的提示词字段获取）
+      let aiPrompt = ''
+      if (formData.prompt && typeof formData.prompt === 'object') {
+        // 优先使用英文提示词，如果没有则使用中文
+        aiPrompt = formData.prompt.en || formData.prompt.zh || '生成涂色书图片'
+      } else if (formData.prompt && typeof formData.prompt === 'string') {
+        aiPrompt = formData.prompt
+      } else {
+        aiPrompt = '生成涂色书图片'
+      }
       const text2imagePromptValue = text2imagePrompt.trim()  // 文生图提示词（通用描述），提供默认值
 
       console.log('🔍 文生图参数调试:')
@@ -2672,7 +2765,8 @@ function App() {
       // 从用户输入的AI提示词字段获取内容
       let basePromptText = ''
       if (formData.prompt && typeof formData.prompt === 'object') {
-        basePromptText = formData.prompt.zh || formData.prompt.en || ''
+        // 优先使用英文提示词，如果没有则使用中文
+        basePromptText = formData.prompt.en || formData.prompt.zh || ''
       } else if (formData.prompt && typeof formData.prompt === 'string') {
         basePromptText = formData.prompt
       }
@@ -2680,7 +2774,8 @@ function App() {
       // 如果AI提示词为空，尝试从标题获取
       if (!basePromptText || basePromptText.trim() === '') {
         if (formData.title && typeof formData.title === 'object') {
-          basePromptText = formData.title.zh || formData.title.en || ''
+          // 优先使用英文标题，如果没有则使用中文
+          basePromptText = formData.title.en || formData.title.zh || ''
         } else if (formData.title && typeof formData.title === 'string') {
           basePromptText = formData.title
         }
@@ -3664,7 +3759,25 @@ function App() {
                           <PlusCircle className="w-6 h-6 text-blue-600" />
                         </div>
                         <h3 className="font-medium text-blue-900 mb-2">生成主题</h3>
-                        <p className="text-sm text-blue-700 mb-4">根据关键词生成多个创意主题</p>
+                        <p className="text-sm text-blue-700 mb-2">根据关键词生成多个创意主题</p>
+
+                        {/* 主题生成语言选择 */}
+                        <div className="mb-3">
+                          <Label className="text-xs text-blue-600 mb-1 block">语言选择</Label>
+                          <Select
+                            value={formData.themeLanguage}
+                            onValueChange={(value) => handleInputChange('themeLanguage', value)}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="zh">中文</SelectItem>
+                              <SelectItem value="en">英文</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
                         <Button
                           onClick={generateThemes}
                           disabled={isGeneratingThemes || !formData.keyword.trim()}
@@ -3683,7 +3796,24 @@ function App() {
                           <Edit3 className="w-6 h-6 text-green-600" />
                         </div>
                         <h3 className="font-medium text-green-900 mb-2">生成文案</h3>
-                        <p className="text-sm text-green-700 mb-4">为主题创建详细的涂色指导</p>
+                        <p className="text-sm text-green-700 mb-2">为主题创建详细的涂色指导</p>
+
+                        {/* 文案生成语言选择 */}
+                        <div className="mb-3">
+                          <Label className="text-xs text-green-600 mb-1 block">语言选择</Label>
+                          <Select
+                            value={formData.contentLanguage}
+                            onValueChange={(value) => handleInputChange('contentLanguage', value)}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="zh">中文</SelectItem>
+                              <SelectItem value="en">英文</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
 
                         <Button
                           onClick={() => generateContent(true)} // 始终重新生成所有文案
@@ -3728,7 +3858,7 @@ function App() {
 
                         <Button
                           onClick={generateInternationalization}
-                          disabled={selectedLanguages.length === 0 || !contentList.some(item => item.content)}
+                          disabled={selectedLanguages.length === 0 || contentList.length === 0}
                           variant="outline"
                           className="w-full border-teal-300 text-teal-700 hover:bg-teal-50 flex items-center gap-2"
                           size="sm"
@@ -4073,9 +4203,22 @@ function App() {
 
                           {/* 状态指示器 */}
                           <div className="flex items-center gap-1">
-                            {item.content !== null && (
-                              <div className="w-2 h-2 bg-green-500 rounded-full" title="文案完成"></div>
-                            )}
+                            {(() => {
+                              // 检查是否有任何语言的文案内容
+                              if (!item.content) return null
+                              if (typeof item.content === 'string') {
+                                return item.content.trim() ? (
+                                  <div className="w-2 h-2 bg-green-500 rounded-full" title="文案完成"></div>
+                                ) : null
+                              }
+                              if (typeof item.content === 'object') {
+                                const hasContent = Object.values(item.content).some(val => val && val.trim())
+                                return hasContent ? (
+                                  <div className="w-2 h-2 bg-green-500 rounded-full" title="文案完成"></div>
+                                ) : null
+                              }
+                              return null
+                            })()}
                             {isInternationalizationComplete(item) && (
                               <div className="w-2 h-2 bg-teal-500 rounded-full" title="国际化完成"></div>
                             )}
@@ -4148,15 +4291,44 @@ function App() {
                                 <div className="flex items-center gap-2 flex-shrink-0">
                                   {/* 状态指示器 */}
                                   {/* 文案完成状态 */}
-                                  {item.content === null ? (
-                                    <span className="inline-flex items-center px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
-                                      仅主题
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
-                                      ✓ 文案完成
-                                    </span>
-                                  )}
+                                  {(() => {
+                                    // 检查是否有任何语言的文案内容
+                                    if (!item.content) {
+                                      return (
+                                        <span className="inline-flex items-center px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                                          仅主题
+                                        </span>
+                                      )
+                                    }
+                                    if (typeof item.content === 'string') {
+                                      return item.content.trim() ? (
+                                        <span className="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                                          ✓ 文案完成
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                                          仅主题
+                                        </span>
+                                      )
+                                    }
+                                    if (typeof item.content === 'object') {
+                                      const hasContent = Object.values(item.content).some(val => val && val.trim())
+                                      return hasContent ? (
+                                        <span className="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                                          ✓ 文案完成
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                                          仅主题
+                                        </span>
+                                      )
+                                    }
+                                    return (
+                                      <span className="inline-flex items-center px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                                        仅主题
+                                      </span>
+                                    )
+                                  })()}
 
                                   {/* 国际化完成状态 */}
                                   {isInternationalizationComplete(item) ? (
@@ -4303,7 +4475,7 @@ function App() {
                                     removeLanguageFromContent(item.id, lang)
 
                                     // 从特定项目移除语言支持（除了中文）
-                                    if (lang === 'zh') return // 不允许删除中文
+
                                     setContentList(prevList =>
                                       prevList.map(listItem => {
                                         if (listItem.id === item.id) {
@@ -4370,7 +4542,7 @@ function App() {
             <DialogContent>
               <ImageForm
                 formData={viewingContent}
-                editingLanguages={viewingContent ? getContentEditingLanguages(viewingContent.id, viewingContent) : ['zh']}
+                editingLanguages={viewingContent ? getContentEditingLanguages(viewingContent.id, viewingContent) : []}
                 supportedLanguages={supportedLanguages}
                 categories={saveOptions.categories}
                 tags={saveOptions.tags}
@@ -4447,7 +4619,6 @@ function App() {
                 onRemoveLanguage={(lang) => {
                   if (viewingContent) {
                     removeLanguageFromContent(viewingContent.id, lang)
-                    if (lang === 'zh') return
                     setContentList(prevList =>
                       prevList.map(listItem => {
                         if (listItem.id === viewingContent.id) {

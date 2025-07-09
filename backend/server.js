@@ -108,13 +108,14 @@ const taskProgress = new Map() // 存储任务进度
 
 // 第一步：生成主题的API
 app.post('/api/generate-themes', async (req, res) => {
-  const { keyword, description, count, model, themeTemplate } = req.body
+  const { keyword, description, count, model, themeTemplate, language = 'en' } = req.body
 
   console.log('🔍 生成主题API参数检查:')
   console.log('- keyword:', keyword)
   console.log('- description:', description)
   console.log('- count:', count)
   console.log('- model:', model)
+  console.log('- language:', language)
   console.log('- themeTemplate:', typeof themeTemplate, themeTemplate?.substring ? themeTemplate.substring(0, 100) + '...' : themeTemplate)
 
   // 设置服务器发送事件 (SSE) 响应头
@@ -135,7 +136,7 @@ app.post('/api/generate-themes', async (req, res) => {
       total: count
     })}\n\n`)
 
-    const themes = await generateThemes(keyword, description, count, model, themeTemplate)
+    const themes = await generateThemes(keyword, description, count, model, themeTemplate, language)
 
     // 逐个发送生成的主题
     for (let i = 0; i < themes.length; i++) {
@@ -145,9 +146,9 @@ app.post('/api/generate-themes', async (req, res) => {
       const contentItem = {
         id: contentId,
         index: i + 1,
-        title: theme.title,
-        prompt: theme.prompt,
-        description: theme.description || '',
+        title: { [language]: theme.title },
+        prompt: { [language]: theme.prompt },
+        description: { [language]: theme.description || '' },
         content: null, // 等待第二步生成
         generatedAt: new Date().toISOString(),
         step: 1
@@ -190,11 +191,12 @@ app.post('/api/generate-themes', async (req, res) => {
 
 // 第二步：生成文案的API
 app.post('/api/generate-content', async (req, res) => {
-  const { items, keyword, model, template } = req.body
+  const { items, keyword, model, template, language = 'en' } = req.body
 
   console.log('🔍 生成文案API参数检查:')
   console.log('- keyword:', keyword)
   console.log('- model:', model)
+  console.log('- language:', language)
   console.log('- template:', typeof template, template?.substring ? template.substring(0, 100) + '...' : template)
   console.log('- items count:', items?.length)
 
@@ -237,7 +239,8 @@ app.post('/api/generate-content', async (req, res) => {
           item.title,
           item.prompt,
           contentTemplate,
-          model
+          model,
+          language
         )
 
         // 发送文案结果
@@ -533,15 +536,16 @@ async function generateImagesConcurrently(taskId) {
 }
 
 // 第一步：生成多个不同主题的标题和prompt
-async function generateThemes(keyword, description, count, model, themeTemplate) {
+async function generateThemes(keyword, description, count, model, themeTemplate, language = 'en') {
   console.log(`🎯 开始生成${count}个基于"${keyword}"的不同主题...`)
   console.log('🔍 generateThemes 参数:')
+  console.log('- language:', language)
   console.log('- themeTemplate:', typeof themeTemplate, themeTemplate?.substring ? themeTemplate.substring(0, 100) + '...' : themeTemplate)
 
   // 如果配置了DeepSeek API，尝试调用
   if (process.env.DEEPSEEK_API_KEY && model.includes('deepseek')) {
     try {
-      return await callDeepSeekForThemes(keyword, description, count, model, themeTemplate)
+      return await callDeepSeekForThemes(keyword, description, count, model, themeTemplate, language)
     } catch (error) {
       console.warn('调用DeepSeek API生成主题失败，使用模拟数据:', error.message)
     }
@@ -567,16 +571,16 @@ async function generateThemes(keyword, description, count, model, themeTemplate)
 }
 
 // 第二步：生成详细内容文案
-async function generateDetailedContent(keyword, title, prompt, contentTemplate, model) {
+async function generateDetailedContent(keyword, title, prompt, contentTemplate, model, language = 'en') {
   console.log(`📝 为"${getDisplayText(title)}"生成详细内容文案...`)
 
-  console.log('KEY + model: ', process.env.DEEPSEEK_API_KEY, model)
+  console.log('KEY + model + language: ', process.env.DEEPSEEK_API_KEY, model, language)
 
   // 如果配置了DeepSeek API，尝试调用
   if (process.env.DEEPSEEK_API_KEY && model.includes('deepseek')) {
     try {
       console.log('调用DeepSeek API生成详细内容...')
-      return await callDeepSeekForDetailedContent(keyword, title, prompt, contentTemplate, model)
+      return await callDeepSeekForDetailedContent(keyword, title, prompt, contentTemplate, model, language)
     } catch (error) {
       console.warn('调用DeepSeek API生成详细内容失败，使用默认内容:', error.message)
     }
@@ -602,19 +606,20 @@ function generateDefaultContent(keyword, title) {
 }
 
 // 调用DeepSeek API生成主题
-async function callDeepSeekForThemes(keyword, description, count, model, themeTemplate) {
+async function callDeepSeekForThemes(keyword, description, count, model, themeTemplate, language = 'en') {
   console.log('🔍 callDeepSeekForThemes 参数检查:')
   console.log('- keyword:', keyword)
   console.log('- description:', description)
   console.log('- count:', count)
   console.log('- model:', model)
+  console.log('- language:', language)
   console.log('- themeTemplate:', typeof themeTemplate, themeTemplate?.substring ? themeTemplate.substring(0, 100) + '...' : themeTemplate)
 
   // 使用用户提供的模板作为AI提示词，如果没有则使用默认的
   let prompt = themeTemplate;
 
   if (!prompt || prompt.trim() === '') {
-    // 默认的AI主题生成提示词模板
+    // 默认模板总是使用中文，但要求AI根据language参数生成对应语言的内容
     prompt = `请基于关键词"${keyword}"${description ? '和描述"' + description + '"' : ''}，生成${count}个不同主题的涂色页概念。
 
 每个主题都应该：
@@ -624,8 +629,8 @@ async function callDeepSeekForThemes(keyword, description, count, model, themeTe
 
 请以JSON数组格式返回，每个对象包含：
 - title: 有创意的标题
-- description: 简短描述（30字以内）
-- prompt: 详细的中文图像生成描述，用于AI生成涂色页图片
+- description: 简短描述（30字以内）  
+- prompt: 详细的图像生成描述，用于AI生成涂色页图片
 
 示例格式：
 [
@@ -649,13 +654,18 @@ async function callDeepSeekForThemes(keyword, description, count, model, themeTe
 
   console.log('主题prompt: ', prompt)
 
+  // 根据语言选择配置system content - 控制生成内容的语言
+  const systemContent = language === 'zh'
+    ? '你是一个专业的涂色书设计师，擅长创作各种主题的创意涂色页概念。请确保返回有效的JSON格式。无论输入的prompt是什么语言，你都必须用中文生成所有的标题、描述和提示词内容。'
+    : '你是一个专业的涂色书设计师，擅长创作各种主题的创意涂色页概念。请确保返回有效的JSON格式。无论输入的prompt是什么语言，你都必须用英文生成所有的标题、描述和提示词内容。'
+
   try {
     const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
       model: model,
       messages: [
         {
           role: 'system',
-          content: '你是一个专业的涂色书设计师，擅长创作各种主题的创意涂色页概念。请确保返回有效的JSON格式。'
+          content: systemContent
         },
         {
           role: 'user',
@@ -699,19 +709,20 @@ async function callDeepSeekForThemes(keyword, description, count, model, themeTe
 }
 
 // 调用DeepSeek API生成详细内容
-async function callDeepSeekForDetailedContent(keyword, title, prompt, contentTemplate, model) {
+async function callDeepSeekForDetailedContent(keyword, title, prompt, contentTemplate, model, language = 'en') {
   console.log('🔍 callDeepSeekForDetailedContent 参数检查:')
   console.log('- keyword:', keyword)
   console.log('- title:', getDisplayText(title))
   console.log('- prompt:', prompt)
   console.log('- contentTemplate:', typeof contentTemplate, contentTemplate?.substring ? contentTemplate.substring(0, 100) + '...' : contentTemplate)
   console.log('- model:', model)
+  console.log('- language:', language)
 
   // 使用用户提供的模板作为AI提示词，如果没有则使用默认的
   let contentPrompt = contentTemplate;
 
   if (!contentPrompt || contentPrompt.trim() === '') {
-    // 默认的AI提示词模板
+    // 默认模板总是使用中文，但要求AI根据language参数生成对应语言的内容
     const displayTitle = getDisplayText(title)
     contentPrompt = `基于以下信息生成涂色书的详细内容文案：
 
@@ -746,13 +757,18 @@ async function callDeepSeekForDetailedContent(keyword, title, prompt, contentTem
 
   console.log('文案prompt: ', contentPrompt)
 
+  // 根据语言选择配置system content - 控制生成内容的语言
+  const systemContent = language === 'zh'
+    ? '你是一个专业的涂色书内容创作专家，擅长为不同主题创作实用且有启发性的涂色指导内容。无论输入的内容是什么语言，你都必须用中文生成文案内容。'
+    : '你是一个专业的涂色书内容创作专家，擅长为不同主题创作实用且有启发性的涂色指导内容。无论输入的内容是什么语言，你都必须用英文生成文案内容。'
+
   try {
     const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
       model: model,
       messages: [
         {
           role: 'system',
-          content: '你是一个专业的涂色书内容创作专家，擅长为不同主题创作实用且有启发性的涂色指导内容。'
+          content: systemContent
         },
         {
           role: 'user',

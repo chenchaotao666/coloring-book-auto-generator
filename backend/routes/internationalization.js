@@ -9,6 +9,7 @@ const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY
 
 // 支持的语言配置
 const SUPPORTED_LANGUAGES = {
+  'zh': '中文 (Chinese)',
   'en': '英语 (English)',
   'ja': '日语 (Japanese)',
   'ko': '韩语 (Korean)',

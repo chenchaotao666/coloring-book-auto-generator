@@ -53,6 +53,7 @@ const CategoriesManager = () => {
 
   // 支持的语言
   const supportedLanguages = [
+    { code: 'zh', name: '中文' },
     { code: 'en', name: '英语' },
     { code: 'ja', name: '日语' },
     { code: 'ko', name: '韩语' },
@@ -170,7 +171,7 @@ const CategoriesManager = () => {
 
   // 获取分类的现有语言
   const getExistingLanguages = (category) => {
-    const languages = new Set(['zh']) // 中文是必须的
+    const languages = new Set()
 
     if (category.display_name) {
       let displayName = {}
@@ -191,7 +192,8 @@ const CategoriesManager = () => {
       })
     }
 
-    return Array.from(languages)
+    // 如果没有找到任何语言，默认返回中文
+    return Array.from(languages).length > 0 ? Array.from(languages) : ['zh']
   }
 
   // 开始编辑
