@@ -42,14 +42,42 @@ const CategoriesManager = () => {
   const [availableImages, setAvailableImages] = useState([])
   const [selectedImage, setSelectedImage] = useState(null)
 
+  // 全局AI设置状态
+  const [aiModel, setAiModel] = useState('deepseek-chat')
+  const [aiPrompt, setAiPrompt] = useState(`为分类 \${displayName} 生成详细的分类描述，包含以下内容：
+
+1. 主题介绍：详细介绍这个分类的特点和魅力
+2. 适用对象：说明适合哪些年龄段和人群
+3. 涂色技巧：提供具体的涂色建议和技巧
+4. 创意想法：提供相关的DIY创意和玩法建议
+
+请用温馨、专业的语调，内容要实用且有启发性。每个部分2-3句话即可。
+
+示例格式：
+<h2>\${displayName}是什么?</h2>
+[详细介绍内容...]
+
+\${displayName}填色页该怎么画?
+[涂色技巧和建议...]
+
+<h2>\${displayName}填色页的创意想法</h2>
+[创意DIY建议...]`)
+
   // 表单状态
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [activeFormLanguage, setActiveFormLanguage] = useState('zh') // 表单的活跃语言
   const [formData, setFormData] = useState({
     displayName: { zh: '' },
     description: { zh: '' },
     imageId: ''
   })
+
+  // AI模型选项
+  const aiModelOptions = [
+    { value: 'deepseek-chat', label: 'DeepSeek Chat' },
+    { value: 'gpt-4', label: 'GPT-4' }
+  ]
 
   // 支持的语言
   const supportedLanguages = [
@@ -156,6 +184,7 @@ const CategoriesManager = () => {
     })
     setEditingId(null)
     setShowForm(false)
+    setActiveFormLanguage('zh') // 重置活跃语言
   }
 
   // 处理表单输入
@@ -243,6 +272,10 @@ const CategoriesManager = () => {
 
     setEditingId(category.category_id)
     setShowForm(true)
+
+    // 设置活跃语言为可用语言的第一个
+    const existingLanguages = getExistingLanguages(category)
+    setActiveFormLanguage(existingLanguages.includes('zh') ? 'zh' : existingLanguages[0])
   }
 
   // 开始新增
@@ -432,6 +465,49 @@ const CategoriesManager = () => {
     }
   }
 
+  // 生成分类描述
+  const generateDescription = async (categoryId) => {
+    try {
+      const category = categories.find(c => c.category_id === categoryId)
+      if (!category) {
+        setError('找不到指定的分类')
+        return
+      }
+
+      const displayName = formatDisplayName(category.display_name)
+      const response = await apiFetch('/api/generate-category-description', {
+        method: 'POST',
+        body: JSON.stringify({
+          categoryId,
+          displayName,
+          model: aiModel,
+          prompt: aiPrompt
+        })
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || '生成描述失败')
+      }
+
+      // 更新分类列表中的描述
+      setCategories(prev => prev.map(cat => {
+        if (cat.category_id === categoryId) {
+          return {
+            ...cat,
+            description: data.description
+          }
+        }
+        return cat
+      }))
+
+      setSuccess('描述生成成功')
+    } catch (error) {
+      console.error('生成描述错误:', error)
+      setError('生成描述失败: ' + error.message)
+    }
+  }
+
   const formatDisplayName = (display_name) => {
     if (!display_name) return '未命名'
 
@@ -609,6 +685,82 @@ const CategoriesManager = () => {
         </div>
       )}
 
+      {/* AI设置 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>AI文案生成设置</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 左侧：模型选择 */}
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="aiModel" className="text-sm font-medium">文案模型</Label>
+                <Select value={aiModel} onValueChange={setAiModel}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aiModelOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* 右侧：AI提示词 */}
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="aiPrompt" className="text-sm font-medium">AI文案生成提示词</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAiPrompt(`为分类 \${displayName} 生成详细的分类描述，包含以下内容：
+
+1. 主题介绍：详细介绍这个分类的特点和魅力
+2. 适用对象：说明适合哪些年龄段和人群
+3. 涂色技巧：提供具体的涂色建议和技巧
+4. 创意想法：提供相关的DIY创意和玩法建议
+
+请用温馨、专业的语调，内容要实用且有启发性。每个部分2-3句话即可。
+
+示例格式：
+<h2>\${displayName}是什么?</h2>
+[详细介绍内容...]
+
+\${displayName}填色页该怎么画?
+[涂色技巧和建议...]
+
+<h2>\${displayName}填色页的创意想法</h2>
+[创意DIY建议...]`)}
+                    className="text-xs h-6 px-2"
+                  >
+                    重置默认
+                  </Button>
+                </div>
+                <Textarea
+                  id="aiPrompt"
+                  placeholder="输入AI文案生成提示词，使用 ${displayName} 作为分类名称的占位符"
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  rows={8}
+                  className="resize-none text-sm"
+                />
+                <div className="text-xs text-gray-500 space-y-1">
+                  <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'${displayName}'}</code> 作为分类名称的占位符</p>
+                  <p>• 这个提示词将发送给AI来生成分类描述内容</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* 国际化设置面板 */}
       {showInternationalization && (
         <Card>
@@ -784,60 +936,139 @@ const CategoriesManager = () => {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* 根据现有语言显示多语言输入框 */}
+              {/* 多语言内容编辑 */}
               {(() => {
                 const languages = editingId
                   ? getExistingLanguages(categories.find(cat => cat.category_id === editingId))
                   : ['zh']
 
                 return (
-                  <>
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-medium">名称</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {languages.map(langCode => {
-                          const language = supportedLanguages.find(l => l.code === langCode) || { name: langCode === 'zh' ? '中文' : langCode }
-                          return (
-                            <div key={langCode}>
-                              <Label htmlFor={`displayName_${langCode}`}>
-                                {language.name} {langCode === 'zh' && '*'}
-                              </Label>
-                              <Input
-                                id={`displayName_${langCode}`}
-                                value={formData.displayName[langCode] || ''}
-                                onChange={(e) => handleInputChange('displayName', langCode, e.target.value)}
-                                placeholder={`请输入${language.name}名称${langCode === 'zh' ? '（必填）' : '（可选）'}`}
-                                required={langCode === 'zh'}
-                              />
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium">多语言内容</h3>
+
+                    {/* 语言选项卡 */}
+                    <div className="flex flex-wrap gap-2 border-b mb-4">
+                      {languages.map(langCode => {
+                        const language = supportedLanguages.find(lang => lang.code === langCode) || { name: langCode === 'zh' ? '中文' : langCode }
+                        const isActive = activeFormLanguage === langCode
+
+                        return (
+                          <button
+                            key={langCode}
+                            type="button"
+                            onClick={() => setActiveFormLanguage(langCode)}
+                            className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${isActive
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                              }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Languages className="w-4 h-4" />
+                              {language.name}
+                              {langCode === 'zh' && <span className="text-red-500">*</span>}
                             </div>
-                          )
-                        })}
-                      </div>
+                          </button>
+                        )
+                      })}
                     </div>
 
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-medium">描述</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {languages.map(langCode => {
-                          const language = supportedLanguages.find(l => l.code === langCode) || { name: langCode === 'zh' ? '中文' : langCode }
+                    {/* 当前语言的内容编辑 */}
+                    {activeFormLanguage && (
+                      <div className="space-y-4">
+                        {(() => {
+                          const language = supportedLanguages.find(l => l.code === activeFormLanguage) || { name: activeFormLanguage === 'zh' ? '中文' : activeFormLanguage }
+
                           return (
-                            <div key={langCode}>
-                              <Label htmlFor={`description_${langCode}`}>
-                                {language.name}描述
-                              </Label>
-                              <Textarea
-                                id={`description_${langCode}`}
-                                value={formData.description[langCode] || ''}
-                                onChange={(e) => handleInputChange('description', langCode, e.target.value)}
-                                placeholder={`请输入${language.name}描述（可选）`}
-                                rows={3}
-                              />
+                            <div className="border border-gray-200 rounded-lg p-4">
+                              <div className="mb-3">
+                                <h4 className="font-medium text-gray-900">
+                                  {language.name}内容编辑
+                                </h4>
+                                <p className="text-sm text-gray-500">
+                                  编辑{language.name}版本的分类信息
+                                </p>
+                              </div>
+
+                              <div className="space-y-4">
+                                {/* 分类名称 */}
+                                <div>
+                                  <Label htmlFor={`displayName_${activeFormLanguage}`} className="text-sm text-gray-600">
+                                    分类名称 {activeFormLanguage === 'zh' && <span className="text-red-500">*</span>}
+                                  </Label>
+                                  <Input
+                                    id={`displayName_${activeFormLanguage}`}
+                                    value={formData.displayName[activeFormLanguage] || ''}
+                                    onChange={(e) => handleInputChange('displayName', activeFormLanguage, e.target.value)}
+                                    placeholder={`请输入${language.name}分类名称${activeFormLanguage === 'zh' ? '（必填）' : '（可选）'}`}
+                                    required={activeFormLanguage === 'zh'}
+                                    className="mt-1"
+                                  />
+                                </div>
+
+                                {/* 分类描述 */}
+                                <div>
+                                  <div className="flex items-center justify-between">
+                                    <Label htmlFor={`description_${activeFormLanguage}`} className="text-sm text-gray-600">
+                                      分类描述
+                                    </Label>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={async () => {
+                                        if (!formData.displayName[activeFormLanguage]) {
+                                          alert(`请先输入${language.name}名称`)
+                                          return
+                                        }
+
+                                        try {
+                                          // 使用当前AI设置生成描述
+                                          const displayName = formData.displayName[activeFormLanguage]
+                                          const prompt = aiPrompt.replace(/\$\{displayName\}/g, displayName)
+
+                                          const response = await apiFetch('/api/generate-text', {
+                                            method: 'POST',
+                                            body: JSON.stringify({
+                                              model: aiModel,
+                                              prompt: prompt
+                                            })
+                                          })
+
+                                          const data = await response.json()
+                                          if (!response.ok) {
+                                            throw new Error(data.message || '生成失败')
+                                          }
+
+                                          // 更新描述字段
+                                          handleInputChange('description', activeFormLanguage, data.content)
+
+                                        } catch (error) {
+                                          console.error('生成描述错误:', error)
+                                          alert('生成描述失败: ' + error.message)
+                                        }
+                                      }}
+                                      className="p-1 h-6"
+                                      title={`使用AI生成${language.name}描述`}
+                                    >
+                                      <RefreshCw className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                  <Textarea
+                                    id={`description_${activeFormLanguage}`}
+                                    value={formData.description[activeFormLanguage] || ''}
+                                    onChange={(e) => handleInputChange('description', activeFormLanguage, e.target.value)}
+                                    placeholder={`请输入${language.name}分类描述（可选）`}
+                                    rows={4}
+                                    className="mt-1"
+                                  />
+                                </div>
+                              </div>
                             </div>
                           )
-                        })}
+                        })()}
                       </div>
-                    </div>
-                  </>
+                    )}
+                  </div>
                 )
               })()}
 
@@ -1074,8 +1305,19 @@ const CategoriesManager = () => {
                           </div>
                         </td>
                         <td className="border border-gray-200 px-4 py-2 max-w-xs">
-                          <div className="truncate" title={formatDescription(category.description)}>
-                            {formatDescription(category.description) || '暂无描述'}
+                          <div className="flex items-center gap-2">
+                            <div className="truncate flex-1" title={formatDescription(category.description)}>
+                              {formatDescription(category.description) || '暂无描述'}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => generateDescription(category.category_id)}
+                              className="flex-shrink-0 p-1 h-6"
+                              title="使用AI生成描述"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                            </Button>
                           </div>
                         </td>
                         <td className="border border-gray-200 px-4 py-2 text-center">
