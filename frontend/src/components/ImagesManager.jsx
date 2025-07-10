@@ -492,7 +492,7 @@ const ImagesManager = () => {
 
         // 添加有内容的语言到集合中
         Object.entries(parsed).forEach(([lang, value]) => {
-          if (value && value.trim()) {
+          if (value && typeof value === 'string' && value.trim()) {
             allLanguages.add(lang)
           }
         })
