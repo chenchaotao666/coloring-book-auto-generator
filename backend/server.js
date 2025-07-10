@@ -868,14 +868,15 @@ function ensureContentIsString(data) {
       // 如果是其他类型的对象，转换为JSON字符串
       data.content = JSON.stringify(data.content, null, 2)
     }
-    return data
   }
+  return data
+}
 
-  // 根据模板生成内容的函数
-  function generateContentFromTemplate(template, keyword, description, modelType) {
-    if (!template) {
-      if (modelType === 'deepseek') {
-        return `【DeepSeek AI Generated】
+// 根据模板生成内容的函数
+function generateContentFromTemplate(template, keyword, description, modelType) {
+  if (!template) {
+    if (modelType === 'deepseek') {
+      return `【DeepSeek AI Generated】
 
 Professional guidance for ${keyword} coloring pages:
 
@@ -887,30 +888,30 @@ Encourage trying different coloring techniques such as pointillism, gradient, or
 
 💡 Educational Value:
 Through ${keyword} coloring activities, you can cultivate observation skills, hand-eye coordination, and aesthetic taste. It's an excellent way to combine learning with fun.`
-      } else {
-        return `Content for ${keyword} coloring page is being generated...`
-      }
+    } else {
+      return `Content for ${keyword} coloring page is being generated...`
     }
-
-    // 简单的模板替换
-    let content = template
-      .replace(/蝴蝶/g, keyword)
-      .replace(/马赛克瓷砖纹理的/g, description ? `${description} ` : '')
-
-    // 如果是DeepSeek模型，增加更丰富的内容
-    if (modelType === 'deepseek') {
-      content += `\n\n【DeepSeek Enhanced Content】\n✨ This ${keyword} coloring page integrates modern design concepts, maintaining the joy of traditional coloring while adding innovative elements, making each coloring session a unique artistic creation experience.`
-    }
-
-    return content
   }
 
-  // 构建专业涂色页prompt
-  function buildProfessionalColoringPagePrompt(userPrompt) {
-    const config = COLORING_PAGE_CONFIG
+  // 简单的模板替换
+  let content = template
+    .replace(/蝴蝶/g, keyword)
+    .replace(/马赛克瓷砖纹理的/g, description ? `${description} ` : '')
 
-    // 构建完整的专业prompt
-    const professionalPrompt = `${config.baseInstructions}
+  // 如果是DeepSeek模型，增加更丰富的内容
+  if (modelType === 'deepseek') {
+    content += `\n\n【DeepSeek Enhanced Content】\n✨ This ${keyword} coloring page integrates modern design concepts, maintaining the joy of traditional coloring while adding innovative elements, making each coloring session a unique artistic creation experience.`
+  }
+
+  return content
+}
+
+// 构建专业涂色页prompt
+function buildProfessionalColoringPagePrompt(userPrompt) {
+  const config = COLORING_PAGE_CONFIG
+
+  // 构建完整的专业prompt
+  const professionalPrompt = `${config.baseInstructions}
 
 MAIN SUBJECT: ${userPrompt}
 
@@ -939,12 +940,12 @@ TECHNICAL SPECIFICATIONS:
 
 Please generate a professional-quality coloring page that meets all these specifications.`
 
-    return professionalPrompt
-  }
+  return professionalPrompt
+}
 
-  // 调用OpenAI API的函数（如果配置了API密钥）
-  async function callOpenAIAPI(keyword, description, template, model) {
-    const prompt = `Based on the following information, generate coloring book content:
+// 调用OpenAI API的函数（如果配置了API密钥）
+async function callOpenAIAPI(keyword, description, template, model) {
+  const prompt = `Based on the following information, generate coloring book content:
 Keyword: ${keyword}
 Description: ${description || 'None'}
 Template: ${template}
@@ -957,10 +958,226 @@ Please return content in JSON format containing the following fields:
 
 Please ensure the content is suitable for coloring book websites.`
 
+  try {
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: model,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 2000
+    }, {
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    const result = response.data.choices[0].message.content
+    return JSON.parse(result)
+  } catch (error) {
+    console.error('OpenAI API调用失败:', error.response?.data || error.message)
+    throw error
+  }
+}
+
+// 调用DeepSeek API的函数
+async function callDeepSeekAPI(keyword, description, template, model) {
+  const prompt = `Based on the following information, generate coloring book content:
+Keyword: ${keyword}
+Description: ${description || 'None'}
+Template: ${template}
+
+Please return content in JSON format containing the following fields:
+- title: Title (creative and attractive)
+- description: Brief description (within 50 words, highlighting features)
+- prompt: English prompt for generating coloring page images (detailed image content description, suitable for AI image generation)
+- content: Detailed content based on template, must be pure text string (professional and practical)
+
+Important: The content field must be a string, not an object or array.
+Please ensure the content is suitable for coloring book websites, with a style appropriate for both children and adult users.`
+
+  try {
+    const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+      model: model,
+      messages: [
+        {
+          role: 'system',
+          content: '你是一个专业的涂色书内容创作专家，擅长为各种主题创作有趣且富有教育意义的涂色书内容。请确保返回的JSON格式正确，特别是content字段必须是字符串类型。'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.8,
+      max_tokens: 2000,
+      stream: false
+    }, {
+      headers: {
+        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    const result = response.data.choices[0].message.content
+
+    // 尝试解析JSON，如果失败则提取JSON部分
     try {
+      const parsedResult = JSON.parse(result)
+
+      // 确保content字段是字符串
+      if (parsedResult.content && typeof parsedResult.content === 'object') {
+        // 如果content是对象，将其转换为字符串
+        if (parsedResult.content.coloring_tips || parsedResult.content.challenges || parsedResult.content.benefits) {
+          let contentText = ''
+          if (parsedResult.content.coloring_tips) {
+            contentText += `🎨 涂色技巧：\n${parsedResult.content.coloring_tips}\n\n`
+          }
+          if (parsedResult.content.challenges) {
+            contentText += `🎯 挑战：\n${parsedResult.content.challenges}\n\n`
+          }
+          if (parsedResult.content.benefits) {
+            contentText += `💡 益处：\n${parsedResult.content.benefits}`
+          }
+          parsedResult.content = contentText
+        } else {
+          // 如果是其他类型的对象，转换为JSON字符串
+          parsedResult.content = JSON.stringify(parsedResult.content, null, 2)
+        }
+      }
+
+      return parsedResult
+    } catch (parseError) {
+      // 如果直接解析失败，尝试提取JSON部分
+      const jsonMatch = result.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const parsedResult = JSON.parse(jsonMatch[0])
+
+        // 同样的处理逻辑
+        if (parsedResult.content && typeof parsedResult.content === 'object') {
+          if (parsedResult.content.coloring_tips || parsedResult.content.challenges || parsedResult.content.benefits) {
+            let contentText = ''
+            if (parsedResult.content.coloring_tips) {
+              contentText += `🎨 涂色技巧：\n${parsedResult.content.coloring_tips}\n\n`
+            }
+            if (parsedResult.content.challenges) {
+              contentText += `🎯 挑战：\n${parsedResult.content.challenges}\n\n`
+            }
+            if (parsedResult.content.benefits) {
+              contentText += `💡 益处：\n${parsedResult.content.benefits}`
+            }
+            parsedResult.content = contentText
+          } else {
+            parsedResult.content = JSON.stringify(parsedResult.content, null, 2)
+          }
+        }
+
+        return parsedResult
+      }
+      throw new Error('无法解析DeepSeek返回的JSON格式')
+    }
+  } catch (error) {
+    console.error('DeepSeek API调用失败:', error.response?.data || error.message)
+    throw error
+  }
+}
+
+// 通用文本生成API
+app.post('/api/generate-text', async (req, res) => {
+  const { model, prompt, language = 'zh' } = req.body // 添加language参数，默认为中文
+
+  // 参数验证
+  if (!model || !prompt) {
+    return res.status(400).json({
+      success: false,
+      message: '缺少必要参数：model 和 prompt'
+    })
+  }
+
+  console.log('🔍 文本生成API参数:')
+  console.log('- model:', model)
+  console.log('- language:', language)
+  console.log('- prompt:', prompt.substring(0, 100) + '...')
+
+  try {
+    let content = ''
+
+    // 根据语言设置系统提示词
+    let systemPrompt = ''
+    if (language === 'en') {
+      systemPrompt = 'You are a professional content creation expert who can generate high-quality, practical text content. Please ensure the content is accurate, professional, and engaging. Please respond in English.'
+    } else if (language === 'zh') {
+      systemPrompt = '你是一个专业的内容创作专家，能够生成高质量、实用的文本内容。请确保内容准确、专业且富有吸引力。请用中文回答。'
+    } else {
+      // 其他语言的通用提示
+      const languageNames = {
+        'ja': 'Japanese',
+        'ko': 'Korean',
+        'fr': 'French',
+        'de': 'German',
+        'es': 'Spanish',
+        'it': 'Italian',
+        'pt': 'Portuguese',
+        'ru': 'Russian',
+        'ar': 'Arabic'
+      }
+      const languageName = languageNames[language] || language
+      systemPrompt = `You are a professional content creation expert who can generate high-quality, practical text content. Please ensure the content is accurate, professional, and engaging. Please respond in ${languageName}.`
+    }
+
+    if (model.includes('deepseek')) {
+      // 使用 DeepSeek API
+      if (!process.env.DEEPSEEK_API_KEY) {
+        return res.status(500).json({
+          success: false,
+          message: 'DeepSeek API Key 未配置'
+        })
+      }
+
+      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+        stream: false
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      content = response.data.choices[0].message.content
+
+    } else if (model.includes('gpt')) {
+      // 使用 OpenAI API
+      if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
+        return res.status(500).json({
+          success: false,
+          message: 'OpenAI API Key 未配置'
+        })
+      }
+
       const response = await axios.post('https://api.openai.com/v1/chat/completions', {
         model: model,
         messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
           {
             role: 'user',
             content: prompt
@@ -975,44 +1192,104 @@ Please ensure the content is suitable for coloring book websites.`
         }
       })
 
-      const result = response.data.choices[0].message.content
-      return JSON.parse(result)
-    } catch (error) {
-      console.error('OpenAI API调用失败:', error.response?.data || error.message)
-      throw error
+      content = response.data.choices[0].message.content
+
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: '不支持的模型类型'
+      })
     }
+
+    console.log('✅ 文本生成成功，内容长度:', content.length)
+
+    res.json({
+      success: true,
+      content: content,
+      model: model,
+      language: language,
+      prompt_length: prompt.length
+    })
+
+  } catch (error) {
+    console.error('文本生成失败:', error.response?.data || error.message)
+    res.status(500).json({
+      success: false,
+      message: '文本生成失败: ' + (error.response?.data?.error?.message || error.message)
+    })
+  }
+})
+
+// 分类描述生成API
+app.post('/api/generate-category-description', async (req, res) => {
+  const { categoryId, displayName, model, prompt, language = 'zh' } = req.body // 添加language参数
+
+  // 参数验证
+  if (!categoryId || !displayName || !model || !prompt) {
+    return res.status(400).json({
+      success: false,
+      message: '缺少必要参数：categoryId, displayName, model, prompt'
+    })
   }
 
-  // 调用DeepSeek API的函数
-  async function callDeepSeekAPI(keyword, description, template, model) {
-    const prompt = `Based on the following information, generate coloring book content:
-Keyword: ${keyword}
-Description: ${description || 'None'}
-Template: ${template}
+  console.log('🔍 分类描述生成API参数:')
+  console.log('- categoryId:', categoryId)
+  console.log('- displayName:', displayName)
+  console.log('- model:', model)
+  console.log('- language:', language)
+  console.log('- prompt:', prompt.substring(0, 100) + '...')
 
-Please return content in JSON format containing the following fields:
-- title: Title (creative and attractive)
-- description: Brief description (within 50 words, highlighting features)
-- prompt: English prompt for generating coloring page images (detailed image content description, suitable for AI image generation)
-- content: Detailed content based on template, must be pure text string (professional and practical)
+  try {
+    // 替换提示词中的占位符
+    const finalPrompt = prompt.replace(/\$\{displayName\}/g, displayName)
 
-Important: The content field must be a string, not an object or array.
-Please ensure the content is suitable for coloring book websites, with a style appropriate for both children and adult users.`
+    let description = ''
 
-    try {
+    // 根据语言设置系统提示词
+    let systemPrompt = ''
+    if (language === 'en') {
+      systemPrompt = 'You are a professional coloring book content creation expert who specializes in creating interesting and educational category descriptions for various themes. Please ensure the content is suitable for both children and adult users, with a warm, professional, and practical style. Please respond in English.'
+    } else if (language === 'zh') {
+      systemPrompt = '你是一个专业的涂色书内容创作专家，擅长为各种主题创作有趣且富有教育意义的分类描述。请确保内容适合儿童和成人用户，风格要温馨、专业且实用。请用中文回答。'
+    } else {
+      // 其他语言的通用提示
+      const languageNames = {
+        'ja': 'Japanese',
+        'ko': 'Korean',
+        'fr': 'French',
+        'de': 'German',
+        'es': 'Spanish',
+        'it': 'Italian',
+        'pt': 'Portuguese',
+        'ru': 'Russian',
+        'ar': 'Arabic'
+      }
+      const languageName = languageNames[language] || language
+      systemPrompt = `You are a professional coloring book content creation expert who specializes in creating interesting and educational category descriptions for various themes. Please ensure the content is suitable for both children and adult users, with a warm, professional, and practical style. Please respond in ${languageName}.`
+    }
+
+    if (model.includes('deepseek')) {
+      // 使用 DeepSeek API
+      if (!process.env.DEEPSEEK_API_KEY) {
+        return res.status(500).json({
+          success: false,
+          message: 'DeepSeek API Key 未配置'
+        })
+      }
+
       const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
         model: model,
         messages: [
           {
             role: 'system',
-            content: '你是一个专业的涂色书内容创作专家，擅长为各种主题创作有趣且富有教育意义的涂色书内容。请确保返回的JSON格式正确，特别是content字段必须是字符串类型。'
+            content: systemPrompt
           },
           {
             role: 'user',
-            content: prompt
+            content: finalPrompt
           }
         ],
-        temperature: 0.8,
+        temperature: 0.7,
         max_tokens: 2000,
         stream: false
       }, {
@@ -1022,401 +1299,124 @@ Please ensure the content is suitable for coloring book websites, with a style a
         }
       })
 
-      const result = response.data.choices[0].message.content
+      description = response.data.choices[0].message.content
 
-      // 尝试解析JSON，如果失败则提取JSON部分
-      try {
-        const parsedResult = JSON.parse(result)
-
-        // 确保content字段是字符串
-        if (parsedResult.content && typeof parsedResult.content === 'object') {
-          // 如果content是对象，将其转换为字符串
-          if (parsedResult.content.coloring_tips || parsedResult.content.challenges || parsedResult.content.benefits) {
-            let contentText = ''
-            if (parsedResult.content.coloring_tips) {
-              contentText += `🎨 涂色技巧：\n${parsedResult.content.coloring_tips}\n\n`
-            }
-            if (parsedResult.content.challenges) {
-              contentText += `🎯 挑战：\n${parsedResult.content.challenges}\n\n`
-            }
-            if (parsedResult.content.benefits) {
-              contentText += `💡 益处：\n${parsedResult.content.benefits}`
-            }
-            parsedResult.content = contentText
-          } else {
-            // 如果是其他类型的对象，转换为JSON字符串
-            parsedResult.content = JSON.stringify(parsedResult.content, null, 2)
-          }
-        }
-
-        return parsedResult
-      } catch (parseError) {
-        // 如果直接解析失败，尝试提取JSON部分
-        const jsonMatch = result.match(/\{[\s\S]*\}/)
-        if (jsonMatch) {
-          const parsedResult = JSON.parse(jsonMatch[0])
-
-          // 同样的处理逻辑
-          if (parsedResult.content && typeof parsedResult.content === 'object') {
-            if (parsedResult.content.coloring_tips || parsedResult.content.challenges || parsedResult.content.benefits) {
-              let contentText = ''
-              if (parsedResult.content.coloring_tips) {
-                contentText += `🎨 涂色技巧：\n${parsedResult.content.coloring_tips}\n\n`
-              }
-              if (parsedResult.content.challenges) {
-                contentText += `🎯 挑战：\n${parsedResult.content.challenges}\n\n`
-              }
-              if (parsedResult.content.benefits) {
-                contentText += `💡 益处：\n${parsedResult.content.benefits}`
-              }
-              parsedResult.content = contentText
-            } else {
-              parsedResult.content = JSON.stringify(parsedResult.content, null, 2)
-            }
-          }
-
-          return parsedResult
-        }
-        throw new Error('无法解析DeepSeek返回的JSON格式')
+    } else if (model.includes('gpt')) {
+      // 使用 OpenAI API
+      if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
+        return res.status(500).json({
+          success: false,
+          message: 'OpenAI API Key 未配置'
+        })
       }
-    } catch (error) {
-      console.error('DeepSeek API调用失败:', error.response?.data || error.message)
-      throw error
+
+      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: finalPrompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      description = response.data.choices[0].message.content
+
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: '不支持的模型类型'
+      })
     }
+
+    console.log('✅ 分类描述生成成功，内容长度:', description.length)
+
+    res.json({
+      success: true,
+      description: description,
+      categoryId: categoryId,
+      displayName: displayName,
+      model: model,
+      language: language
+    })
+
+  } catch (error) {
+    console.error('分类描述生成失败:', error.response?.data || error.message)
+    res.status(500).json({
+      success: false,
+      message: '分类描述生成失败: ' + (error.response?.data?.error?.message || error.message)
+    })
+  }
+})
+
+// API配置检查端点
+app.get('/api/config-check', (req, res) => {
+  const configStatus = {
+    server: {
+      port: PORT,
+      status: '正常运行'
+    },
+    apis: {
+      kieai: {
+        apiUrl: KIEAI_API_URL,
+        authTokenConfigured: !!KIEAI_AUTH_TOKEN,
+        authTokenValid: KIEAI_AUTH_TOKEN &&
+          KIEAI_AUTH_TOKEN !== '27e443bd81969aefddc051bd78fa0a01' &&
+          KIEAI_AUTH_TOKEN !== 'your_real_kieai_token_here',
+        status: (KIEAI_AUTH_TOKEN &&
+          KIEAI_AUTH_TOKEN !== '27e443bd81969aefddc051bd78fa0a01' &&
+          KIEAI_AUTH_TOKEN !== 'your_real_kieai_token_here') ? '已配置' : '需要配置真实Token'
+      },
+      deepseek: {
+        apiKeyConfigured: !!process.env.DEEPSEEK_API_KEY,
+        status: process.env.DEEPSEEK_API_KEY ? '已配置' : '未配置'
+      },
+      openai: {
+        apiKeyConfigured: !!process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here',
+        status: (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here') ? '已配置' : '未配置'
+      }
+    },
+    directories: {
+      storage: true, // 目录检查已在启动时完成
+      images: true
+    },
+    recommendations: []
   }
 
-  // 通用文本生成API
-  app.post('/api/generate-text', async (req, res) => {
-    const { model, prompt, language = 'zh' } = req.body // 添加language参数，默认为中文
+  // 添加建议
+  if (!configStatus.apis.kieai.authTokenValid) {
+    configStatus.recommendations.push('配置有效的KIEAI API Token以启用真实图片生成')
+  }
 
-    // 参数验证
-    if (!model || !prompt) {
-      return res.status(400).json({
-        success: false,
-        message: '缺少必要参数：model 和 prompt'
-      })
-    }
+  if (!configStatus.apis.deepseek.apiKeyConfigured) {
+    configStatus.recommendations.push('配置DeepSeek API Key以启用AI内容生成')
+  }
 
-    console.log('🔍 文本生成API参数:')
-    console.log('- model:', model)
-    console.log('- language:', language)
-    console.log('- prompt:', prompt.substring(0, 100) + '...')
+  res.json(configStatus)
+})
 
-    try {
-      let content = ''
+// 健康检查端点
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', message: '涂色书内容生成器后端服务运行正常' })
+})
 
-      // 根据语言设置系统提示词
-      let systemPrompt = ''
-      if (language === 'en') {
-        systemPrompt = 'You are a professional content creation expert who can generate high-quality, practical text content. Please ensure the content is accurate, professional, and engaging. Please respond in English.'
-      } else if (language === 'zh') {
-        systemPrompt = '你是一个专业的内容创作专家，能够生成高质量、实用的文本内容。请确保内容准确、专业且富有吸引力。请用中文回答。'
-      } else {
-        // 其他语言的通用提示
-        const languageNames = {
-          'ja': 'Japanese',
-          'ko': 'Korean',
-          'fr': 'French',
-          'de': 'German',
-          'es': 'Spanish',
-          'it': 'Italian',
-          'pt': 'Portuguese',
-          'ru': 'Russian',
-          'ar': 'Arabic'
-        }
-        const languageName = languageNames[language] || language
-        systemPrompt = `You are a professional content creation expert who can generate high-quality, practical text content. Please ensure the content is accurate, professional, and engaging. Please respond in ${languageName}.`
-      }
+// 启动服务器
+app.listen(PORT, async () => {
+  console.log(`服务器运行在端口 ${PORT}`)
+  console.log(`健康检查: http://localhost:${PORT}/api/health`)
 
-      if (model.includes('deepseek')) {
-        // 使用 DeepSeek API
-        if (!process.env.DEEPSEEK_API_KEY) {
-          return res.status(500).json({
-            success: false,
-            message: 'DeepSeek API Key 未配置'
-          })
-        }
-
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: model,
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 2000,
-          stream: false
-        }, {
-          headers: {
-            'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        })
-
-        content = response.data.choices[0].message.content
-
-      } else if (model.includes('gpt')) {
-        // 使用 OpenAI API
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
-          return res.status(500).json({
-            success: false,
-            message: 'OpenAI API Key 未配置'
-          })
-        }
-
-        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-          model: model,
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 2000
-        }, {
-          headers: {
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        })
-
-        content = response.data.choices[0].message.content
-
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: '不支持的模型类型'
-        })
-      }
-
-      console.log('✅ 文本生成成功，内容长度:', content.length)
-
-      res.json({
-        success: true,
-        content: content,
-        model: model,
-        language: language,
-        prompt_length: prompt.length
-      })
-
-    } catch (error) {
-      console.error('文本生成失败:', error.response?.data || error.message)
-      res.status(500).json({
-        success: false,
-        message: '文本生成失败: ' + (error.response?.data?.error?.message || error.message)
-      })
-    }
-  })
-
-  // 分类描述生成API
-  app.post('/api/generate-category-description', async (req, res) => {
-    const { categoryId, displayName, model, prompt, language = 'zh' } = req.body // 添加language参数
-
-    // 参数验证
-    if (!categoryId || !displayName || !model || !prompt) {
-      return res.status(400).json({
-        success: false,
-        message: '缺少必要参数：categoryId, displayName, model, prompt'
-      })
-    }
-
-    console.log('🔍 分类描述生成API参数:')
-    console.log('- categoryId:', categoryId)
-    console.log('- displayName:', displayName)
-    console.log('- model:', model)
-    console.log('- language:', language)
-    console.log('- prompt:', prompt.substring(0, 100) + '...')
-
-    try {
-      // 替换提示词中的占位符
-      const finalPrompt = prompt.replace(/\$\{displayName\}/g, displayName)
-
-      let description = ''
-
-      // 根据语言设置系统提示词
-      let systemPrompt = ''
-      if (language === 'en') {
-        systemPrompt = 'You are a professional coloring book content creation expert who specializes in creating interesting and educational category descriptions for various themes. Please ensure the content is suitable for both children and adult users, with a warm, professional, and practical style. Please respond in English.'
-      } else if (language === 'zh') {
-        systemPrompt = '你是一个专业的涂色书内容创作专家，擅长为各种主题创作有趣且富有教育意义的分类描述。请确保内容适合儿童和成人用户，风格要温馨、专业且实用。请用中文回答。'
-      } else {
-        // 其他语言的通用提示
-        const languageNames = {
-          'ja': 'Japanese',
-          'ko': 'Korean',
-          'fr': 'French',
-          'de': 'German',
-          'es': 'Spanish',
-          'it': 'Italian',
-          'pt': 'Portuguese',
-          'ru': 'Russian',
-          'ar': 'Arabic'
-        }
-        const languageName = languageNames[language] || language
-        systemPrompt = `You are a professional coloring book content creation expert who specializes in creating interesting and educational category descriptions for various themes. Please ensure the content is suitable for both children and adult users, with a warm, professional, and practical style. Please respond in ${languageName}.`
-      }
-
-      if (model.includes('deepseek')) {
-        // 使用 DeepSeek API
-        if (!process.env.DEEPSEEK_API_KEY) {
-          return res.status(500).json({
-            success: false,
-            message: 'DeepSeek API Key 未配置'
-          })
-        }
-
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: model,
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: finalPrompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 2000,
-          stream: false
-        }, {
-          headers: {
-            'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        })
-
-        description = response.data.choices[0].message.content
-
-      } else if (model.includes('gpt')) {
-        // 使用 OpenAI API
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
-          return res.status(500).json({
-            success: false,
-            message: 'OpenAI API Key 未配置'
-          })
-        }
-
-        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-          model: model,
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: finalPrompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 2000
-        }, {
-          headers: {
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        })
-
-        description = response.data.choices[0].message.content
-
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: '不支持的模型类型'
-        })
-      }
-
-      console.log('✅ 分类描述生成成功，内容长度:', description.length)
-
-      res.json({
-        success: true,
-        description: description,
-        categoryId: categoryId,
-        displayName: displayName,
-        model: model,
-        language: language
-      })
-
-    } catch (error) {
-      console.error('分类描述生成失败:', error.response?.data || error.message)
-      res.status(500).json({
-        success: false,
-        message: '分类描述生成失败: ' + (error.response?.data?.error?.message || error.message)
-      })
-    }
-  })
-
-  // API配置检查端点
-  app.get('/api/config-check', (req, res) => {
-    const configStatus = {
-      server: {
-        port: PORT,
-        status: '正常运行'
-      },
-      apis: {
-        kieai: {
-          apiUrl: KIEAI_API_URL,
-          authTokenConfigured: !!KIEAI_AUTH_TOKEN,
-          authTokenValid: KIEAI_AUTH_TOKEN &&
-            KIEAI_AUTH_TOKEN !== '27e443bd81969aefddc051bd78fa0a01' &&
-            KIEAI_AUTH_TOKEN !== 'your_real_kieai_token_here',
-          status: (KIEAI_AUTH_TOKEN &&
-            KIEAI_AUTH_TOKEN !== '27e443bd81969aefddc051bd78fa0a01' &&
-            KIEAI_AUTH_TOKEN !== 'your_real_kieai_token_here') ? '已配置' : '需要配置真实Token'
-        },
-        deepseek: {
-          apiKeyConfigured: !!process.env.DEEPSEEK_API_KEY,
-          status: process.env.DEEPSEEK_API_KEY ? '已配置' : '未配置'
-        },
-        openai: {
-          apiKeyConfigured: !!process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here',
-          status: (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here') ? '已配置' : '未配置'
-        }
-      },
-      directories: {
-        storage: true, // 目录检查已在启动时完成
-        images: true
-      },
-      recommendations: []
-    }
-
-    // 添加建议
-    if (!configStatus.apis.kieai.authTokenValid) {
-      configStatus.recommendations.push('配置有效的KIEAI API Token以启用真实图片生成')
-    }
-
-    if (!configStatus.apis.deepseek.apiKeyConfigured) {
-      configStatus.recommendations.push('配置DeepSeek API Key以启用AI内容生成')
-    }
-
-    res.json(configStatus)
-  })
-
-  // 健康检查端点
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', message: '涂色书内容生成器后端服务运行正常' })
-  })
-
-  // 启动服务器
-  app.listen(PORT, async () => {
-    console.log(`服务器运行在端口 ${PORT}`)
-    console.log(`健康检查: http://localhost:${PORT}/api/health`)
-
-    // 测试数据库连接
-    console.log('正在测试数据库连接...')
-    await testConnection()
-  })
-}
+  // 测试数据库连接
+  console.log('正在测试数据库连接...')
+  await testConnection()
+})
