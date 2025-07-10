@@ -1419,3 +1419,4 @@ Please ensure the content is suitable for coloring book websites, with a style a
     console.log('正在测试数据库连接...')
     await testConnection()
   })
+}
