@@ -35,200 +35,203 @@ const getDisplayText = (field, preferredLang = 'zh', forTranslation = false) => 
 
 function App() {
   // 默认文案生成提示词模板
-  const defaultTemplate = `基于以下信息生成涂色书的详细内容文案：
+  const defaultTemplate = `Based on the following information, generate detailed content for a coloring book:
 
-关键词：\${keyword}
-标题：\${title}
-图片描述：\${prompt}
+Keyword: \${keyword}
+Title: \${title}
+Image Description: \${prompt}
 
-请生成包含以下三个部分的内容：
+Please generate content for the following three sections:
 
-1. 涂色技巧：针对这个\${keyword}主题的具体涂色建议和技巧
-2. 涂色挑战：适合这个主题的有趣挑战和创意建议  
-3. 填色书的好处：涂色这个主题对身心的益处
+1. Coloring Tips: Specific coloring suggestions and techniques for this \${keyword} theme
+2. Coloring Challenges: Interesting challenges and creative suggestions suitable for this theme
+3. Benefits of Coloring Books: Benefits to physical and mental health from coloring this theme
 
-请用温馨、专业的语调，内容要实用且有启发性。每个部分2-3句话即可。
+Please use a warm and professional tone, with practical and inspiring content. Each section should be 2-3 sentences.
 
-返回格式为纯文本，用emoji图标分隔各部分：
-🎨 涂色技巧：...
-🎯 涂色挑战：...
-💡 填色书的好处：...`
+Return format as plain text, separated by emoji icons:
+<h2>🎨 Coloring Tips: </h2>
+[Coloring Tips...]
+<h2>🎯 Coloring Challenges: </h2>
+[Coloring Challenges...]
+<h2>💡 Benefits of Coloring Books: </h2>
+[Benefits of Coloring Books...]`
 
   // 预设AI提示词模板选项
   const templatePresets = [
     {
-      name: '标准三部分格式（默认）',
+      name: 'Standard Three-Part Format (Default)',
       content: defaultTemplate
     },
     {
-      name: '简洁实用提示词',
-      content: `为\${keyword}主题生成涂色指导内容：
+      name: 'Simple Practical Prompts',
+      content: `Generate coloring guidance content for \${keyword} theme:
 
-主题：\${keyword}
-标题：\${title}
-特征：\${prompt}
+Theme: \${keyword}
+Title: \${title}
+Features: \${prompt}
 
-请生成简洁实用的涂色指导，包含：
-1. 基础涂色技巧和色彩建议
-2. 适合初学者的简单方法
-3. 涂色的放松和创意价值
+Please generate concise and practical coloring guidance, including:
+1. Basic coloring techniques and color suggestions
+2. Simple methods suitable for beginners
+3. Relaxation and creative value of coloring
 
-用友善、鼓励的语调，每部分2句话，用🎨、🌟、💫等emoji分隔。`
+Use a friendly, encouraging tone, 2 sentences per section, separated by emojis like 🎨, 🌟, 💫.`
     },
     {
-      name: '教育导向提示词',
-      content: `针对\${keyword}主题创作教育性涂色内容：
+      name: 'Educational-Oriented Prompts',
+      content: `Create educational coloring content for \${keyword} theme:
 
-主题关键词：\${keyword}
-页面标题：\${title}  
-图像描述：\${prompt}
+Theme Keywords: \${keyword}
+Page Title: \${title}
+Image Description: \${prompt}
 
-请从教育角度生成内容，包含：
-1. 🎯 学习目标：通过涂色培养的能力
-2. 📚 知识拓展：与主题相关的有趣知识
-3. 🌟 成长价值：涂色对儿童发展的积极作用
+Generate content from an educational perspective, including:
+1. 🎯 Learning Objectives: Skills developed through coloring
+2. 📚 Knowledge Expansion: Interesting knowledge related to the theme
+3. 🌟 Growth Value: Positive effects of coloring on child development
 
-语言要适合家长和老师使用，每部分3-4句话。`
+Language should be suitable for parents and teachers, 3-4 sentences per section.`
     },
     {
-      name: '趣味互动提示词',
-      content: `为\${keyword}设计有趣的涂色体验：
+      name: 'Fun Interactive Prompts',
+      content: `Design a fun coloring experience for \${keyword}:
 
-涂色主题：\${keyword}
-作品标题：\${title}
-视觉元素：\${prompt}
+Coloring Theme: \${keyword}
+Work Title: \${title}
+Visual Elements: \${prompt}
 
-创作充满趣味的内容：
-1. 🎉 涂色游戏：设计有趣的涂色挑战
-2. 🌈 创意建议：鼓励大胆的色彩实验  
-3. 🏆 成就感：完成后的自豪和分享快乐
+Create engaging content:
+1. 🎉 Coloring Games: Design fun coloring challenges
+2. 🌈 Creative Suggestions: Encourage bold color experiments
+3. 🏆 Sense of Achievement: Pride and joy of sharing completed work
 
-用活泼、充满想象力的语言，让涂色变成一场冒险！`
+Use lively, imaginative language to make coloring an adventure!`
     },
     {
-      name: '专业艺术提示词',
-      content: `为\${keyword}主题制作专业级涂色指导：
+      name: 'Professional Art Prompts',
+      content: `Create professional-level coloring guidance for \${keyword} theme:
 
-艺术主题：\${keyword}
-作品名称：\${title}
-造型特点：\${prompt}
+Art Theme: \${keyword}
+Work Name: \${title}
+Design Features: \${prompt}
 
-请提供专业的艺术指导：
-1. 🎨 色彩理论：配色原理和色彩心理学应用
-2. 🖌️ 技法指导：渐变、混色、光影等高级技巧
-3. 🖼️ 艺术价值：提升审美和艺术鉴赏能力
+Please provide professional artistic guidance:
+1. 🎨 Color Theory: Color principles and color psychology applications
+2. 🖌️ Technique Guidance: Advanced techniques like gradients, color mixing, light and shadow
+3. 🖼️ Artistic Value: Enhancing aesthetics and art appreciation
 
-用专业但易懂的语言，适合有一定基础的涂色爱好者。`
+Use professional but accessible language, suitable for coloring enthusiasts with some experience.`
     }
   ]
 
   // 默认主题生成提示词模板
-  const defaultThemeTemplate = `请基于关键词"\${keyword}"和描述"\${description}"，生成\${count}个不同主题的涂色页概念。
+  const defaultThemeTemplate = `Based on the keyword "\${keyword}" and description "\${description}", generate \${count} different coloring page theme concepts.
 
-每个主题都应该：
-1. 围绕\${keyword}这个核心元素
-2. 有不同的创意角度和主题变化
-3. 适合制作成涂色页
+Each theme should:
+1. Focus on the core element of \${keyword}
+2. Have different creative angles and theme variations
+3. Be suitable for creating coloring pages
 
-请以JSON数组格式返回，每个对象包含：
-- title: 有创意的标题
-- description: 简短描述（30字以内）
-- prompt: 详细的中文图像生成描述，用于AI生成涂色页图片
+Please return in JSON array format, each object containing:
+- title: Creative title
+- description: Brief description (within 30 words)
+- prompt: Detailed English image generation description for AI to generate coloring pages
 
-示例格式：
+Example format:
 [
   {
-    "title": "花园中的蝴蝶舞会",
-    "description": "蝴蝶在花丛中翩翩起舞的美妙场景",
-    "prompt": "详细的蝴蝶在花园中翩翩起舞的涂色页，复杂的线条艺术，花朵和蝴蝶，黑白轮廓线，适合涂色"
+    "title": "Butterfly Garden Dance",
+    "description": "Butterflies dancing gracefully in a blooming flower garden",
+    "prompt": "Detailed coloring page of butterflies dancing in a garden, intricate line art, flowers and butterflies, black and white outlines, suitable for coloring"
   }
 ]`
 
   // 预设主题生成提示词模板选项
   const themeTemplatePresets = [
     {
-      name: '标准创意主题（默认）',
+      name: 'Standard Creative Themes (Default)',
       content: defaultThemeTemplate
     },
     {
-      name: '儿童友好主题',
-      content: `为儿童设计\${keyword}主题的涂色页，生成\${count}个适合儿童的创意主题：
+      name: 'Child-Friendly Themes',
+      content: `Design \${keyword} themed coloring pages for children, generate \${count} child-friendly creative themes:
 
-关键词：\${keyword}
-附加描述：\${description}
+Keyword: \${keyword}
+Additional Description: \${description}
 
-要求：
-- 主题要适合3-12岁儿童
-- 内容积极正面，充满想象力
-- 难度适中，不要太复杂
-- 色彩鲜明，线条清晰
+Requirements:
+- Themes suitable for ages 3-12
+- Positive, imaginative content
+- Moderate difficulty, not too complex
+- Bright colors, clear lines
 
-为每个主题生成：
-1. 标题：简单易懂的儿童友好标题
-2. 描述：生动有趣的主题介绍
-3. AI提示词：适合儿童涂色的图像描述
+Generate for each theme:
+1. Title: Simple, child-friendly title
+2. Description: Lively and interesting theme introduction
+3. AI Prompt: Image description suitable for children's coloring
 
-请返回JSON格式的\${count}个主题。`
+Please return \${count} themes in JSON format.`
     },
     {
-      name: '教育学习主题',
-      content: `结合\${keyword}主题创建具有教育意义的涂色页，生成\${count}个学习主题：
+      name: 'Educational Learning Themes',
+      content: `Create educational coloring pages combining \${keyword} theme, generate \${count} learning themes:
 
-学习主题：\${keyword}
-教育重点：\${description}
+Learning Theme: \${keyword}
+Educational Focus: \${description}
 
-设计要求：
-- 融入知识学习元素
-- 培养观察和认知能力
-- 寓教于乐的设计理念
-- 适合课堂或家庭教育使用
+Design Requirements:
+- Incorporate knowledge learning elements
+- Develop observation and cognitive abilities
+- Fun learning design philosophy
+- Suitable for classroom or home education
 
-每个主题包含：
-- 标题：体现学习目标的标题
-- 描述：说明教育价值和学习要点
-- AI提示词：结合教育元素的图像描述
+Each theme includes:
+- Title: Title reflecting learning objectives
+- Description: Educational value and learning points
+- AI Prompt: Image description combining educational elements
 
-输出\${count}个教育主题的JSON格式数据。`
+Output \${count} educational themes in JSON format.`
     },
     {
-      name: '艺术创意主题',
-      content: `以\${keyword}为灵感创作艺术性涂色主题，生成\${count}个富有创意的艺术主题：
+      name: 'Artistic Creative Themes',
+      content: `Create artistic coloring themes inspired by \${keyword}, generate \${count} creative artistic themes:
 
-艺术灵感：\${keyword}
-创作方向：\${description}
+Artistic Inspiration: \${keyword}
+Creative Direction: \${description}
 
-艺术要求：
-- 具有艺术美感和创意性
-- 线条优美，构图平衡
-- 适合培养艺术鉴赏力
-- 鼓励个性化表达
+Artistic Requirements:
+- Artistic beauty and creativity
+- Elegant lines, balanced composition
+- Suitable for developing art appreciation
+- Encourage personal expression
 
-设计内容：
-- 标题：富有艺术气息的标题
-- 描述：突出艺术特色和创作理念
-- AI提示词：详细的艺术风格描述
+Design Content:
+- Title: Artistically inspired title
+- Description: Highlighting artistic features and creative concepts
+- AI Prompt: Detailed artistic style description
 
-请生成\${count}个艺术主题的JSON数据。`
+Please generate \${count} artistic themes in JSON format.`
     },
     {
-      name: '节日庆典主题',
-      content: `围绕\${keyword}设计节日庆典涂色主题，创建\${count}个节庆相关主题：
+      name: 'Festival Celebration Themes',
+      content: `Design festival celebration coloring themes around \${keyword}, create \${count} festival-related themes:
 
-节庆元素：\${keyword}
-庆典特色：\${description}
+Festival Elements: \${keyword}
+Celebration Features: \${description}
 
-节日设计：
-- 体现节日氛围和庆祝元素
-- 包含传统文化和现代元素
-- 营造欢乐祥和的气氛
-- 适合全家共同参与
+Festival Design:
+- Reflect festive atmosphere and celebration elements
+- Include traditional and modern elements
+- Create joyful and harmonious atmosphere
+- Suitable for family participation
 
-主题内容：
-- 标题：富有节日气氛的标题
-- 描述：突出庆典特色和文化内涵
-- AI提示词：包含节日元素的图像描述
+Theme Content:
+- Title: Festive atmosphere title
+- Description: Highlighting celebration features and cultural significance
+- AI Prompt: Image description including festival elements
 
-输出\${count}个节庆主题的JSON格式。`
+Output \${count} festival themes in JSON format.`
     }
   ]
 

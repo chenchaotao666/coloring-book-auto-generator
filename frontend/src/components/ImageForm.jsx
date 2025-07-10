@@ -580,8 +580,8 @@ const ImageForm = ({
           </div>
           <div>
             <Label>状态</Label>
-            <div className="flex items-center gap-2 mt-2">
-              <label htmlFor={`isPublic-${formData.id || 'new'}`} className="flex items-center gap-2 cursor-pointer p-1 -m-1">
+            <div className="space-y-2 mt-2">
+              <label htmlFor={`isPublic-${formData.id || 'new'}`} className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   id={`isPublic-${formData.id || 'new'}`}
@@ -592,6 +592,19 @@ const ImageForm = ({
                 />
                 <span className="text-sm font-medium text-gray-700">
                   公开图片
+                </span>
+              </label>
+              <label htmlFor={`isOnline-${formData.id || 'new'}`} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id={`isOnline-${formData.id || 'new'}`}
+                  checked={formData.isOnline !== undefined ? formData.isOnline : true}
+                  onChange={readOnly ? undefined : (e) => onInputChange('isOnline', null, e.target.checked)}
+                  className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                  disabled={readOnly}
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  上线
                 </span>
               </label>
             </div>

@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MultiSelect } from '@/components/ui/multi-select'
@@ -11,13 +12,16 @@ import {
   AlertCircle,
   Check,
   CheckSquare,
+  ChevronDown,
+  ChevronUp,
   Edit3,
   Languages,
   Plus,
   RefreshCw,
   Save,
   Square,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import { eventBus } from '../utils/eventBus'
@@ -44,7 +48,7 @@ const CategoriesManager = () => {
 
   // 全局AI设置状态
   const [aiModel, setAiModel] = useState('deepseek-chat')
-  const [aiPrompt, setAiPrompt] = useState(`为分类 \${displayName} 生成详细的分类描述，包含以下内容：
+  const defaultAiPrompt = `为分类 \${displayName} 生成详细的分类描述，包含以下内容：
 
 1. 主题介绍：详细介绍这个分类的特点和魅力
 2. 适用对象：说明适合哪些年龄段和人群
@@ -57,11 +61,13 @@ const CategoriesManager = () => {
 <h2>\${displayName}是什么?</h2>
 [详细介绍内容...]
 
-\${displayName}填色页该怎么画?
+<h2>\${displayName}填色页该怎么画?</h2>
 [涂色技巧和建议...]
 
 <h2>\${displayName}填色页的创意想法</h2>
-[创意DIY建议...]`)
+[创意DIY建议...]`
+  const [aiPrompt, setAiPrompt] = useState(defaultAiPrompt)
+  const [showAiSettings, setShowAiSettings] = useState(false) // AI设置面板折叠状态
 
   // 表单状态
   const [showForm, setShowForm] = useState(false)
@@ -72,6 +78,9 @@ const CategoriesManager = () => {
     description: { zh: '' },
     imageId: ''
   })
+  const [aiGenerating, setAiGenerating] = useState(false) // AI生成状态
+  // 基础语言状态
+  const [baseLanguage, setBaseLanguage] = useState('en') // 新增分类的基础语言，默认英文
 
   // AI模型选项
   const aiModelOptions = [
@@ -175,16 +184,15 @@ const CategoriesManager = () => {
   }, [error, success])
 
   // 重置表单
-  const resetForm = () => {
+  const resetForm = (language = 'zh') => {
     setFormData({
-      displayName: { zh: '' },
-      description: { zh: '' },
+      displayName: { [language]: '' },
+      description: { [language]: '' },
       imageId: '',
       hotness: 0
     })
     setEditingId(null)
-    setShowForm(false)
-    setActiveFormLanguage('zh') // 重置活跃语言
+    setActiveFormLanguage(language) // 使用传入的语言
   }
 
   // 处理表单输入
@@ -197,6 +205,43 @@ const CategoriesManager = () => {
       }
     }))
   }
+
+  // 删除语言
+  const handleDeleteLanguage = (langCode) => {
+    if (!editingId) return // 只在编辑时允许删除
+
+    const currentLanguages = Object.keys(formData.displayName || {})
+
+    // 不能删除最后一个语言
+    if (currentLanguages.length <= 1) {
+      alert('至少需要保留一个语言')
+      return
+    }
+
+    // 从表单数据中删除该语言的内容
+    setFormData(prev => {
+      const newData = { ...prev }
+      if (newData.displayName) {
+        const { [langCode]: _, ...restDisplayName } = newData.displayName
+        newData.displayName = restDisplayName
+      }
+      if (newData.description) {
+        const { [langCode]: __, ...restDescription } = newData.description
+        newData.description = restDescription
+      }
+      return newData
+    })
+
+    // 如果删除的是当前活跃语言，切换到剩余语言中的第一个
+    if (activeFormLanguage === langCode) {
+      const remainingLanguages = currentLanguages.filter(lang => lang !== langCode)
+      if (remainingLanguages.length > 0) {
+        setActiveFormLanguage(remainingLanguages[0])
+      }
+    }
+  }
+
+
 
   // 获取分类的现有语言
   const getExistingLanguages = (category) => {
@@ -280,7 +325,7 @@ const CategoriesManager = () => {
 
   // 开始新增
   const startAdd = () => {
-    resetForm()
+    resetForm(baseLanguage) // 传递基础语言给resetForm
     setSelectedImage(null)
     setShowForm(true)
   }
@@ -301,9 +346,10 @@ const CategoriesManager = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    // 验证必填字段
-    if (!formData.displayName.zh?.trim()) {
-      setError('请输入中文名称')
+    // 验证必填字段 - 确保至少有一个语言有名称
+    const hasAnyName = Object.values(formData.displayName || {}).some(name => name && name.trim())
+    if (!hasAnyName) {
+      setError('请至少输入一个语言的名称')
       return
     }
 
@@ -337,6 +383,7 @@ const CategoriesManager = () => {
 
       if (data.success) {
         setSuccess(editingId ? '分类更新成功！' : '分类创建成功！')
+        setShowForm(false)
         resetForm()
         loadCategories() // 重新加载列表
 
@@ -409,6 +456,38 @@ const CategoriesManager = () => {
     setSelectedItems(newSelected)
   }
 
+  // 获取基础语言内容（优先英文，后中文）
+  const getBaseLanguageContent = (multiLangData) => {
+    if (!multiLangData) return { lang: 'zh', content: '' }
+
+    let parsedData = {}
+    if (typeof multiLangData === 'string') {
+      try {
+        parsedData = JSON.parse(multiLangData)
+      } catch {
+        return { lang: 'zh', content: multiLangData }
+      }
+    } else if (typeof multiLangData === 'object') {
+      parsedData = multiLangData || {}
+    }
+
+    // 优先检查英文，然后中文
+    if (parsedData.en && parsedData.en.trim()) {
+      return { lang: 'en', content: parsedData.en }
+    } else if (parsedData.zh && parsedData.zh.trim()) {
+      return { lang: 'zh', content: parsedData.zh }
+    } else {
+      // 如果都没有，取第一个有内容的语言
+      for (const [lang, content] of Object.entries(parsedData)) {
+        if (content && content.trim()) {
+          return { lang, content }
+        }
+      }
+    }
+
+    return { lang: 'zh', content: '' }
+  }
+
   // 执行国际化
   const handleInternationalization = async () => {
     if (selectedItems.size === 0) {
@@ -429,11 +508,17 @@ const CategoriesManager = () => {
 
       const requestData = {
         type: 'categories',
-        items: selectedCategories.map(cat => ({
-          id: cat.category_id,
-          name: formatDisplayName(cat.display_name),
-          description: formatDescription(cat.description)
-        })),
+        items: selectedCategories.map(cat => {
+          const nameBase = getBaseLanguageContent(cat.display_name)
+          const descBase = getBaseLanguageContent(cat.description)
+
+          return {
+            id: cat.category_id,
+            name: nameBase.content,
+            description: descBase.content,
+            baseLanguage: nameBase.lang === 'en' || descBase.lang === 'en' ? 'en' : 'zh' // 如果任一字段有英文就用英文作为基础语言
+          }
+        }),
         targetLanguages: selectedLanguages
       }
 
@@ -474,6 +559,17 @@ const CategoriesManager = () => {
         return
       }
 
+      // 确定生成语言：优先中文，然后英文，最后是第一个可用语言
+      const existingLanguages = getExistingLanguages(category)
+      let targetLanguage = 'zh' // 默认中文
+      if (existingLanguages.includes('zh')) {
+        targetLanguage = 'zh'
+      } else if (existingLanguages.includes('en')) {
+        targetLanguage = 'en'
+      } else if (existingLanguages.length > 0) {
+        targetLanguage = existingLanguages[0]
+      }
+
       const displayName = formatDisplayName(category.display_name)
       const response = await apiFetch('/api/generate-category-description', {
         method: 'POST',
@@ -481,7 +577,8 @@ const CategoriesManager = () => {
           categoryId,
           displayName,
           model: aiModel,
-          prompt: aiPrompt
+          prompt: aiPrompt,
+          language: targetLanguage // 传递目标语言
         })
       })
 
@@ -525,6 +622,42 @@ const CategoriesManager = () => {
     }
 
     return '未命名'
+  }
+
+  // 双语显示名称（中文+英文）
+  const formatDisplayNameBilingual = (display_name) => {
+    if (!display_name) return '未命名'
+
+    let parsedData = {}
+    if (typeof display_name === 'string') {
+      try {
+        parsedData = JSON.parse(display_name)
+      } catch {
+        return display_name
+      }
+    } else if (typeof display_name === 'object') {
+      parsedData = display_name || {}
+    } else {
+      return '未命名'
+    }
+
+    const zh = parsedData.zh?.trim()
+    const en = parsedData.en?.trim()
+
+    if (zh && en) {
+      return (
+        <div className="space-y-1">
+          <div className="font-medium">{zh}</div>
+          <div className="text-sm text-gray-500">{en}</div>
+        </div>
+      )
+    } else if (zh) {
+      return <div className="font-medium">{zh}</div>
+    } else if (en) {
+      return <div className="font-medium">{en}</div>
+    } else {
+      return <div className="font-medium text-gray-400">未命名</div>
+    }
   }
 
   const formatDescription = (description) => {
@@ -602,7 +735,7 @@ const CategoriesManager = () => {
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <div className="mx-auto p-6 space-y-6">
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">分类管理</h1>
@@ -616,6 +749,18 @@ const CategoriesManager = () => {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               刷新
             </Button>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="baseLanguage" className="text-sm font-medium whitespace-nowrap">基础语言:</Label>
+              <Select value={baseLanguage} onValueChange={setBaseLanguage}>
+                <SelectTrigger className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="zh">中文</SelectItem>
+                  <SelectItem value="en">英文</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Button
               onClick={startAdd}
               className="flex items-center gap-2"
@@ -626,140 +771,517 @@ const CategoriesManager = () => {
           </div>
         </div>
 
-        {/* 国际化操作栏 */}
-        {selectedItems.size > 0 && (
-          <div className="flex items-center gap-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center gap-2 text-blue-700">
-              <Languages className="w-4 h-4" />
-              <span className="font-medium">已选择 {selectedItems.size} 个分类</span>
-            </div>
-            <div className="flex items-center gap-2 flex-1">
-              <label className="text-sm font-medium text-blue-700">选择目标语言：</label>
-              <div className="min-w-64">
-                <MultiSelect
-                  options={languageOptions}
-                  value={selectedLanguages}
-                  onChange={setSelectedLanguages}
-                  placeholder="请选择要翻译的语言"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={handleInternationalization}
-                disabled={internationalizationLoading || selectedLanguages.length === 0}
-                className="flex items-center gap-2"
-              >
-                <Languages className="w-4 h-4" />
-                {internationalizationLoading ? '生成中...' : '生成国际化内容'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSelectedItems(new Set())
-                  setSelectedLanguages([])
-                  setInternationalizationResults({})
-                  setActiveInternationalizationLanguage('') // 清除活跃语言
-                }}
-                className="flex items-center gap-2"
-              >
-                取消选择
-              </Button>
-            </div>
+        {/* 错误和成功提示 */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-2 text-red-700">
+            <AlertCircle className="w-5 h-5" />
+            {error}
           </div>
         )}
-      </div>
 
-      {/* 错误和成功提示 */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-2 text-red-700">
-          <AlertCircle className="w-5 h-5" />
-          {error}
-        </div>
-      )}
+        {success && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-2 text-green-700">
+            <Check className="w-5 h-5" />
+            {success}
+          </div>
+        )}
 
-      {success && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-2 text-green-700">
-          <Check className="w-5 h-5" />
-          {success}
-        </div>
-      )}
 
-      {/* AI设置 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>AI文案生成设置</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 左侧：模型选择 */}
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="aiModel" className="text-sm font-medium">文案模型</Label>
-                <Select value={aiModel} onValueChange={setAiModel}>
-                  <SelectTrigger className="h-10">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {aiModelOptions.map(option => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+        {/* AI设置 */}
+        <Card>
+          <CardHeader className="cursor-pointer" onClick={() => setShowAiSettings(!showAiSettings)}>
+            <div className="flex items-center justify-between">
+              <CardTitle>AI文案生成设置</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="p-1 h-8 w-8"
+              >
+                {showAiSettings ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </Button>
             </div>
+          </CardHeader>
+          {showAiSettings && (
+            <CardContent>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 左侧：模型选择 */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="aiModel" className="text-sm font-medium">文案模型</Label>
+                    <Select value={aiModel} onValueChange={setAiModel}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {aiModelOptions.map(option => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
-            {/* 右侧：AI提示词 */}
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="aiPrompt" className="text-sm font-medium">AI文案生成提示词</Label>
+                {/* 右侧：AI提示词 */}
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="aiPrompt" className="text-sm font-medium">AI文案生成提示词</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAiPrompt(defaultAiPrompt)}
+                        className="text-xs h-6 px-2"
+                      >
+                        重置默认
+                      </Button>
+                    </div>
+                    <Textarea
+                      id="aiPrompt"
+                      placeholder="输入AI文案生成提示词，使用 ${displayName} 作为分类名称的占位符"
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      rows={8}
+                      className="resize-none text-sm"
+                    />
+                    <div className="text-xs text-gray-500 space-y-1">
+                      <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'${displayName}'}</code> 作为分类名称的占位符</p>
+                      <p>• 这个提示词将发送给AI来生成分类描述内容</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+
+        {/* 国际化结果展示 */}
+        {Object.keys(internationalizationResults).length > 0 && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>国际化结果</CardTitle>
+                <div className="flex gap-2">
                   <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAiPrompt(`为分类 \${displayName} 生成详细的分类描述，包含以下内容：
-
-1. 主题介绍：详细介绍这个分类的特点和魅力
-2. 适用对象：说明适合哪些年龄段和人群
-3. 涂色技巧：提供具体的涂色建议和技巧
-4. 创意想法：提供相关的DIY创意和玩法建议
-
-请用温馨、专业的语调，内容要实用且有启发性。每个部分2-3句话即可。
-
-示例格式：
-<h2>\${displayName}是什么?</h2>
-[详细介绍内容...]
-
-\${displayName}填色页该怎么画?
-[涂色技巧和建议...]
-
-<h2>\${displayName}填色页的创意想法</h2>
-[创意DIY建议...]`)}
-                    className="text-xs h-6 px-2"
+                    onClick={handleSaveTranslations}
+                    disabled={loading}
+                    className="flex items-center gap-2"
                   >
-                    重置默认
+                    <Save className="w-4 h-4" />
+                    {loading ? '保存中...' : '保存到数据库'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setInternationalizationResults({})
+                      setSelectedItems(new Set())
+                      setActiveInternationalizationLanguage('') // 清除活跃语言
+                    }}
+                  >
+                    清除结果
                   </Button>
                 </div>
-                <Textarea
-                  id="aiPrompt"
-                  placeholder="输入AI文案生成提示词，使用 ${displayName} 作为分类名称的占位符"
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  rows={8}
-                  className="resize-none text-sm"
-                />
-                <div className="text-xs text-gray-500 space-y-1">
-                  <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'${displayName}'}</code> 作为分类名称的占位符</p>
-                  <p>• 这个提示词将发送给AI来生成分类描述内容</p>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* 语言选项卡 */}
+              <div className="flex flex-wrap gap-2 border-b mb-4">
+                {(() => {
+                  // 获取所有可用的语言
+                  const allLanguages = new Set()
+                  Object.values(internationalizationResults).forEach(translations => {
+                    Object.keys(translations).forEach(langCode => {
+                      allLanguages.add(langCode)
+                    })
+                  })
+
+                  return Array.from(allLanguages).map(langCode => {
+                    const language = supportedLanguages.find(lang => lang.code === langCode)
+                    const isActive = activeInternationalizationLanguage === langCode
+
+                    return (
+                      <button
+                        key={langCode}
+                        type="button"
+                        onClick={() => setActiveInternationalizationLanguage(langCode)}
+                        className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${isActive
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                          }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Languages className="w-4 h-4" />
+                          {language ? language.name : langCode.toUpperCase()}
+                        </div>
+                      </button>
+                    )
+                  })
+                })()}
+              </div>
+
+              {/* 当前语言的翻译内容 */}
+              {activeInternationalizationLanguage && (
+                <div className="space-y-4">
+                  {Object.entries(internationalizationResults).map(([categoryId, translations]) => {
+                    const category = categories.find(cat => cat.category_id.toString() === categoryId)
+                    const translation = translations[activeInternationalizationLanguage]
+
+                    if (!category || !translation) return null
+
+                    return (
+                      <div key={categoryId} className="border border-gray-200 rounded-lg p-4">
+                        <div className="mb-3">
+                          <h3 className="font-medium text-gray-900">
+                            {formatDisplayName(category.display_name)}
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            原始内容 → {supportedLanguages.find(lang => lang.code === activeInternationalizationLanguage)?.name || activeInternationalizationLanguage}
+                          </p>
+                        </div>
+
+                        <div className="space-y-3">
+                          {/* 分类名称 */}
+                          {translation.name !== undefined && (
+                            <div>
+                              <Label className="text-xs text-gray-600">分类名称</Label>
+                              <Input
+                                value={translation.name || ''}
+                                onChange={(e) => handleTranslationEdit(categoryId, activeInternationalizationLanguage, 'name', e.target.value)}
+                                className="mt-1 text-sm bg-gray-50"
+                                placeholder="翻译名称"
+                              />
+                            </div>
+                          )}
+
+                          {/* 分类描述 */}
+                          {translation.description !== undefined && (
+                            <div>
+                              <Label className="text-xs text-gray-600">分类描述</Label>
+                              <Textarea
+                                value={translation.description || ''}
+                                onChange={(e) => handleTranslationEdit(categoryId, activeInternationalizationLanguage, 'description', e.target.value)}
+                                className="mt-1 text-sm bg-gray-50"
+                                placeholder="翻译描述"
+                                rows={8}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* 分类列表 */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>分类列表 ({categories.length})</CardTitle>
+              {categories.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2"
+                >
+                  {selectedItems.size === categories.length ? (
+                    <CheckSquare className="w-4 h-4" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                  {selectedItems.size === categories.length ? '取消全选' : '全选'}
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* 国际化操作栏（在表格上面，仅在有选中项目时显示）*/}
+            {selectedItems.size > 0 && (
+              <div className="flex items-center gap-4 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                <div className="flex items-center gap-2 text-blue-700">
+                  <Languages className="w-4 h-4" />
+                  <span className="font-medium">
+                    已选择 {selectedItems.size} 个分类
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 flex-1">
+                  <label className="text-sm font-medium text-blue-700">选择目标语言：</label>
+                  <div className="w-64">
+                    <MultiSelect
+                      options={languageOptions}
+                      value={selectedLanguages}
+                      onChange={setSelectedLanguages}
+                      placeholder="请选择要翻译的语言"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={handleInternationalization}
+                    disabled={internationalizationLoading || selectedLanguages.length === 0}
+                    size="sm"
+                    className="flex items-center gap-2"
+                  >
+                    <Languages className="w-4 h-4" />
+                    {internationalizationLoading ? '生成中...' : '生成国际化内容'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedItems(new Set())
+                      setSelectedLanguages([])
+                      setInternationalizationResults({})
+                      setActiveInternationalizationLanguage('') // 清除活跃语言
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    取消选择
+                  </Button>
                 </div>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            )}
+
+
+            {loading && categories.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
+                加载中...
+              </div>
+            ) : categories.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                暂无分类数据
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse border border-gray-200">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="border border-gray-200 px-4 py-2 text-center w-12">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={toggleSelectAll}
+                          className="p-0 h-auto"
+                        >
+                          {selectedItems.size === categories.length ? (
+                            <CheckSquare className="w-4 h-4" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </th>
+                      <th className="border border-gray-200 px-4 py-2 text-left">名称</th>
+                      <th className="border border-gray-200 px-4 py-2 text-left">描述</th>
+                      <th className="border border-gray-200 px-4 py-2 text-left">热度</th>
+                      <th className="border border-gray-200 px-4 py-2 text-left">语言</th>
+                      <th className="border border-gray-200 px-4 py-2 text-left">关联图片</th>
+                      <th className="border border-gray-200 px-4 py-2 text-left">创建时间</th>
+                      <th className="border border-gray-200 px-4 py-2 text-center">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {categories.map((category) => {
+                      const existingLanguages = getExistingLanguages(category)
+                      return (
+                        <tr key={category.category_id} className="hover:bg-gray-50">
+                          <td className="border border-gray-200 px-4 py-2 text-center">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleSelectItem(category.category_id)}
+                              className="p-0 h-auto"
+                            >
+                              {selectedItems.has(category.category_id) ? (
+                                <CheckSquare className="w-4 h-4" />
+                              ) : (
+                                <Square className="w-4 h-4" />
+                              )}
+                            </Button>
+                          </td>
+                          <td className="border border-gray-200 px-4 py-2">
+                            <div className="font-medium">
+                              {formatDisplayNameBilingual(category.display_name)}
+                            </div>
+                          </td>
+                          <td className="border border-gray-200 px-4 py-2 max-w-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="truncate flex-1" title={formatDescription(category.description)}>
+                                {formatDescription(category.description) || '暂无描述'}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => generateDescription(category.category_id)}
+                                className="flex-shrink-0 p-1 h-6"
+                                title="使用AI生成描述"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </td>
+                          <td className="border border-gray-200 px-4 py-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <span className="text-sm font-medium">{category.hotness || 0}</span>
+                              <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-blue-400 to-red-500 rounded-full"
+                                  style={{ width: `${Math.min(100, (category.hotness || 0) / 10)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="border border-gray-200 px-4 py-2">
+                            <div className="flex flex-wrap gap-1">
+                              {existingLanguages.map(langCode => {
+                                const language = supportedLanguages.find(l => l.code === langCode)
+                                return (
+                                  <span
+                                    key={langCode}
+                                    className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded"
+                                  >
+                                    {language ? language.name : (langCode === 'zh' ? '中文' : langCode)}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          </td>
+                          <td className="border border-gray-200 px-4 py-2">
+                            {category.image_id ? (() => {
+                              const image = getImageById(category.image_id)
+                              if (!image) {
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 bg-gray-100 border border-gray-200 rounded flex items-center justify-center">
+                                      <span className="text-xs text-gray-400">?</span>
+                                    </div>
+                                    <div className="text-xs text-red-500">
+                                      图片未找到
+                                      <div className="font-mono text-gray-400">{category.image_id.slice(0, 8)}...</div>
+                                    </div>
+                                  </div>
+                                )
+                              }
+
+                              // 解析图片标题
+                              let title = '未命名图片'
+                              if (image.title) {
+                                if (typeof image.title === 'string') {
+                                  try {
+                                    const parsed = JSON.parse(image.title)
+                                    title = parsed.zh || parsed.en || title
+                                  } catch {
+                                    title = image.title
+                                  }
+                                } else if (typeof image.title === 'object') {
+                                  title = image.title.zh || image.title.en || title
+                                }
+                              }
+
+                              const hasPreviewUrl = image.defaultUrl || image.coloringUrl
+                              const previewUrl = image.defaultUrl || image.coloringUrl
+
+                              return (
+                                <div className="flex items-center gap-2">
+                                  {/* 缩略图 */}
+                                  <div className="w-8 h-8 border border-gray-200 rounded overflow-hidden bg-gray-50">
+                                    {hasPreviewUrl ? (
+                                      <img
+                                        src={previewUrl}
+                                        alt="图片预览"
+                                        className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                        onClick={() => {
+                                          // 优先显示上色版本，然后是默认版本
+                                          const urls = [image.coloringUrl, image.defaultUrl].filter(Boolean)
+                                          if (urls.length > 0) {
+                                            window.open(urls[0], '_blank')
+                                          }
+                                        }}
+                                        onError={(e) => {
+                                          e.target.style.display = 'none'
+                                          e.target.nextSibling.style.display = 'flex'
+                                        }}
+                                        title="点击查看原图"
+                                      />
+                                    ) : null}
+                                    <div className={`${hasPreviewUrl ? 'hidden' : 'flex'} w-full h-full items-center justify-center text-xs text-gray-400`}>
+                                      无图
+                                    </div>
+                                  </div>
+
+                                  {/* 图片信息 */}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-medium text-gray-900 truncate" title={title}>
+                                      {title}
+                                    </div>
+                                    <div className="text-xs text-gray-500 font-mono">
+                                      {image.id.slice(0, 8)}...
+                                    </div>
+                                    <div className="flex gap-1 mt-1">
+                                      {image.defaultUrl && (
+                                        <span className="inline-block px-1 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">
+                                          默认
+                                        </span>
+                                      )}
+                                      {image.coloringUrl && (
+                                        <span className="inline-block px-1 py-0.5 text-xs bg-green-100 text-green-700 rounded">
+                                          上色
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })() : (
+                              <div className="text-xs text-gray-500">未关联</div>
+                            )}
+                          </td>
+                          <td className="border border-gray-200 px-4 py-2 text-sm text-gray-500">
+                            {category.created_at ? new Date(category.created_at).toLocaleString('zh-CN') : '未知'}
+                          </td>
+                          <td className="border border-gray-200 px-4 py-2">
+                            <div className="flex gap-1 justify-center">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => startEdit(category)}
+                                className="flex items-center gap-1"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                编辑
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDelete(category.category_id, formatDisplayName(category.display_name))}
+                                className="flex items-center gap-1 text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                删除
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+      </div>
 
       {/* 国际化设置面板 */}
       {showInternationalization && (
@@ -807,140 +1329,25 @@ const CategoriesManager = () => {
         </Card>
       )}
 
-      {/* 国际化结果展示 */}
-      {Object.keys(internationalizationResults).length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>国际化结果</CardTitle>
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleSaveTranslations}
-                  disabled={loading}
-                  className="flex items-center gap-2"
-                >
-                  <Save className="w-4 h-4" />
-                  {loading ? '保存中...' : '保存到数据库'}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setInternationalizationResults({})
-                    setSelectedItems(new Set())
-                    setActiveInternationalizationLanguage('') // 清除活跃语言
-                  }}
-                >
-                  清除结果
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {/* 语言选项卡 */}
-            <div className="flex flex-wrap gap-2 border-b mb-4">
-              {(() => {
-                // 获取所有可用的语言
-                const allLanguages = new Set()
-                Object.values(internationalizationResults).forEach(translations => {
-                  Object.keys(translations).forEach(langCode => {
-                    allLanguages.add(langCode)
-                  })
-                })
-
-                return Array.from(allLanguages).map(langCode => {
-                  const language = supportedLanguages.find(lang => lang.code === langCode)
-                  const isActive = activeInternationalizationLanguage === langCode
-
-                  return (
-                    <button
-                      key={langCode}
-                      type="button"
-                      onClick={() => setActiveInternationalizationLanguage(langCode)}
-                      className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${isActive
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                        }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Languages className="w-4 h-4" />
-                        {language ? language.name : langCode.toUpperCase()}
-                      </div>
-                    </button>
-                  )
-                })
-              })()}
+      {/* 新增/编辑表单弹出框 */}
+      <Dialog isOpen={showForm} onClose={() => {
+        setShowForm(false)
+        resetForm()
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <div className="space-y-6">
+            <div className="border-b pb-4">
+              <h2 className="text-xl font-semibold">{editingId ? '编辑分类' : '新增分类'}</h2>
             </div>
 
-            {/* 当前语言的翻译内容 */}
-            {activeInternationalizationLanguage && (
-              <div className="space-y-4">
-                {Object.entries(internationalizationResults).map(([categoryId, translations]) => {
-                  const category = categories.find(cat => cat.category_id.toString() === categoryId)
-                  const translation = translations[activeInternationalizationLanguage]
-
-                  if (!category || !translation) return null
-
-                  return (
-                    <div key={categoryId} className="border border-gray-200 rounded-lg p-4">
-                      <div className="mb-3">
-                        <h3 className="font-medium text-gray-900">
-                          {formatDisplayName(category.display_name)}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          原始内容 → {supportedLanguages.find(lang => lang.code === activeInternationalizationLanguage)?.name || activeInternationalizationLanguage}
-                        </p>
-                      </div>
-
-                      <div className="space-y-3">
-                        {/* 分类名称 */}
-                        {translation.name !== undefined && (
-                          <div>
-                            <Label className="text-xs text-gray-600">分类名称</Label>
-                            <Input
-                              value={translation.name || ''}
-                              onChange={(e) => handleTranslationEdit(categoryId, activeInternationalizationLanguage, 'name', e.target.value)}
-                              className="mt-1 text-sm bg-gray-50"
-                              placeholder="翻译名称"
-                            />
-                          </div>
-                        )}
-
-                        {/* 分类描述 */}
-                        {translation.description !== undefined && (
-                          <div>
-                            <Label className="text-xs text-gray-600">分类描述</Label>
-                            <Textarea
-                              value={translation.description || ''}
-                              onChange={(e) => handleTranslationEdit(categoryId, activeInternationalizationLanguage, 'description', e.target.value)}
-                              className="mt-1 text-sm bg-gray-50"
-                              placeholder="翻译描述"
-                              rows={2}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 新增/编辑表单 */}
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{editingId ? '编辑分类' : '新增分类'}</CardTitle>
-          </CardHeader>
-          <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* 多语言内容编辑 */}
               {(() => {
                 const languages = editingId
-                  ? getExistingLanguages(categories.find(cat => cat.category_id === editingId))
-                  : ['zh']
+                  ? Object.keys(formData.displayName || {}).length > 0
+                    ? Object.keys(formData.displayName)
+                    : getExistingLanguages(categories.find(cat => cat.category_id === editingId))
+                  : [baseLanguage] // 使用选中的基础语言而不是硬编码的'zh'
 
                 return (
                   <div className="space-y-4">
@@ -951,23 +1358,40 @@ const CategoriesManager = () => {
                       {languages.map(langCode => {
                         const language = supportedLanguages.find(lang => lang.code === langCode) || { name: langCode === 'zh' ? '中文' : langCode }
                         const isActive = activeFormLanguage === langCode
+                        const isRequired = (!editingId && langCode === baseLanguage)
+                        const canDelete = editingId && languages.length > 1
 
                         return (
-                          <button
-                            key={langCode}
-                            type="button"
-                            onClick={() => setActiveFormLanguage(langCode)}
-                            className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${isActive
-                              ? 'border-blue-500 bg-blue-50 text-blue-700'
-                              : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                              }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <Languages className="w-4 h-4" />
-                              {language.name}
-                              {langCode === 'zh' && <span className="text-red-500">*</span>}
-                            </div>
-                          </button>
+                          <div key={langCode} className="relative group">
+                            <button
+                              type="button"
+                              onClick={() => setActiveFormLanguage(langCode)}
+                              className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${isActive
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                                }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Languages className="w-4 h-4" />
+                                {language.name}
+                                {isRequired && <span className="text-red-500">*</span>}
+                              </div>
+                            </button>
+                            {/* 删除语言按钮 */}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeleteLanguage(langCode)
+                                }}
+                                className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs hover:bg-red-600 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
+                                title={`删除${language.name}语言`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                         )
                       })}
                     </div>
@@ -993,14 +1417,14 @@ const CategoriesManager = () => {
                                 {/* 分类名称 */}
                                 <div>
                                   <Label htmlFor={`displayName_${activeFormLanguage}`} className="text-sm text-gray-600">
-                                    分类名称 {activeFormLanguage === 'zh' && <span className="text-red-500">*</span>}
+                                    分类名称 {(!editingId && activeFormLanguage === baseLanguage) && <span className="text-red-500">*</span>}
                                   </Label>
                                   <Input
                                     id={`displayName_${activeFormLanguage}`}
                                     value={formData.displayName[activeFormLanguage] || ''}
                                     onChange={(e) => handleInputChange('displayName', activeFormLanguage, e.target.value)}
-                                    placeholder={`请输入${language.name}分类名称${activeFormLanguage === 'zh' ? '（必填）' : '（可选）'}`}
-                                    required={activeFormLanguage === 'zh'}
+                                    placeholder={`请输入${language.name}分类名称${(!editingId && activeFormLanguage === baseLanguage) ? '（必填）' : '（可选）'}`}
+                                    required={(!editingId && activeFormLanguage === baseLanguage)}
                                     className="mt-1"
                                   />
                                 </div>
@@ -1014,13 +1438,15 @@ const CategoriesManager = () => {
                                     <Button
                                       type="button"
                                       size="sm"
-                                      variant="ghost"
+                                      variant="link"
+                                      disabled={aiGenerating || !formData.displayName[activeFormLanguage]}
                                       onClick={async () => {
                                         if (!formData.displayName[activeFormLanguage]) {
                                           alert(`请先输入${language.name}名称`)
                                           return
                                         }
 
+                                        setAiGenerating(true)
                                         try {
                                           // 使用当前AI设置生成描述
                                           const displayName = formData.displayName[activeFormLanguage]
@@ -1030,7 +1456,8 @@ const CategoriesManager = () => {
                                             method: 'POST',
                                             body: JSON.stringify({
                                               model: aiModel,
-                                              prompt: prompt
+                                              prompt: prompt,
+                                              language: activeFormLanguage // 传递当前活跃的语言
                                             })
                                           })
 
@@ -1045,12 +1472,24 @@ const CategoriesManager = () => {
                                         } catch (error) {
                                           console.error('生成描述错误:', error)
                                           alert('生成描述失败: ' + error.message)
+                                        } finally {
+                                          setAiGenerating(false)
                                         }
                                       }}
-                                      className="p-1 h-6"
+                                      className="text-xs h-auto p-1 text-blue-600 hover:text-blue-800"
                                       title={`使用AI生成${language.name}描述`}
                                     >
-                                      <RefreshCw className="w-3 h-3" />
+                                      {aiGenerating ? (
+                                        <span className="flex items-center gap-1">
+                                          <RefreshCw className="w-3 h-3 animate-spin" />
+                                          生成中...
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-1">
+                                          <RefreshCw className="w-3 h-3" />
+                                          AI生成
+                                        </span>
+                                      )}
                                     </Button>
                                   </div>
                                   <Textarea
@@ -1058,7 +1497,7 @@ const CategoriesManager = () => {
                                     value={formData.description[activeFormLanguage] || ''}
                                     onChange={(e) => handleInputChange('description', activeFormLanguage, e.target.value)}
                                     placeholder={`请输入${language.name}分类描述（可选）`}
-                                    rows={4}
+                                    rows={10}
                                     className="mt-1"
                                   />
                                 </div>
@@ -1193,7 +1632,7 @@ const CategoriesManager = () => {
                 )}
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-4 border-t">
                 <Button
                   type="submit"
                   disabled={loading}
@@ -1205,271 +1644,19 @@ const CategoriesManager = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={resetForm}
+                  onClick={() => {
+                    setShowForm(false)
+                    resetForm()
+                  }}
                   disabled={loading}
                 >
                   取消
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 分类列表 */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>分类列表 ({categories.length})</CardTitle>
-            {categories.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleSelectAll}
-                className="flex items-center gap-2"
-              >
-                {selectedItems.size === categories.length ? (
-                  <CheckSquare className="w-4 h-4" />
-                ) : (
-                  <Square className="w-4 h-4" />
-                )}
-                {selectedItems.size === categories.length ? '取消全选' : '全选'}
-              </Button>
-            )}
           </div>
-        </CardHeader>
-        <CardContent>
-          {loading && categories.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
-              加载中...
-            </div>
-          ) : categories.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              暂无分类数据
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse border border-gray-200">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="border border-gray-200 px-4 py-2 text-center w-12">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={toggleSelectAll}
-                        className="p-0 h-auto"
-                      >
-                        {selectedItems.size === categories.length ? (
-                          <CheckSquare className="w-4 h-4" />
-                        ) : (
-                          <Square className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </th>
-                    <th className="border border-gray-200 px-4 py-2 text-left">ID</th>
-                    <th className="border border-gray-200 px-4 py-2 text-left">名称</th>
-                    <th className="border border-gray-200 px-4 py-2 text-left">描述</th>
-                    <th className="border border-gray-200 px-4 py-2 text-left">热度</th>
-                    <th className="border border-gray-200 px-4 py-2 text-left">语言</th>
-                    <th className="border border-gray-200 px-4 py-2 text-left">关联图片</th>
-                    <th className="border border-gray-200 px-4 py-2 text-left">创建时间</th>
-                    <th className="border border-gray-200 px-4 py-2 text-center">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {categories.map((category) => {
-                    const existingLanguages = getExistingLanguages(category)
-                    return (
-                      <tr key={category.category_id} className="hover:bg-gray-50">
-                        <td className="border border-gray-200 px-4 py-2 text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleSelectItem(category.category_id)}
-                            className="p-0 h-auto"
-                          >
-                            {selectedItems.has(category.category_id) ? (
-                              <CheckSquare className="w-4 h-4" />
-                            ) : (
-                              <Square className="w-4 h-4" />
-                            )}
-                          </Button>
-                        </td>
-                        <td className="border border-gray-200 px-4 py-2">
-                          {category.category_id}
-                        </td>
-                        <td className="border border-gray-200 px-4 py-2">
-                          <div className="font-medium">
-                            {formatDisplayName(category.display_name)}
-                          </div>
-                        </td>
-                        <td className="border border-gray-200 px-4 py-2 max-w-xs">
-                          <div className="flex items-center gap-2">
-                            <div className="truncate flex-1" title={formatDescription(category.description)}>
-                              {formatDescription(category.description) || '暂无描述'}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => generateDescription(category.category_id)}
-                              className="flex-shrink-0 p-1 h-6"
-                              title="使用AI生成描述"
-                            >
-                              <RefreshCw className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </td>
-                        <td className="border border-gray-200 px-4 py-2 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <span className="text-sm font-medium">{category.hotness || 0}</span>
-                            <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-gradient-to-r from-blue-400 to-red-500 rounded-full"
-                                style={{ width: `${Math.min(100, (category.hotness || 0) / 10)}%` }}
-                              ></div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="border border-gray-200 px-4 py-2">
-                          <div className="flex flex-wrap gap-1">
-                            {existingLanguages.map(langCode => {
-                              const language = supportedLanguages.find(l => l.code === langCode)
-                              return (
-                                <span
-                                  key={langCode}
-                                  className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded"
-                                >
-                                  {language ? language.name : (langCode === 'zh' ? '中文' : langCode)}
-                                </span>
-                              )
-                            })}
-                          </div>
-                        </td>
-                        <td className="border border-gray-200 px-4 py-2">
-                          {category.image_id ? (() => {
-                            const image = getImageById(category.image_id)
-                            if (!image) {
-                              return (
-                                <div className="flex items-center gap-2">
-                                  <div className="w-8 h-8 bg-gray-100 border border-gray-200 rounded flex items-center justify-center">
-                                    <span className="text-xs text-gray-400">?</span>
-                                  </div>
-                                  <div className="text-xs text-red-500">
-                                    图片未找到
-                                    <div className="font-mono text-gray-400">{category.image_id.slice(0, 8)}...</div>
-                                  </div>
-                                </div>
-                              )
-                            }
-
-                            // 解析图片标题
-                            let title = '未命名图片'
-                            if (image.title) {
-                              if (typeof image.title === 'string') {
-                                try {
-                                  const parsed = JSON.parse(image.title)
-                                  title = parsed.zh || parsed.en || title
-                                } catch {
-                                  title = image.title
-                                }
-                              } else if (typeof image.title === 'object') {
-                                title = image.title.zh || image.title.en || title
-                              }
-                            }
-
-                            const hasPreviewUrl = image.defaultUrl || image.coloringUrl
-                            const previewUrl = image.defaultUrl || image.coloringUrl
-
-                            return (
-                              <div className="flex items-center gap-2">
-                                {/* 缩略图 */}
-                                <div className="w-8 h-8 border border-gray-200 rounded overflow-hidden bg-gray-50">
-                                  {hasPreviewUrl ? (
-                                    <img
-                                      src={previewUrl}
-                                      alt="图片预览"
-                                      className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                      onClick={() => {
-                                        // 优先显示上色版本，然后是默认版本
-                                        const urls = [image.coloringUrl, image.defaultUrl].filter(Boolean)
-                                        if (urls.length > 0) {
-                                          window.open(urls[0], '_blank')
-                                        }
-                                      }}
-                                      onError={(e) => {
-                                        e.target.style.display = 'none'
-                                        e.target.nextSibling.style.display = 'flex'
-                                      }}
-                                      title="点击查看原图"
-                                    />
-                                  ) : null}
-                                  <div className={`${hasPreviewUrl ? 'hidden' : 'flex'} w-full h-full items-center justify-center text-xs text-gray-400`}>
-                                    无图
-                                  </div>
-                                </div>
-
-                                {/* 图片信息 */}
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-xs font-medium text-gray-900 truncate" title={title}>
-                                    {title}
-                                  </div>
-                                  <div className="text-xs text-gray-500 font-mono">
-                                    {image.id.slice(0, 8)}...
-                                  </div>
-                                  <div className="flex gap-1 mt-1">
-                                    {image.defaultUrl && (
-                                      <span className="inline-block px-1 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">
-                                        默认
-                                      </span>
-                                    )}
-                                    {image.coloringUrl && (
-                                      <span className="inline-block px-1 py-0.5 text-xs bg-green-100 text-green-700 rounded">
-                                        上色
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          })() : (
-                            <div className="text-xs text-gray-500">未关联</div>
-                          )}
-                        </td>
-                        <td className="border border-gray-200 px-4 py-2 text-sm text-gray-500">
-                          {category.created_at ? new Date(category.created_at).toLocaleString('zh-CN') : '未知'}
-                        </td>
-                        <td className="border border-gray-200 px-4 py-2">
-                          <div className="flex gap-1 justify-center">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => startEdit(category)}
-                              className="flex items-center gap-1"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                              编辑
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleDelete(category.category_id, formatDisplayName(category.display_name))}
-                              className="flex items-center gap-1 text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              删除
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

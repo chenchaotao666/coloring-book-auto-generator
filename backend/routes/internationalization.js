@@ -344,14 +344,81 @@ async function translateItems(type, items, targetLanguages) {
         // 移除可能的markdown代码块标记
         cleanedText = cleanedText.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')
 
+        // 添加特殊字符处理函数
+        function sanitizeJsonString(jsonString) {
+          try {
+            // 先尝试直接解析，如果成功就不需要清理
+            JSON.parse(jsonString)
+            return jsonString
+          } catch (e) {
+            console.log('需要清理JSON字符串中的特殊字符，错误:', e.message)
+
+            // 改进的清理方法：保留换行符和HTML标签，但确保正确转义
+            let result = jsonString
+
+            // 首先处理其他控制字符（但保留换行符、回车符、制表符）
+            result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
+
+            // 使用状态机来跟踪是否在字符串内部，正确转义特殊字符
+            let inString = false
+            let escaped = false
+            let resultChars = []
+
+            for (let i = 0; i < result.length; i++) {
+              const char = result[i]
+
+              if (escaped) {
+                escaped = false
+                resultChars.push(char)
+                continue
+              }
+
+              if (char === '\\') {
+                escaped = true
+                resultChars.push(char)
+                continue
+              }
+
+              if (char === '"') {
+                inString = !inString
+                resultChars.push(char)
+                continue
+              }
+
+              // 如果在字符串内部，需要转义特殊字符但保留内容
+              if (inString) {
+                if (char === '\n') {
+                  resultChars.push('\\', 'n')  // 转义换行符但保留其含义
+                } else if (char === '\r') {
+                  resultChars.push('\\', 'r')  // 转义回车符但保留其含义
+                } else if (char === '\t') {
+                  resultChars.push('\\', 't')  // 转义制表符但保留其含义
+                } else {
+                  resultChars.push(char)  // 其他字符（包括HTML标签）直接保留
+                }
+              } else {
+                resultChars.push(char)
+              }
+            }
+
+            result = resultChars.join('')
+            console.log('清理后尝试再次解析...')
+            return result
+          }
+        }
+
         // 尝试提取JSON部分（最外层的大括号）
         const jsonMatch = cleanedText.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
           console.log('提取的JSON部分:', jsonMatch[0])
-          translationData = JSON.parse(jsonMatch[0])
+          const sanitizedJson = sanitizeJsonString(jsonMatch[0])
+          console.log('清理后的JSON:', sanitizedJson)
+          translationData = JSON.parse(sanitizedJson)
         } else {
           console.log('直接解析整个响应作为JSON')
-          translationData = JSON.parse(cleanedText)
+          const sanitizedJson = sanitizeJsonString(cleanedText)
+          console.log('清理后的JSON:', sanitizedJson)
+          translationData = JSON.parse(sanitizedJson)
         }
 
         console.log('解析后的翻译数据:', JSON.stringify(translationData, null, 2))
@@ -502,16 +569,32 @@ function buildTranslationPrompt(type, items, targetLanguages) {
 
   const languageNames = targetLanguages.map(lang => SUPPORTED_LANGUAGES[lang]).join('、')
 
-  let prompt = `作为专业翻译专家，请将以下${typeLabel}准确翻译成${languageNames}。
+  // 检测主要基础语言（大多数项目使用的语言）
+  const baseLanguageCounts = {}
+  items.forEach(item => {
+    const baseLang = item.baseLanguage || 'zh'
+    baseLanguageCounts[baseLang] = (baseLanguageCounts[baseLang] || 0) + 1
+  })
+
+  const primaryBaseLanguage = Object.keys(baseLanguageCounts).reduce((a, b) =>
+    baseLanguageCounts[a] > baseLanguageCounts[b] ? a : b, 'zh')
+
+  const baseLanguageName = SUPPORTED_LANGUAGES[primaryBaseLanguage] || '中文'
+
+  let prompt = `作为专业翻译专家，请将以下${typeLabel}从${baseLanguageName}准确翻译成${languageNames}。
 
 重要要求：
-1. 翻译要自然、准确、专业，适合儿童涂色书应用场景
-2. 保持原文的意思和语调，符合目标语言习惯
-3. 对于涂色书主题，要使用儿童友好的表达方式
-4. AI提示词要保持技术性，但翻译要准确
-5. 必须严格按照JSON格式返回，不要添加任何解释文字
-6. 确保每个项目的ID都在返回的JSON中
-${type === 'content' ? '7. name字段是简短名称，title字段是完整标题，description是详细内容描述，prompt是AI生成图片的提示词，additionalInfo是文案内容' : ''}
+1. 原文主要使用${baseLanguageName}，请基于原文进行翻译
+2. 翻译要自然、准确、专业，适合儿童涂色书应用场景
+3. 保持原文的意思和语调，符合目标语言习惯
+4. 对于涂色书主题，要使用儿童友好的表达方式
+5. AI提示词要保持技术性，但翻译要准确
+6. 必须严格按照JSON格式返回，不要添加任何解释文字
+7. 确保每个项目的ID都在返回的JSON中
+8. 可以保留HTML标签（如<h2>、<h3>等）和换行符来保持格式
+9. 确保所有双引号在JSON字符串中正确转义为 \"
+10. 保持原文的段落结构和格式标签
+${type === 'content' ? '11. name字段是简短名称，title字段是完整标题，description是详细内容描述，prompt是AI生成图片的提示词，additionalInfo是文案内容' : ''}
 
 需要翻译的${typeLabel}：
 `
@@ -523,9 +606,12 @@ ${type === 'content' ? '7. name字段是简短名称，title字段是完整标�
       return
     }
 
+    const itemBaseLanguage = item.baseLanguage || 'zh'
+    const itemBaseLanguageName = SUPPORTED_LANGUAGES[itemBaseLanguage] || '中文'
+
     if (type === 'content') {
       prompt += `
-ID: ${item.id}
+ID: ${item.id} (原文语言: ${itemBaseLanguageName})
 简短名称: ${item.name || ''}
 完整标题: ${item.title || ''}
 内容描述: ${item.description || ''}
@@ -534,7 +620,7 @@ AI提示词: ${item.prompt || ''}
 ---`
     } else {
       prompt += `
-ID: ${item.id}
+ID: ${item.id} (原文语言: ${itemBaseLanguageName})
 名称: ${item.name}
 描述: ${item.description || ''}
 ---`
@@ -561,9 +647,12 @@ ${targetLanguages.map(lang => `${lang}: ${SUPPORTED_LANGUAGES[lang]}`).join('\n'
 - 包含所有${items.length}个项目
 - 每个项目包含所有${targetLanguages.length}种目标语言
 - 翻译自然流畅，符合目标语言习惯
-- 不要添加任何JSON之外的文字说明`
+- 不要添加任何JSON之外的文字说明
+- 保留原文的HTML标签和换行符格式
+- 只需要转义JSON中的双引号（\" ），其他格式标签可以直接使用
+- 所有内容应该是有效的JSON字符串，可以被JSON.parse()正确解析`
 
   return prompt
 }
 
-module.exports = router 
+module.exports = router

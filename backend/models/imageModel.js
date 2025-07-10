@@ -23,6 +23,11 @@ class ImageModel {
       params.push(filters.isPublic)
     }
 
+    if (filters.isOnline !== undefined) {
+      whereConditions.push('i.isOnline = ?')
+      params.push(filters.isOnline)
+    }
+
     if (filters.userId) {
       whereConditions.push('i.userId = ?')
       params.push(filters.userId)
@@ -49,7 +54,7 @@ class ImageModel {
     const sql = `
       SELECT 
         i.id, i.name, i.defaultUrl, i.colorUrl, i.coloringUrl,
-        i.title, i.description, i.type, i.ratio, i.isPublic, i.hotness,
+        i.title, i.description, i.type, i.ratio, i.isPublic, i.isOnline, i.hotness,
         i.createdAt, i.updatedAt, i.prompt, i.userId, i.categoryId, i.size, i.additionalInfo, i.taskId,
         c.display_name as category_display_name
       FROM images i
@@ -89,7 +94,7 @@ class ImageModel {
     const sql = `
       SELECT 
         i.id, i.name, i.defaultUrl, i.colorUrl, i.coloringUrl,
-        i.title, i.description, i.type, i.ratio, i.isPublic, i.hotness,
+        i.title, i.description, i.type, i.ratio, i.isPublic, i.isOnline, i.hotness,
         i.createdAt, i.updatedAt, i.prompt, i.userId, i.categoryId, i.size, i.additionalInfo, i.taskId,
         c.display_name as category_display_name
       FROM images i
@@ -115,7 +120,7 @@ class ImageModel {
   static async create(imageData) {
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, hotness, prompt, userId, categoryId, size, additionalInfo, taskId, tagIds
+      type, ratio, isPublic, isOnline, hotness, prompt, userId, categoryId, size, additionalInfo, taskId, tagIds
     } = imageData
 
     const imageId = uuidv4() // 使用UUID作为主键
@@ -126,7 +131,7 @@ class ImageModel {
     const insertImageSql = `
       INSERT INTO images (
         id, name, defaultUrl, colorUrl, coloringUrl, title, description,
-        type, ratio, isPublic, hotness, prompt, userId, categoryId, size, additionalInfo, taskId
+        type, ratio, isPublic, isOnline, hotness, prompt, userId, categoryId, size, additionalInfo, taskId
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     const insertImageParams = [
@@ -140,6 +145,7 @@ class ImageModel {
       type || null,
       ratio || null,
       isPublic !== undefined ? isPublic : null,
+      isOnline !== undefined ? isOnline : 1, // 默认上线
       hotness || 0,
       JSON.stringify(prompt || {}),
       userId || null,
@@ -209,6 +215,10 @@ class ImageModel {
     if (imageData.isPublic !== undefined) {
       updateFields.push('isPublic = ?')
       params.push(imageData.isPublic)
+    }
+    if (imageData.isOnline !== undefined) {
+      updateFields.push('isOnline = ?')
+      params.push(imageData.isOnline)
     }
     if (imageData.hotness !== undefined) {
       updateFields.push('hotness = ?')
@@ -327,7 +337,7 @@ class ImageModel {
     const sql = `
       SELECT DISTINCT
         i.id, i.name, i.defaultUrl, i.colorUrl, i.coloringUrl,
-        i.title, i.description, i.type, i.ratio, i.isPublic, i.hotness,
+        i.title, i.description, i.type, i.ratio, i.isPublic, i.isOnline, i.hotness,
         i.createdAt, i.updatedAt, i.prompt, i.userId, i.categoryId, i.size, i.additionalInfo, i.taskId,
         c.display_name as category_display_name
       FROM images i

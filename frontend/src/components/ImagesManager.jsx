@@ -15,7 +15,6 @@ import {
   Image as ImageIcon,
   Languages,
   Palette,
-  Plus,
   RefreshCw,
   Save,
   Search,
@@ -70,6 +69,8 @@ const ImagesManager = () => {
     type: 'text2image',
     ratio: '1:1',
     isPublic: true,
+    isOnline: true, // 默认上线
+    hotness: 0,
     categoryId: null,
     size: '',
     tagIds: []
@@ -339,6 +340,7 @@ const ImagesManager = () => {
       type: 'text2image',
       ratio: '1:1',
       isPublic: true,
+      isOnline: true, // 默认上线
       hotness: 0,
       categoryId: null,
       size: '',
@@ -394,10 +396,122 @@ const ImagesManager = () => {
     return parsed.zh || parsed.en || Object.values(parsed)[0] || '未设置'
   }
 
+  // 双语显示多语言字段（中文+英文）
+  const formatMultiLangFieldBilingual = (field) => {
+    if (!field) return '未设置'
+
+    let parsed = {}
+    if (typeof field === 'string') {
+      try {
+        parsed = JSON.parse(field)
+      } catch {
+        parsed = { zh: field }
+      }
+    } else if (typeof field === 'object') {
+      parsed = field || {}
+    }
+
+    const zh = parsed.zh?.trim()
+    const en = parsed.en?.trim()
+
+    if (zh && en) {
+      return (
+        <div className="space-y-1">
+          <div className="font-medium">{zh}</div>
+          <div className="text-sm text-gray-500">{en}</div>
+        </div>
+      )
+    } else if (zh) {
+      return <div className="font-medium">{zh}</div>
+    } else if (en) {
+      return <div className="font-medium">{en}</div>
+    } else {
+      const firstValue = Object.values(parsed)[0]
+      return firstValue ? <div className="font-medium">{firstValue}</div> : <div className="font-medium text-gray-400">未设置</div>
+    }
+  }
+
   // 获取分类名称
   const getCategoryName = (categoryId) => {
     const category = categories.find(cat => cat.category_id === categoryId)
     return category ? formatMultiLangField(category.display_name) : '未分类'
+  }
+
+  // 获取基础语言内容（优先英文，后中文）
+  const getBaseLanguageContent = (multiLangData) => {
+    if (!multiLangData) return { lang: 'zh', content: '' }
+
+    let parsedData = {}
+    if (typeof multiLangData === 'string') {
+      try {
+        parsedData = JSON.parse(multiLangData)
+      } catch {
+        return { lang: 'zh', content: multiLangData }
+      }
+    } else if (typeof multiLangData === 'object') {
+      parsedData = multiLangData || {}
+    }
+
+    // 优先检查英文，然后中文
+    if (parsedData.en && parsedData.en.trim()) {
+      return { lang: 'en', content: parsedData.en }
+    } else if (parsedData.zh && parsedData.zh.trim()) {
+      return { lang: 'zh', content: parsedData.zh }
+    } else {
+      // 如果都没有，取第一个有内容的语言
+      for (const [lang, content] of Object.entries(parsedData)) {
+        if (content && content.trim()) {
+          return { lang, content }
+        }
+      }
+    }
+
+    return { lang: 'zh', content: '' }
+  }
+
+  // 获取图片的语言种类
+  const getImageLanguages = (image) => {
+    const allLanguages = new Set()
+
+    // 检查各个多语言字段中存在的语言
+    const fieldsToCheck = ['name', 'title', 'description', 'prompt', 'additionalInfo']
+    fieldsToCheck.forEach(field => {
+      const fieldValue = image[field]
+      if (fieldValue) {
+        let parsed = {}
+        if (typeof fieldValue === 'string') {
+          try {
+            parsed = JSON.parse(fieldValue)
+          } catch {
+            // 如果是普通字符串，默认为中文
+            parsed = { zh: fieldValue }
+          }
+        } else if (typeof fieldValue === 'object') {
+          parsed = fieldValue || {}
+        }
+
+        // 添加有内容的语言到集合中
+        Object.entries(parsed).forEach(([lang, value]) => {
+          if (value && value.trim()) {
+            allLanguages.add(lang)
+          }
+        })
+      }
+    })
+
+    return Array.from(allLanguages)
+  }
+
+  // 格式化语言列表显示
+  const formatLanguageList = (languages) => {
+    if (languages.length === 0) return '未设置'
+
+    return languages
+      .map(code => {
+        const lang = supportedLanguages.find(l => l.code === code)
+        return lang ? lang.name : code.toUpperCase()
+      })
+      .join(', ')
   }
 
   // 开始编辑
@@ -428,6 +542,7 @@ const ImagesManager = () => {
       type: image.type || 'text2image',
       ratio: image.ratio || '1:1',
       isPublic: image.isPublic !== undefined ? image.isPublic : true,
+      isOnline: image.isOnline !== undefined ? image.isOnline : true, // 默认上线
       hotness: image.hotness || 0,
       categoryId: image.categoryId || null,
       size: image.size || '',
@@ -935,14 +1050,10 @@ const ImagesManager = () => {
                 // 第三步：如果目标图片正在编辑中，更新表单
                 if (editingId && lockedTargetImageId.toString() === editingId.toString()) {
                   console.log('🔥 目标图片正在编辑中，更新表单')
-                  setFormData(prev => {
-                    const newFormData = {
-                      ...prev,
-                      coloringUrl: coloringUrl
-                    }
-                    console.log('🔥 表单数据已更新:', newFormData)
-                    return newFormData
-                  })
+                  setFormData(prev => ({
+                    ...prev,
+                    coloringUrl: coloringUrl
+                  }))
                   setSuccess('上色生成成功！图片URL已更新到输入框中。')
                 } else {
                   console.log('🔥 目标图片不在编辑中，只更新数据库和列表')
@@ -1525,14 +1636,25 @@ const ImagesManager = () => {
 
     try {
       const selectedImagesData = images.filter(img => selectedItems.has(img.id))
-      const contentToTranslate = selectedImagesData.map(img => ({
-        id: img.id,
-        name: formatMultiLangField(img.name),
-        title: formatMultiLangField(img.title),
-        description: formatMultiLangField(img.description),
-        prompt: formatMultiLangField(img.prompt),
-        additionalInfo: formatMultiLangField(img.additionalInfo) // 添加文案内容字段
-      }))
+      const contentToTranslate = selectedImagesData.map(img => {
+        // 使用智能基础语言选择
+        const nameData = getBaseLanguageContent(img.name)
+        const titleData = getBaseLanguageContent(img.title)
+        const descriptionData = getBaseLanguageContent(img.description)
+        const promptData = getBaseLanguageContent(img.prompt)
+        const additionalInfoData = getBaseLanguageContent(img.additionalInfo)
+
+        return {
+          id: img.id,
+          name: nameData.content,
+          title: titleData.content,
+          description: descriptionData.content,
+          prompt: promptData.content,
+          additionalInfo: additionalInfoData.content,
+          // 添加基础语言信息
+          baseLanguage: nameData.lang || titleData.lang || 'en' // 优先使用有内容字段的语言
+        }
+      })
 
       const response = await apiFetch('/api/internationalization', {
         method: 'POST',
@@ -1739,24 +1861,24 @@ const ImagesManager = () => {
     })
 
     try {
-      // 获取中文内容作为源内容
-      const sourceContent = {
-        name: formatMultiLangField(originalImage.name),
-        title: formatMultiLangField(originalImage.title),
-        description: formatMultiLangField(originalImage.description),
-        prompt: formatMultiLangField(originalImage.prompt),
-        additionalInfo: formatMultiLangField(originalImage.additionalInfo)
-      }
+      // 使用智能基础语言选择（优先英文，后中文）
+      const nameData = getBaseLanguageContent(originalImage.name)
+      const titleData = getBaseLanguageContent(originalImage.title)
+      const descriptionData = getBaseLanguageContent(originalImage.description)
+      const promptData = getBaseLanguageContent(originalImage.prompt)
+      const additionalInfoData = getBaseLanguageContent(originalImage.additionalInfo)
 
       const requestData = {
         type: 'content',
         items: [{
           id: imageId,
-          name: sourceContent.name,
-          title: sourceContent.title,
-          description: sourceContent.description,
-          prompt: sourceContent.prompt,
-          additionalInfo: sourceContent.additionalInfo
+          name: nameData.content,
+          title: titleData.content,
+          description: descriptionData.content,
+          prompt: promptData.content,
+          additionalInfo: additionalInfoData.content,
+          // 添加基础语言信息
+          baseLanguage: nameData.lang || titleData.lang || 'en' // 优先使用有内容字段的语言
         }],
         targetLanguages: [languageCode]
       }
@@ -1769,17 +1891,10 @@ const ImagesManager = () => {
       const data = await response.json()
 
       if (data.success && data.results[imageId] && data.results[imageId][languageCode]) {
-        // 更新翻译结果
+        // 获取翻译结果
         const newTranslation = data.results[imageId][languageCode]
-        setInternationalizationResults(prev => ({
-          ...prev,
-          [imageId]: {
-            ...prev[imageId],
-            [languageCode]: newTranslation
-          }
-        }))
 
-        // 如果当前正在编辑这个图片，也要更新formData
+        // 如果当前正在编辑这个图片，直接更新formData
         if (editingId && editingId.toString() === imageId.toString()) {
           setFormData(prev => ({
             ...prev,
@@ -1810,9 +1925,6 @@ const ImagesManager = () => {
             setEditingLanguages(prev => [...prev, languageCode])
           }
         }
-
-        // 设置活跃语言为当前生成的语言
-        setActiveInternationalizationLanguage(languageCode)
 
         // 清除生成状态
         setSingleTranslationTasks(prev => {
@@ -1848,7 +1960,7 @@ const ImagesManager = () => {
 
   // 为ImageForm创建的检查函数
   const isGeneratingTranslationForForm = (formData, languageCode) => {
-    if (!formData.id || !languageCode || languageCode === 'zh') return false
+    if (!formData.id || !languageCode) return false
     return isGeneratingTranslation(formData.id, languageCode)
   }
 
@@ -2383,13 +2495,6 @@ const ImagesManager = () => {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               刷新
             </Button>
-            <Button
-              onClick={startAdd}
-              className="flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              新增图片
-            </Button>
           </div>
         </div>
 
@@ -2485,7 +2590,7 @@ const ImagesManager = () => {
       <Dialog
         isOpen={showForm && tags.length >= 0}
         onClose={resetForm}
-        title={editingId ? '编辑图片' : '新增图片'}
+        title="编辑图片"
         maxWidth="max-w-6xl"
       >
         <DialogContent>
@@ -2716,16 +2821,16 @@ const ImagesManager = () => {
               {/* 图片列表 */}
               <div className="space-y-2">
                 {images.map((image) => (
-                  <div key={image.id} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50">
+                  <div key={image.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50">
                     {/* 选择框 */}
                     <button
                       onClick={() => toggleSelectItem(image.id)}
                       className="flex-shrink-0"
                     >
                       {selectedItems.has(image.id) ? (
-                        <CheckSquare className="w-5 h-5 text-blue-600" />
+                        <CheckSquare className="w-4 h-4 text-blue-600" />
                       ) : (
-                        <Square className="w-5 h-5 text-gray-400" />
+                        <Square className="w-4 h-4 text-gray-400" />
                       )}
                     </button>
 
@@ -2735,7 +2840,7 @@ const ImagesManager = () => {
                         <img
                           src={image.defaultUrl}
                           alt={formatMultiLangField(image.title)}
-                          className="w-16 h-16 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
+                          className="w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
                           onClick={() => {
                             // 优先显示上色版本，然后是彩色版本，最后是线稿版本
                             const urls = [image.defaultUrl, image.coloringUrl, image.colorUrl].filter(Boolean)
@@ -2750,7 +2855,7 @@ const ImagesManager = () => {
                           title="点击查看原图"
                         />
                       ) : null}
-                      <div className="hidden w-16 h-16 items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
+                      <div className="hidden w-12 h-12 items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
                         无图片
                       </div>
                     </div>
@@ -2758,67 +2863,58 @@ const ImagesManager = () => {
                     {/* 图片信息 */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-medium truncate">
-                          {formatMultiLangField(image.title)}
-                        </h3>
-                        <span className={`px-2 py-1 text-xs rounded-full ${image.type === 'coloring' ? 'bg-blue-100 text-blue-800' :
+                        <div className="truncate">
+                          {formatMultiLangFieldBilingual(image.title)}
+                        </div>
+                        <span className={`px-2 py-0.5 text-xs rounded-full whitespace-nowrap ${image.type === 'coloring' ? 'bg-blue-100 text-blue-800' :
                           image.type === 'uploaded' ? 'bg-green-100 text-green-800' :
                             'bg-purple-100 text-purple-800'
                           }`}>
                           {typeOptions.find(opt => opt.value === image.type)?.label || image.type}
                         </span>
                         {image.isPublic && (
-                          <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-800 whitespace-nowrap">
                             公开
                           </span>
                         )}
+                        {image.isOnline ? (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-800 whitespace-nowrap">
+                            上线
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600 whitespace-nowrap">
+                            离线
+                          </span>
+                        )}
+                        {image.coloringUrl && (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-800 whitespace-nowrap">已上色</span>
+                        )}
                       </div>
-                      <p className="text-sm text-gray-600 truncate">
-                        {formatMultiLangField(image.description) || '无描述'}
-                      </p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                        <span>分类: {getCategoryName(image.categoryId)}</span>
-                        <span>比例: {image.ratio}</span>
-                        {/* {image.size && <span>尺寸: {image.size}</span>} */}
-                        <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <span className="truncate">分类: {getCategoryName(image.categoryId)}</span>
+                        <span className="whitespace-nowrap">比例: {image.ratio}</span>
+                        <div className="flex items-center gap-1 whitespace-nowrap">
                           <span>热度:</span>
                           <span className="font-medium text-orange-600">{image.hotness || 0}</span>
-                          <div className="w-8 h-1 bg-gray-200 rounded-full overflow-hidden">
+                          <div className="w-6 h-1 bg-gray-200 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-blue-400 to-orange-500 rounded-full"
                               style={{ width: `${Math.min(100, (image.hotness || 0) / 10)}%` }}
                             ></div>
                           </div>
                         </div>
-                        {image.coloringUrl && (
-                          <span className="text-orange-600 font-medium">已上色</span>
-                        )}
+                        <div className="flex items-center gap-1 whitespace-nowrap">
+                          <Languages className="w-3 h-3" />
+                          <span>{formatLanguageList(getImageLanguages(image))}</span>
+                        </div>
                         {image.tags && image.tags.length > 0 && (
-                          <span>标签: {image.tags.map(tag => formatMultiLangField(tag.display_name)).join(', ')}</span>
+                          <span className="truncate">标签: {image.tags.map(tag => formatMultiLangField(tag.display_name)).join(', ')}</span>
                         )}
                       </div>
                     </div>
 
                     {/* 操作按钮 */}
-                    <div className="flex items-center gap-2">
-                      {/* 预览按钮 */}
-                      {/* {(image.defaultUrl || image.colorUrl || image.coloringUrl) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            // 优先显示上色版本，然后是彩色版本，最后是线稿版本
-                            const urls = [image.coloringUrl, image.colorUrl, image.defaultUrl].filter(Boolean)
-                            if (urls.length > 0) {
-                              window.open(urls[0], '_blank')
-                            }
-                          }}
-                          className="flex items-center gap-1"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                      )} */}
-
+                    <div className="flex items-center gap-1">
                       {/* 上色按钮 */}
                       {image.defaultUrl && !image.coloringUrl && (
                         <Button
@@ -2826,12 +2922,12 @@ const ImagesManager = () => {
                           size="sm"
                           onClick={() => handleManualColoring(image.id, image)}
                           disabled={isGeneratingListColoring(image.id)}
-                          className="flex items-center gap-1 text-orange-600 hover:text-orange-700 disabled:opacity-50"
+                          className="flex items-center gap-1 text-orange-600 hover:text-orange-700 disabled:opacity-50 h-8 px-2"
                           title={isGeneratingListColoring(image.id) ?
                             `正在上色中... ${getListColoringTaskStatus(image.id)?.progress || 0}%` :
                             "为图片生成上色版本"}
                         >
-                          <Palette className={`w-4 h-4 ${isGeneratingListColoring(image.id) ? 'animate-spin' : ''}`} />
+                          <Palette className={`w-3 h-3 ${isGeneratingListColoring(image.id) ? 'animate-spin' : ''}`} />
                           {isGeneratingListColoring(image.id) && (
                             <span className="text-xs">
                               {getListColoringTaskStatus(image.id)?.progress || 0}%
@@ -2844,17 +2940,17 @@ const ImagesManager = () => {
                         variant="ghost"
                         size="sm"
                         onClick={() => startEdit(image)}
-                        className="flex items-center gap-1"
+                        className="flex items-center gap-1 h-8 px-2"
                       >
-                        <Edit3 className="w-4 h-4" />
+                        <Edit3 className="w-3 h-3" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleDelete(image.id, image.title)}
-                        className="flex items-center gap-1 text-red-600 hover:text-red-700"
+                        className="flex items-center gap-1 text-red-600 hover:text-red-700 h-8 px-2"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3 h-3" />
                       </Button>
                     </div>
                   </div>

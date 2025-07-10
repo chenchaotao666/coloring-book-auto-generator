@@ -292,8 +292,14 @@ router.post('/', async (req, res) => {
   try {
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, hotness, prompt, userId, category_id, size, additionalInfo, tagIds
+      type, ratio, isPublic, isOnline, hotness, prompt, userId, category_id, size, additionalInfo, tagIds
     } = req.body
+
+    console.log('🔍 POST /api/images - 接收到的数据:', {
+      isPublic,
+      isOnline,
+      title: typeof title === 'object' ? Object.keys(title) : title
+    })
 
     // 验证必填字段
     if (!title || !type) {
@@ -313,6 +319,7 @@ router.post('/', async (req, res) => {
       type,
       ratio: ratio || '1:1',
       isPublic: isPublic !== undefined ? isPublic : true,
+      isOnline: isOnline !== undefined ? isOnline : true, // 默认上线
       hotness: hotness || 0,
       prompt: prompt || {},
       userId: userId || null,
@@ -321,6 +328,11 @@ router.post('/', async (req, res) => {
       additionalInfo: additionalInfo || {},
       tagIds: tagIds || []
     }
+
+    console.log('🔍 POST /api/images - 处理后的数据:', {
+      isPublic: imageData.isPublic,
+      isOnline: imageData.isOnline
+    })
 
     const newImage = await ImageModel.create(imageData)
 
@@ -345,8 +357,15 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, hotness, prompt, userId, categoryId, size, additionalInfo, tagIds
+      type, ratio, isPublic, isOnline, hotness, prompt, userId, categoryId, size, additionalInfo, tagIds
     } = req.body
+
+    console.log('🔍 PUT /api/images/:id - 接收到的数据:', {
+      id,
+      isPublic,
+      isOnline,
+      title: typeof title === 'object' ? Object.keys(title) : title
+    })
 
     // 检查图片是否存在
     const existingImage = await ImageModel.getById(id)
@@ -381,6 +400,7 @@ router.put('/:id', async (req, res) => {
       type,
       ratio: ratio || '1:1',
       isPublic: isPublic !== undefined ? isPublic : true,
+      isOnline: isOnline !== undefined ? isOnline : (existingImage.isOnline !== undefined ? existingImage.isOnline : true), // 保持现有值或默认上线
       hotness: hotness !== undefined ? hotness : (existingImage.hotness || 0),
       prompt: prompt ?
         (typeof prompt === 'object' ? prompt : { zh: prompt }) :
@@ -396,6 +416,8 @@ router.put('/:id', async (req, res) => {
 
     console.log(`🔧 PUT /api/images/${id} - 更新数据:`, {
       id,
+      isPublic: imageData.isPublic,
+      isOnline: imageData.isOnline,
       coloringUrl: coloringUrl,
       coloringUrlType: typeof coloringUrl,
       willUpdate: coloringUrl !== undefined
