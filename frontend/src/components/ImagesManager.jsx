@@ -668,7 +668,7 @@ const ImagesManager = () => {
       console.log('提交的表单数据:', submitData)
       console.log('分类ID值:', formData.categoryId, '类型:', typeof formData.categoryId)
 
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
