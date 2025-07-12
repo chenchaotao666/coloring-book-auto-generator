@@ -12,6 +12,9 @@ const { v4: uuidv4 } = require('uuid')
 // 引入重构后的图片服务
 const imageService = require('../services/imageColoringService')
 
+// 引入存储配置
+const { MINIO_CONFIG } = require('../config/storage.config')
+
 // 配置multer用于文件上传
 const storage = multer.memoryStorage() // 使用内存存储，直接处理Buffer
 const upload = multer({
@@ -711,7 +714,7 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
       // 上传文件到公网存储（用户上传的彩色图片）
       try {
         const { uploadFileAndGetUrl, testImageDownload } = require('../utils/storageUtil');
-        const storagePath = `chenchaotao/color/${filename}`;
+        const storagePath = `${MINIO_CONFIG.STORAGE_PATHS['IMAGE_TO_IMAGE']}/${filename}`;
         console.log('开始上传文件到存储，路径:', storagePath);
         imageUrl = await uploadFileAndGetUrl(req.file, storagePath);
         console.log('文件上传完成:', imageUrl);

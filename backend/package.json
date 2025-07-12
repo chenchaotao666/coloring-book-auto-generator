@@ -8,6 +8,7 @@
     "start": "node server.js",
     "build": "npm run test:db && npm run check:deps",
     "test:db": "node test-db-connection.js",
+    "test:minio": "node -e \"const { Client } = require('minio'); require('dotenv').config(); const { MINIO_CONFIG } = require('./config/storage.config.js'); async function test() { try { const endpoint = MINIO_CONFIG.ENDPOINT.replace('http://', '').replace('https://', ''); const [host, port] = endpoint.split(':'); const minioClient = new Client({ endPoint: host, port: parseInt(port) || 9000, useSSL: MINIO_CONFIG.USE_SSL, accessKey: MINIO_CONFIG.ACCESS_KEY_ID, secretKey: MINIO_CONFIG.SECRET_ACCESS_KEY }); const bucketExists = await minioClient.bucketExists(MINIO_CONFIG.BUCKET_NAME); console.log('✅ MinIO连接测试成功!'); console.log('端点:', MINIO_CONFIG.ENDPOINT); console.log('存储桶:', MINIO_CONFIG.BUCKET_NAME, bucketExists ? '(存在)' : '(不存在)'); } catch (error) { console.error('❌ MinIO连接失败:', error.message); process.exit(1); } } test();\"",
     "check:deps": "npm audit --audit-level=moderate",
     "build:prod": "npm install --only=production",
     "prebuild": "echo 'Building backend...'",

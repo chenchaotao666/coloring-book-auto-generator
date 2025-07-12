@@ -7,6 +7,7 @@ const path = require('path');
 
 // 引入统一配置
 const {
+  MINIO_CONFIG,
   LOCAL_STORAGE_CONFIG,
   API_CONFIG,
   generateUniqueFilename,
@@ -250,7 +251,7 @@ async function processImageUrl(imageUrl) {
     // 生成唯一的文件路径
     const timestamp = Date.now();
     const randomId = uuidv4().split('-')[0];
-    const uploadPath = `chenchaotao/images/${timestamp}_${randomId}.png`;
+    const uploadPath = `${MINIO_CONFIG.BUCKET_NAME}/images/${timestamp}_${randomId}.png`;
 
     // 直接上传到MinIO公开存储
     const publicImageUrl = await uploadStreamAndGetUrl(fullImageUrl, uploadPath);
@@ -273,7 +274,7 @@ async function processImageUrl(imageUrl) {
     // 生成唯一的文件路径
     const timestamp = Date.now();
     const randomId = uuidv4().split('-')[0];
-    const uploadPath = `chenchaotao/images/${timestamp}_${randomId}.png`;
+    const uploadPath = `${MINIO_CONFIG.BUCKET_NAME}/images/${timestamp}_${randomId}.png`;
 
     // 上传到MinIO公开存储
     const publicImageUrl = await uploadStreamAndGetUrl(imageUrl, uploadPath);
