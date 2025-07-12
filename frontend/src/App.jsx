@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { apiFetch } from '@/config/api'
 import { AlertCircle, Check, CheckCircle, Clock, Edit3, Home, Image, ImageIcon, Languages, Palette, PlusCircle, Save, Settings, Tag, Trash2, X } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import CategoriesManager from './components/CategoriesManager'
 import ImageForm from './components/ImageForm'
 import ImagesManager from './components/ImagesManager'
@@ -316,6 +316,17 @@ Output \${count} festival themes in JSON format.`
   // Tab状态管理
   const [activeContentTab, setActiveContentTab] = useState(0) // 当前活跃的内容tab索引
 
+  // 图片加载状态
+  const [imageLoadingStates, setImageLoadingStates] = useState(new Map()) // key: itemId, value: {defaultUrl: boolean, coloringUrl: boolean}
+
+  // 默认设置状态
+  const [defaultSettings, setDefaultSettings] = useState({
+    categoryId: null, // 默认分类ID
+    tagIds: [], // 默认标签ID数组
+    hotness: 0, // 默认热度值
+    imageFormat: 'png' // 默认图片格式
+  })
+
   // 支持的语言配置
   const supportedLanguages = [
     { code: 'zh', name: '中文' },
@@ -424,6 +435,58 @@ Output \${count} festival themes in JSON format.`
     }))
   }
 
+  // 处理图片加载完成
+  const handleImageLoad = (itemId, field) => {
+    setImageLoadingStates(prev => {
+      const newMap = new Map(prev)
+      const currentState = newMap.get(itemId) || {}
+      newMap.set(itemId, { ...currentState, [field]: false })
+      return newMap
+    })
+  }
+
+  // 处理图片加载错误
+  const handleImageError = (itemId, field) => {
+    setImageLoadingStates(prev => {
+      const newMap = new Map(prev)
+      const currentState = newMap.get(itemId) || {}
+      newMap.set(itemId, { ...currentState, [field]: false })
+      return newMap
+    })
+  }
+
+  // 初始化图片加载状态
+  const initImageLoadingState = (itemId, fields) => {
+    setImageLoadingStates(prev => {
+      const newMap = new Map(prev)
+      const loadingState = {}
+      fields.forEach(field => {
+        loadingState[field] = true
+      })
+      newMap.set(itemId, loadingState)
+      return newMap
+    })
+  }
+
+  // 处理Tab切换，立即设置图片为loading状态
+  const handleTabChange = (index) => {
+    setActiveContentTab(index)
+
+    // 获取切换到的tab对应的item
+    const item = contentList[index]
+    if (item) {
+      // 立即设置所有图片类型为loading状态
+      const fieldsToLoad = []
+      if (item.imagePath) fieldsToLoad.push('defaultUrl')
+      if (item.coloringUrl) fieldsToLoad.push('coloringUrl')
+      if (item.colorUrl) fieldsToLoad.push('colorUrl')
+
+      if (fieldsToLoad.length > 0) {
+        initImageLoadingState(item.id, fieldsToLoad)
+      }
+    }
+  }
+
   // 生成内容
   // 第一步：生成主题
   const generateThemes = async () => {
@@ -485,7 +548,7 @@ Output \${count} festival themes in JSON format.`
                     imagePath: null,
                     coloringUrl: null, // 初始化上色URL字段
                     imageRatio: globalImageRatio, // 使用当前全局比例作为默认值
-                    hotness: 0 // 初始化热度值
+                    hotness: defaultSettings.hotness // 使用默认热度值
                   }
                   setContentList(prev => {
                     const newList = [...prev, newItem]
@@ -499,6 +562,23 @@ Output \${count} festival themes in JSON format.`
                     const existingLanguages = getExistingLanguages(newItem)
                     return new Map(prevLangs.set(newItem.id, existingLanguages))
                   })
+
+                  // 初始化默认分类和标签选择
+                  if (defaultSettings.categoryId) {
+                    setImageCategorySelections(prev => {
+                      const newMap = new Map(prev)
+                      newMap.set(newItem.id, defaultSettings.categoryId)
+                      return newMap
+                    })
+                  }
+
+                  if (defaultSettings.tagIds.length > 0) {
+                    setImageTagSelections(prev => {
+                      const newMap = new Map(prev)
+                      newMap.set(newItem.id, new Set(defaultSettings.tagIds))
+                      return newMap
+                    })
+                  }
 
                   setGenerationProgress(prev => ({
                     ...prev,
@@ -818,6 +898,10 @@ Output \${count} festival themes in JSON format.`
         setContentList(prev => prev.map(item => {
           const imageInfo = progress.images[item.id]
           if (imageInfo && imageInfo.imagePath) {
+            // 初始化新图片的loading状态
+            if (!item.imagePath) {
+              initImageLoadingState(item.id, ['defaultUrl'])
+            }
             return { ...item, imagePath: imageInfo.imagePath }
           }
           return item
@@ -1170,11 +1254,16 @@ Output \${count} festival themes in JSON format.`
                 const coloringUrl = data.data.coloringUrl || data.data.imageUrl
 
                 // 任务完成，更新contentList
-                setContentList(prev => prev.map(item =>
-                  item.id === taskInfo.itemId
-                    ? { ...item, coloringUrl: coloringUrl }
-                    : item
-                ))
+                setContentList(prev => prev.map(item => {
+                  if (item.id === taskInfo.itemId) {
+                    // 初始化新上色图片的loading状态
+                    if (!item.coloringUrl) {
+                      initImageLoadingState(item.id, ['coloringUrl'])
+                    }
+                    return { ...item, coloringUrl: coloringUrl }
+                  }
+                  return item
+                }))
 
                 // 如果正在查看详情弹框，且更新的项目与查看的项目匹配，同步更新viewingContent
                 if (viewingContent && viewingContent.id === taskInfo.itemId) {
@@ -1355,7 +1444,7 @@ Output \${count} festival themes in JSON format.`
           size: item.size || '',
           categoryId: categoryId,
           tagIds: tagIds,
-          userId: 'frontend_user',
+          userId: 'system',
           additionalInfo: formatMultiLangField(item.content),
           frontendId: item.id // 添加前端ID用于关联
         }
@@ -1518,7 +1607,7 @@ Output \${count} festival themes in JSON format.`
   }
 
   // 设置图片的分类选择
-  const setImageCategory = (imageId, categoryId) => {
+  const setImageCategory = useCallback((imageId, categoryId) => {
     setImageCategorySelections(prev => {
       const newMap = new Map(prev)
       if (categoryId) {
@@ -1528,7 +1617,7 @@ Output \${count} festival themes in JSON format.`
       }
       return newMap
     })
-  }
+  }, [])
 
   // 切换图片的标签选择
   const toggleImageTag = (imageId, tagId) => {
@@ -2060,68 +2149,61 @@ Output \${count} festival themes in JSON format.`
   }
 
   // 将生成的内容项转换为ImageForm格式
-  const convertItemToFormData = (item) => {
-    // 优先使用已保存的分类和标签信息，如果没有则使用当前选择状态
-    let categoryId, tagIds
+  const convertItemToFormData = useMemo(() => {
+    return (item) => {
+      // 优先使用已保存的分类和标签信息，如果没有则使用当前选择状态
+      let categoryId, tagIds
 
-    if (item.savedToDatabase) {
-      // 如果已保存到数据库，优先使用保存的信息
-      categoryId = item.savedCategoryId || null
-      tagIds = item.savedTagIds || []
-    } else {
-      // 如果未保存，使用当前选择状态
-      categoryId = imageCategorySelections.get(item.id) || null
-      tagIds = Array.from(imageTagSelections.get(item.id) || [])
+      if (item.savedToDatabase) {
+        // 如果已保存到数据库，优先使用保存的信息
+        categoryId = item.savedCategoryId || null
+        tagIds = item.savedTagIds || []
+      } else {
+        // 如果未保存，使用当前选择状态
+        categoryId = imageCategorySelections.get(item.id) || null
+        tagIds = Array.from(imageTagSelections.get(item.id) || [])
+      }
+
+      // 处理多语言字段的辅助函数
+      const extractMultiLangField = (field, fallback = '') => {
+        if (!field) return { zh: fallback }
+        if (typeof field === 'object') return field
+        return { zh: field }
+      }
+
+      const formData = {
+        id: item.id, // 添加id字段，确保能够追踪到正确的item
+        name: extractMultiLangField(item.name || item.title),
+        title: extractMultiLangField(item.title),
+        description: extractMultiLangField(item.description),
+        prompt: extractMultiLangField(item.prompt),
+        additionalInfo: extractMultiLangField(item.content), // 将content作为additionalInfo（文案内容）
+        defaultUrl: item.imagePath || item.defaultUrl || '',  // 增加fallback
+        colorUrl: item.colorUrl || '',
+        coloringUrl: item.coloringUrl || '',  // 正确传递coloringUrl
+        type: item.type || 'text2image',
+        ratio: item.imageRatio || '1:1',
+        isPublic: item.isPublic !== undefined ? item.isPublic : true,
+        hotness: item.hotness || 0,
+        categoryId: categoryId,
+        size: item.size || '',
+        tagIds: tagIds
+      }
+
+      return formData
     }
+  }, [imageCategorySelections, imageTagSelections])
 
-    // 处理多语言字段的辅助函数
-    const extractMultiLangField = (field, fallback = '') => {
-      if (!field) return { zh: fallback }
-      if (typeof field === 'object') return field
-      return { zh: field }
+  // 缓存当前活跃tab的formData
+  const activeItemFormData = useMemo(() => {
+    if (contentList[activeContentTab]) {
+      return convertItemToFormData(contentList[activeContentTab])
     }
-
-    const formData = {
-      id: item.id, // 添加id字段，确保能够追踪到正确的item
-      name: extractMultiLangField(item.name || item.title),
-      title: extractMultiLangField(item.title),
-      description: extractMultiLangField(item.description),
-      prompt: extractMultiLangField(item.prompt),
-      additionalInfo: extractMultiLangField(item.content), // 将content作为additionalInfo（文案内容）
-      defaultUrl: item.imagePath || item.defaultUrl || '',  // 增加fallback
-      colorUrl: item.colorUrl || '',
-      coloringUrl: item.coloringUrl || '',  // 正确传递coloringUrl
-      type: item.type || 'text2image',
-      ratio: item.imageRatio || '1:1',
-      isPublic: item.isPublic !== undefined ? item.isPublic : true,
-      hotness: item.hotness || 0,
-      categoryId: categoryId,
-      size: item.size || '',
-      tagIds: tagIds
-    }
-
-    // 当有coloringUrl时，验证数据传递
-    if (item.coloringUrl) {
-      console.log(`🖼️ convertItemToFormData - 检测到coloringUrl:`)
-      console.log(`- 项目ID: ${item.id}`)
-      console.log(`- 原始coloringUrl: ${item.coloringUrl}`)
-      console.log(`- formData.coloringUrl: ${formData.coloringUrl}`)
-    }
-
-    // 每次转换都记录，方便调试
-    console.log(`🔄 convertItemToFormData - 项目 ${item.id}:`, {
-      hasColoringUrl: !!item.coloringUrl,
-      coloringUrl: item.coloringUrl,
-      formDataColoringUrl: formData.coloringUrl
-    })
-
-
-
-    return formData
-  }
+    return null
+  }, [contentList, activeContentTab, convertItemToFormData])
 
   // 处理生成内容的表单编辑
-  const handleContentFormChange = (itemId, field, lang, value) => {
+  const handleContentFormChange = useCallback((itemId, field, lang, value) => {
     setContentList(prevList =>
       prevList.map(item => {
         if (item.id === itemId) {
@@ -2205,7 +2287,7 @@ Output \${count} festival themes in JSON format.`
         return item
       })
     )
-  }
+  }, [imageTagSelections, setImageCategory])
 
   // 单个图片上色功能
   const handleSingleImageColoring = async (formData) => {
@@ -2593,42 +2675,25 @@ Output \${count} festival themes in JSON format.`
   }
 
   // 检查是否有正在进行的单个上色任务
-  const isGeneratingSingleColoring = (formData) => {
+  const isGeneratingSingleColoring = useCallback((formData) => {
+    if (!formData) return false
+
     const isGenerating = Array.from(singleColoringTasks.values()).some(task => {
       // 只检查processing状态的任务，不包括completed状态
       if (task.status === 'completed') {
         return false
       }
 
-      // 通过多种方式匹配任务
-      if (task.formDataId === formData.id) return true
-      if (task.frontendItemId === formData.id) return true
-      if (task.defaultUrl && (task.defaultUrl === formData.defaultUrl || task.defaultUrl === formData.imagePath)) return true
-
-      // 通过contentList查找匹配
-      const matchingItem = contentList.find(item =>
-        item.imagePath === formData.defaultUrl ||
-        item.defaultUrl === formData.defaultUrl ||
-        item.id === formData.id ||
-        item.databaseId === formData.id
+      // 简化匹配逻辑，减少对contentList的依赖
+      return (
+        task.formDataId === formData.id ||
+        task.frontendItemId === formData.id ||
+        (task.defaultUrl && (task.defaultUrl === formData.defaultUrl || task.defaultUrl === formData.imagePath))
       )
-
-      if (matchingItem && (
-        task.frontendItemId === matchingItem.id ||
-        task.formDataId === matchingItem.id ||
-        task.imageId === matchingItem.databaseId ||
-        task.defaultUrl === matchingItem.imagePath ||
-        task.defaultUrl === matchingItem.defaultUrl
-      )) {
-        return true
-      }
-
-      return false
     })
 
-    console.log(`🔍 检查是否正在生成上色 for ${formData.id}:`, isGenerating)
     return isGenerating
-  }
+  }, [singleColoringTasks])
 
   // 处理文生图
   const handleTextToImage = async (formData) => {
@@ -2815,7 +2880,8 @@ Output \${count} festival themes in JSON format.`
 
       const response = await apiFetch('/api/images/image-to-image', {
         method: 'POST',
-        body: formDataObj
+        body: formDataObj,
+        headers: {} // 清空默认headers，让浏览器自动设置multipart/form-data
       })
 
       const result = await response.json()
@@ -3289,52 +3355,43 @@ Output \${count} festival themes in JSON format.`
   }
 
   // 检查是否有正在进行的文生图任务
-  const isGeneratingTextToImage = (formData) => {
+  const isGeneratingTextToImage = useCallback((formData) => {
+    if (!formData) return false
     const task = textToImageTasks.get(formData.id)
     return task && (task.status === 'starting' || task.status === 'processing')
-  }
+  }, [textToImageTasks])
 
   // 检查是否有正在进行的图生图任务
-  const isGeneratingImageToImage = (formData) => {
+  const isGeneratingImageToImage = useCallback((formData) => {
+    if (!formData) return false
     const task = imageToImageTasks.get(formData.id)
     return task && (task.status === 'starting' || task.status === 'processing')
-  }
+  }, [imageToImageTasks])
 
   // 获取文生图任务状态
-  const getTextToImageTaskStatus = (formData) => {
+  const getTextToImageTaskStatus = useCallback((formData) => {
+    if (!formData) return null
     return textToImageTasks.get(formData.id)
-  }
+  }, [textToImageTasks])
 
   // 获取图生图任务状态
-  const getImageToImageTaskStatus = (formData) => {
+  const getImageToImageTaskStatus = useCallback((formData) => {
+    if (!formData) return null
     return imageToImageTasks.get(formData.id)
-  }
+  }, [imageToImageTasks])
 
   // 获取上色任务状态
-  const getColoringTaskStatus = (formData) => {
+  const getColoringTaskStatus = useCallback((formData) => {
+    if (!formData) return null
+
     // 通过多种方式查找上色任务状态
     for (const [taskId, task] of singleColoringTasks) {
-      // 详细的匹配逻辑，确保能找到对应的任务
+      // 简化匹配逻辑，减少对contentList的依赖
       const isMatch = (
         task.formDataId === formData.id ||
         task.frontendItemId === formData.id ||
         task.defaultUrl === formData.defaultUrl ||
-        task.defaultUrl === formData.imagePath ||
-        // 通过contentList进行额外匹配
-        (() => {
-          const matchingItem = contentList.find(item =>
-            item.id === formData.id ||
-            item.imagePath === formData.defaultUrl ||
-            item.defaultUrl === formData.defaultUrl
-          )
-          return matchingItem && (
-            task.frontendItemId === matchingItem.id ||
-            task.formDataId === matchingItem.id ||
-            task.imageId === matchingItem.databaseId ||
-            task.defaultUrl === matchingItem.imagePath ||
-            task.defaultUrl === matchingItem.defaultUrl
-          )
-        })()
+        task.defaultUrl === formData.imagePath
       )
 
       if (isMatch) {
@@ -3352,7 +3409,7 @@ Output \${count} festival themes in JSON format.`
     }
 
     return null
-  }
+  }, [singleColoringTasks])
 
   // 获取支持的比例选项（基于选择的API类型）
   const getSupportedRatios = (apiType) => {
@@ -3516,7 +3573,7 @@ Output \${count} festival themes in JSON format.`
 
                     <div className="space-y-2">
                       <Label htmlFor="globalImageRatio" className="text-sm font-medium">
-                        图片比例
+                        默认图片比例
                         {selectedApiType === 'gpt4o' && (
                           <span className="text-xs text-orange-600 ml-1">(GPT-4O限制)</span>
                         )}
@@ -3544,6 +3601,78 @@ Output \${count} festival themes in JSON format.`
                           ))}
                         </SelectContent>
                       </Select>
+                    </div>
+                  </div>
+
+                  {/* 默认设置 - 一排4个 */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="defaultCategory" className="text-sm font-medium">默认分类</Label>
+                      <Select
+                        value={defaultSettings.categoryId ? defaultSettings.categoryId.toString() : 'none'}
+                        onValueChange={(value) => setDefaultSettings(prev => ({
+                          ...prev,
+                          categoryId: value === 'none' ? null : value
+                        }))}
+                      >
+                        <SelectTrigger className="h-10">
+                          <SelectValue placeholder="选择默认分类" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">无分类</SelectItem>
+                          {saveOptions.categories.map(category => {
+                            const categoryId = category.category_id || category.id
+                            const displayName = category.display_name || category.name
+                            return (
+                              <SelectItem key={categoryId} value={categoryId.toString()}>
+                                {typeof displayName === 'object' ? displayName.zh || displayName.en || Object.values(displayName)[0] : displayName}
+                              </SelectItem>
+                            )
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="defaultTags" className="text-sm font-medium">默认标签</Label>
+                      <MultiSelect
+                        options={(saveOptions.tags || []).map(tag => {
+                          const tagId = tag.tag_id || tag.id
+                          const displayName = tag.display_name || tag.name
+                          return {
+                            value: tagId.toString(),
+                            label: typeof displayName === 'object' ? displayName.zh || displayName.en || Object.values(displayName)[0] : displayName
+                          }
+                        })}
+                        value={defaultSettings.tagIds.map(id => id.toString())}
+                        onChange={(values) => setDefaultSettings(prev => ({
+                          ...prev,
+                          tagIds: values || []
+                        }))}
+                        placeholder="选择默认标签"
+                        className="h-10"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="defaultHotness" className="text-sm font-medium">默认热度值</Label>
+                      <Input
+                        id="defaultHotness"
+                        type="number"
+                        min="0"
+                        max="1000"
+                        value={defaultSettings.hotness}
+                        onChange={(e) => setDefaultSettings(prev => ({
+                          ...prev,
+                          hotness: parseInt(e.target.value) || 0
+                        }))}
+                        placeholder="0-1000"
+                        className="h-10"
+                      />
+                      <p className="text-xs text-gray-500">热度值范围：0-1000，排序时使用</p>
+                    </div>
+
+                    <div className="space-y-2">
                     </div>
                   </div>
 
@@ -3659,7 +3788,7 @@ Output \${count} festival themes in JSON format.`
                         <div className="flex items-center justify-between">
                           <Label htmlFor="themeTemplate" className="text-sm font-medium">AI主题生成提示词</Label>
                           <div className="flex gap-2">
-                            <Select value={themeTemplatePresets[0].content} onValueChange={(value) => handleInputChange('themeTemplate', value)}>
+                            <Select value={formData.themeTemplate} onValueChange={(value) => handleInputChange('themeTemplate', value)}>
                               <SelectTrigger className="h-6 w-40 text-xs">
                                 <SelectValue placeholder="选择预设提示词" />
                               </SelectTrigger>
@@ -3700,7 +3829,7 @@ Output \${count} festival themes in JSON format.`
                         <div className="flex items-center justify-between">
                           <Label htmlFor="template" className="text-sm font-medium">AI文案生成提示词</Label>
                           <div className="flex gap-2">
-                            <Select value={templatePresets[0].content} onValueChange={(value) => handleInputChange('template', value)}>
+                            <Select value={formData.template} onValueChange={(value) => handleInputChange('template', value)}>
                               <SelectTrigger className="h-6 w-40 text-xs">
                                 <SelectValue placeholder="选择预设提示词" />
                               </SelectTrigger>
@@ -4178,7 +4307,7 @@ Output \${count} festival themes in JSON format.`
                       {contentList.map((item, index) => (
                         <button
                           key={item.id}
-                          onClick={() => setActiveContentTab(index)}
+                          onClick={() => handleTabChange(index)}
                           className={`px-4 py-2 text-sm rounded-t-lg border-b-2 transition-colors flex items-center gap-2 ${activeContentTab === index
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-transparent bg-gray-50 text-gray-600 hover:bg-gray-100'
@@ -4428,7 +4557,7 @@ Output \${count} festival themes in JSON format.`
                               {/* 详细信息区域 - 使用ImageForm组件 */}
                               <div className="mt-4 border-t pt-4">
                                 <ImageForm
-                                  formData={convertItemToFormData(item)}
+                                  formData={activeItemFormData || convertItemToFormData(item)}
                                   editingLanguages={getContentEditingLanguages(item.id, item)} // 使用独立的编辑语言状态
                                   supportedLanguages={supportedLanguages}
                                   categories={saveOptions.categories}
@@ -4442,6 +4571,10 @@ Output \${count} festival themes in JSON format.`
                                   loading={false}
                                   mode="generation" // 生成图片模式
                                   onInputChange={(field, lang, value) => handleContentFormChange(item.id, field, lang, value)}
+                                  // 图片加载状态相关props
+                                  imageLoadingStates={imageLoadingStates.get(item.id) || {}}
+                                  onImageLoad={(field) => handleImageLoad(item.id, field)}
+                                  onImageError={(field) => handleImageError(item.id, field)}
                                   onAddLanguage={(lang) => {
                                     // 添加语言到编辑状态
                                     addLanguageToContent(item.id, lang)
@@ -4504,14 +4637,14 @@ Output \${count} festival themes in JSON format.`
                                   readOnly={false} // 设置为可编辑模式
                                   className="scale-90 origin-top -mb-20" // 缩小以适应卡片，减少底部空白
                                   onGenerateColoring={handleSingleImageColoring} // 添加上色回调
-                                  isGeneratingColoring={isGeneratingSingleColoring(convertItemToFormData(item))} // 添加上色状态
-                                  coloringTaskStatus={getColoringTaskStatus(convertItemToFormData(item))} // 添加上色任务状态
+                                  isGeneratingColoring={activeItemFormData ? isGeneratingSingleColoring(activeItemFormData) : false} // 添加上色状态
+                                  coloringTaskStatus={activeItemFormData ? getColoringTaskStatus(activeItemFormData) : null} // 添加上色任务状态
                                   onTextToImage={handleTextToImage} // 添加文生图回调
-                                  isGeneratingTextToImage={isGeneratingTextToImage(convertItemToFormData(item))} // 添加文生图状态
-                                  textToImageTaskStatus={getTextToImageTaskStatus(convertItemToFormData(item))} // 添加文生图任务状态
+                                  isGeneratingTextToImage={activeItemFormData ? isGeneratingTextToImage(activeItemFormData) : false} // 添加文生图状态
+                                  textToImageTaskStatus={activeItemFormData ? getTextToImageTaskStatus(activeItemFormData) : null} // 添加文生图任务状态
                                   onImageToImage={handleImageToImage} // 添加图生图回调
-                                  isGeneratingImageToImage={isGeneratingImageToImage(convertItemToFormData(item))} // 添加图生图状态
-                                  imageToImageTaskStatus={getImageToImageTaskStatus(convertItemToFormData(item))} // 添加图生图任务状态
+                                  isGeneratingImageToImage={activeItemFormData ? isGeneratingImageToImage(activeItemFormData) : false} // 添加图生图状态
+                                  imageToImageTaskStatus={activeItemFormData ? getImageToImageTaskStatus(activeItemFormData) : null} // 添加图生图任务状态
                                   onGenerateTranslation={(imageId, languageCode, formData) => handleGenerateTranslation(imageId, languageCode, item)} // 添加翻译回调
                                   isGeneratingTranslation={isGeneratingTranslation} // 添加翻译状态检查函数
                                 />
@@ -4557,6 +4690,10 @@ Output \${count} festival themes in JSON format.`
                 ratioOptions={getSupportedRatios(selectedApiType)}
                 loading={false}
                 mode="generation" // 生成图片模式
+                // 图片加载状态相关props
+                imageLoadingStates={viewingContent ? (imageLoadingStates.get(viewingContent.id) || {}) : {}}
+                onImageLoad={(field) => viewingContent && handleImageLoad(viewingContent.id, field)}
+                onImageError={(field) => viewingContent && handleImageError(viewingContent.id, field)}
                 onInputChange={(field, lang, value) => {
                   // 更新查看详情的数据
                   setViewingContent(prev => {

@@ -53,7 +53,9 @@ app.use(cors({
 // 预检请求处理
 app.options('*', cors())
 
+// Body解析中间件 - 注意顺序很重要
 app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true, limit: '10mb' })) // 添加对form-data的支持
 
 // 静态文件服务 - 提供图片访问
 app.use('/images', express.static(path.join(__dirname, '../images')))
@@ -654,7 +656,7 @@ Example format:
 
   // 根据语言选择配置system content - 控制生成内容的语言
   const systemContent = language === 'zh'
-    ? 'You are a professional coloring book designer who excels at creating creative coloring page concepts for various themes. Please ensure to return valid JSON format. Regardless of what language the input prompt is in, you must generate all titles, descriptions, and prompt content in Chinese.'
+    ? '你是一个专业的涂色书设计师，擅长为各种主题创作创意涂色页概念。请确保返回有效的JSON格式。无论输入的提示词是什么语言，你都必须生成中文的标题、描述和提示词内容。特别注意：prompt字段必须是中文描述，用于描述涂色页的详细内容。'
     : 'You are a professional coloring book designer who excels at creating creative coloring page concepts for various themes. Please ensure to return valid JSON format. Regardless of what language the input prompt is in, you must generate all titles, descriptions, and prompt content in English.'
 
   try {
@@ -681,6 +683,8 @@ Example format:
     })
 
     const result = response.data.choices[0].message.content
+
+    console.log('DeepSeek API返回的主题: ', result)
 
     // 尝试解析JSON
     try {
@@ -769,7 +773,7 @@ Return format as plain text, separated by emoji icons:
 
   // 根据语言选择配置system content - 控制生成内容的语言
   const systemContent = language === 'zh'
-    ? 'You are a professional coloring book content creation expert who excels at creating practical and inspiring coloring guidance content for different themes. Regardless of what language the input content is in, the output content must be in Chinese.'
+    ? '你是一个专业的涂色书内容创作专家，擅长为不同主题创作实用且富有启发性的涂色指导内容。无论输入的内容是什么语言，输出内容都必须是中文。请确保所有文本内容都是中文，包括标题和描述。例如使用"涂色技巧"而不是"Coloring Tips"，使用"涂色挑战"而不是"Coloring Challenges"，使用"涂色书的益处"而不是"Benefits of Coloring Books"。'
     : 'You are a professional coloring book content creation expert who excels at creating practical and inspiring coloring guidance content for different themes. Regardless of what language the input content is in, the output content must be in English.'
 
   try {
@@ -795,291 +799,9 @@ Return format as plain text, separated by emoji icons:
       }
     })
 
+    console.log('DeepSeek API返回的详细内容: ', response.data.choices[0].message.content)
+
     return response.data.choices[0].message.content
-  } catch (error) {
-    console.error('DeepSeek API调用失败:', error.response?.data || error.message)
-    throw error
-  }
-}
-
-// 生成单个内容的函数（保留为兼容性，现在主要用两步骤生成）
-async function generateSingleContent(keyword, description, template, model, index) {
-  // 根据模型类型生成不同风格的模拟数据
-  let mockContent
-
-  if (model.includes('deepseek')) {
-    // DeepSeek风格的内容
-    mockContent = {
-      title: `Exploring the Wonderful World of ${keyword} - Chapter ${index}`,
-      description: `Discover the charm of ${keyword}! ${description ? description + ', ' : ''}An exciting coloring experience designed for creative enthusiasts.`,
-      prompt: `Detailed ${keyword} coloring page, ${description ? description + ', ' : ''}intricate line art, mandala-style patterns, suitable for adults and children coloring, black and white line drawings, high detail, artistic composition`,
-      content: generateContentFromTemplate(template, keyword, description, 'deepseek')
-    }
-  } else {
-    // 通用模拟数据
-    mockContent = {
-      title: `${keyword} Coloring Page - Creative Design ${index}`,
-      description: `Beautiful ${keyword} coloring page, ${description ? description + ', ' : ''}suitable for all ages, cultivating creativity and focus.`,
-      prompt: `Detailed ${keyword} themed coloring page, ${description ? description + ', ' : ''}line art style, black and white outlines, suitable for coloring, clear lines, no shadows, simple background`,
-      content: generateContentFromTemplate(template, keyword, description)
-    }
-  }
-
-  // 如果配置了真实的API密钥，可以在这里调用大模型
-  if (process.env.OPENAI_API_KEY && model.includes('gpt')) {
-    try {
-      const result = await callOpenAIAPI(keyword, description, template, model)
-      return ensureContentIsString(result)
-    } catch (error) {
-      console.warn('调用OpenAI API失败，使用模拟数据:', error.message)
-    }
-  }
-
-  // 调用DeepSeek API
-  if (process.env.DEEPSEEK_API_KEY && model.includes('deepseek')) {
-    try {
-      const result = await callDeepSeekAPI(keyword, description, template, model)
-      return ensureContentIsString(result)
-    } catch (error) {
-      console.warn('调用DeepSeek API失败，使用模拟数据:', error.message)
-    }
-  }
-
-  return ensureContentIsString(mockContent)
-}
-
-// 确保content字段是字符串的辅助函数
-function ensureContentIsString(data) {
-  if (data && data.content && typeof data.content === 'object') {
-    // 如果content是对象，将其转换为字符串
-    if (data.content.coloring_tips || data.content.challenges || data.content.benefits) {
-      let contentText = ''
-      if (data.content.coloring_tips) {
-        contentText += `🎨 涂色技巧：\n${data.content.coloring_tips}\n\n`
-      }
-      if (data.content.challenges) {
-        contentText += `🎯 挑战：\n${data.content.challenges}\n\n`
-      }
-      if (data.content.benefits) {
-        contentText += `💡 益处：\n${data.content.benefits}`
-      }
-      data.content = contentText
-    } else {
-      // 如果是其他类型的对象，转换为JSON字符串
-      data.content = JSON.stringify(data.content, null, 2)
-    }
-  }
-  return data
-}
-
-// 根据模板生成内容的函数
-function generateContentFromTemplate(template, keyword, description, modelType) {
-  if (!template) {
-    if (modelType === 'deepseek') {
-      return `【DeepSeek AI Generated】
-
-Professional guidance for ${keyword} coloring pages:
-
-🎨 Coloring Tips:
-When coloring ${keyword}, it's recommended to use a gradual layering approach. First determine the main color tone, then use similar color schemes for light and dark variations. ${description ? `Especially for the ${description} parts, ` : ''}You can use contrasting colors to highlight key areas.
-
-🎯 Creative Enhancement:
-Encourage trying different coloring techniques such as pointillism, gradient, or color mixing techniques. This not only improves artistic expression but also enhances focus and patience.
-
-💡 Educational Value:
-Through ${keyword} coloring activities, you can cultivate observation skills, hand-eye coordination, and aesthetic taste. It's an excellent way to combine learning with fun.`
-    } else {
-      return `Content for ${keyword} coloring page is being generated...`
-    }
-  }
-
-  // 简单的模板替换
-  let content = template
-    .replace(/蝴蝶/g, keyword)
-    .replace(/马赛克瓷砖纹理的/g, description ? `${description} ` : '')
-
-  // 如果是DeepSeek模型，增加更丰富的内容
-  if (modelType === 'deepseek') {
-    content += `\n\n【DeepSeek Enhanced Content】\n✨ This ${keyword} coloring page integrates modern design concepts, maintaining the joy of traditional coloring while adding innovative elements, making each coloring session a unique artistic creation experience.`
-  }
-
-  return content
-}
-
-// 构建专业涂色页prompt
-function buildProfessionalColoringPagePrompt(userPrompt) {
-  const config = COLORING_PAGE_CONFIG
-
-  // 构建完整的专业prompt
-  const professionalPrompt = `${config.baseInstructions}
-
-MAIN SUBJECT: ${userPrompt}
-
-ARTWORK SPECIFICATIONS:
-- ${config.artworkRules.background}
-- ${config.artworkRules.lines}
-- ${config.artworkRules.border}
-
-ADDITIONAL REQUIREMENTS:
-- ${config.outputRequirements}
-
-STYLE GUIDELINES:
-- Create a peaceful, engaging, and suitable-for-all-ages design
-- Include interesting details that will be fun to color
-- Ensure all elements are clearly defined with bold black outlines
-- Make sure the design is not too complex for children but engaging enough for adults
-- Focus on creating a therapeutic and relaxing coloring experience
-
-TECHNICAL SPECIFICATIONS:
-- Image size: 8.5×8.5 inches
-- Resolution: High quality for printing
-- Format: Black and white line art only
-- Line weight: Consistent 1mm thick lines throughout
-- No gradients, shadows, or gray tones
-- Pure white background
-
-Please generate a professional-quality coloring page that meets all these specifications.`
-
-  return professionalPrompt
-}
-
-// 调用OpenAI API的函数（如果配置了API密钥）
-async function callOpenAIAPI(keyword, description, template, model) {
-  const prompt = `Based on the following information, generate coloring book content:
-Keyword: ${keyword}
-Description: ${description || 'None'}
-Template: ${template}
-
-Please return content in JSON format containing the following fields:
-- title: Title
-- description: Brief description
-- prompt: English description for generating coloring page images
-- content: Detailed content based on template
-
-Please ensure the content is suitable for coloring book websites.`
-
-  try {
-    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: model,
-      messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 2000
-    }, {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    })
-
-    const result = response.data.choices[0].message.content
-    return JSON.parse(result)
-  } catch (error) {
-    console.error('OpenAI API调用失败:', error.response?.data || error.message)
-    throw error
-  }
-}
-
-// 调用DeepSeek API的函数
-async function callDeepSeekAPI(keyword, description, template, model) {
-  const prompt = `Based on the following information, generate coloring book content:
-Keyword: ${keyword}
-Description: ${description || 'None'}
-Template: ${template}
-
-Please return content in JSON format containing the following fields:
-- title: Title (creative and attractive)
-- description: Brief description (within 50 words, highlighting features)
-- prompt: English prompt for generating coloring page images (detailed image content description, suitable for AI image generation)
-- content: Detailed content based on template, must be pure text string (professional and practical)
-
-Important: The content field must be a string, not an object or array.
-Please ensure the content is suitable for coloring book websites, with a style appropriate for both children and adult users.`
-
-  try {
-    const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-      model: model,
-      messages: [
-        {
-          role: 'system',
-          content: '你是一个专业的涂色书内容创作专家，擅长为各种主题创作有趣且富有教育意义的涂色书内容。请确保返回的JSON格式正确，特别是content字段必须是字符串类型。'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.8,
-      max_tokens: 2000,
-      stream: false
-    }, {
-      headers: {
-        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    })
-
-    const result = response.data.choices[0].message.content
-
-    // 尝试解析JSON，如果失败则提取JSON部分
-    try {
-      const parsedResult = JSON.parse(result)
-
-      // 确保content字段是字符串
-      if (parsedResult.content && typeof parsedResult.content === 'object') {
-        // 如果content是对象，将其转换为字符串
-        if (parsedResult.content.coloring_tips || parsedResult.content.challenges || parsedResult.content.benefits) {
-          let contentText = ''
-          if (parsedResult.content.coloring_tips) {
-            contentText += `🎨 涂色技巧：\n${parsedResult.content.coloring_tips}\n\n`
-          }
-          if (parsedResult.content.challenges) {
-            contentText += `🎯 挑战：\n${parsedResult.content.challenges}\n\n`
-          }
-          if (parsedResult.content.benefits) {
-            contentText += `💡 益处：\n${parsedResult.content.benefits}`
-          }
-          parsedResult.content = contentText
-        } else {
-          // 如果是其他类型的对象，转换为JSON字符串
-          parsedResult.content = JSON.stringify(parsedResult.content, null, 2)
-        }
-      }
-
-      return parsedResult
-    } catch (parseError) {
-      // 如果直接解析失败，尝试提取JSON部分
-      const jsonMatch = result.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsedResult = JSON.parse(jsonMatch[0])
-
-        // 同样的处理逻辑
-        if (parsedResult.content && typeof parsedResult.content === 'object') {
-          if (parsedResult.content.coloring_tips || parsedResult.content.challenges || parsedResult.content.benefits) {
-            let contentText = ''
-            if (parsedResult.content.coloring_tips) {
-              contentText += `🎨 涂色技巧：\n${parsedResult.content.coloring_tips}\n\n`
-            }
-            if (parsedResult.content.challenges) {
-              contentText += `🎯 挑战：\n${parsedResult.content.challenges}\n\n`
-            }
-            if (parsedResult.content.benefits) {
-              contentText += `💡 益处：\n${parsedResult.content.benefits}`
-            }
-            parsedResult.content = contentText
-          } else {
-            parsedResult.content = JSON.stringify(parsedResult.content, null, 2)
-          }
-        }
-
-        return parsedResult
-      }
-      throw new Error('无法解析DeepSeek返回的JSON格式')
-    }
   } catch (error) {
     console.error('DeepSeek API调用失败:', error.response?.data || error.message)
     throw error

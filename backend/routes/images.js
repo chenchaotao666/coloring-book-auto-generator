@@ -784,9 +784,10 @@ router.post('/color-generate', async (req, res) => {
   try {
     const { imageId, imageUrl, prompt, coloringPrompt, apiType = 'gpt4o', model, options } = req.body;
 
-    // 从options中提取apiType和model（向后兼容）
+    // 从options中提取apiType、model和imageFormat（向后兼容）
     const finalApiType = options?.apiType || apiType;
     const finalModel = options?.model || model;
+    const finalImageFormat = options?.imageFormat || 'png'; // 添加imageFormat支持
 
     // 支持两种方式：直接提供imageUrl或通过imageId从数据库获取
     let actualImageUrl = imageUrl;
@@ -810,7 +811,15 @@ router.post('/color-generate', async (req, res) => {
       });
     }
 
-    console.log('收到图片上色请求:', { imageId, imageUrl: actualImageUrl, prompt, coloringPrompt, apiType: finalApiType, model: finalModel });
+    console.log('收到图片上色请求:', {
+      imageId,
+      imageUrl: actualImageUrl,
+      prompt,
+      coloringPrompt,
+      apiType: finalApiType,
+      model: finalModel,
+      imageFormat: finalImageFormat // 添加日志输出
+    });
 
     const result = await imageService.generateColoredImage({
       imageUrl: actualImageUrl,
@@ -818,7 +827,8 @@ router.post('/color-generate', async (req, res) => {
       coloringPrompt,
       apiType: finalApiType,
       model: finalModel,
-      imageRatio: options?.ratio || '1:1'
+      imageRatio: options?.ratio || '1:1',
+      imageFormat: finalImageFormat // 添加imageFormat参数
     });
 
     res.json({

@@ -37,10 +37,22 @@ const ImageForm = ({
   isGeneratingImageToImage = false,
   imageToImageTaskStatus = null,
   onGenerateTranslation = null,
-  isGeneratingTranslation = null
+  isGeneratingTranslation = null,
+  // 图片加载状态相关props
+  imageLoadingStates = {},
+  onImageLoad = null,
+  onImageError = null
 }) => {
   const [uploadedImageFile, setUploadedImageFile] = useState(null)
   const [activeLanguage, setActiveLanguage] = useState(editingLanguages[0] || 'zh')
+  const [uploadedImageUrl, setUploadedImageUrl] = useState(null) // 新增：缓存blob URL
+
+  // 图片加载状态
+  const [localImageLoadingStates, setLocalImageLoadingStates] = useState({
+    defaultUrl: true,
+    coloringUrl: true,
+    colorUrl: true
+  })
 
   // Toast通知
   const { showWarning } = useToast()
@@ -51,6 +63,57 @@ const ImageForm = ({
       setActiveLanguage(editingLanguages[0])
     }
   }, [editingLanguages, activeLanguage])
+
+  // 当图片URL变化时，重置loading状态（只在没有外部状态管理时）
+  React.useEffect(() => {
+    if (!onImageLoad && !onImageError) {
+      setLocalImageLoadingStates({
+        defaultUrl: !!formData.defaultUrl,
+        coloringUrl: !!formData.coloringUrl,
+        colorUrl: !!formData.colorUrl
+      })
+    }
+  }, [formData.defaultUrl, formData.coloringUrl, formData.colorUrl, onImageLoad, onImageError])
+
+  // 清理effect：组件卸载时释放blob URL资源
+  React.useEffect(() => {
+    return () => {
+      if (uploadedImageUrl) {
+        URL.revokeObjectURL(uploadedImageUrl)
+        console.log('组件卸载，释放blob URL:', uploadedImageUrl)
+      }
+    }
+  }, [uploadedImageUrl])
+
+  // 获取当前的图片加载状态
+  const getCurrentImageLoadingStates = () => {
+    // 如果有外部状态管理，使用外部传入的状态；否则使用本地状态
+    return (onImageLoad && onImageError) ? imageLoadingStates : localImageLoadingStates
+  }
+
+  // 处理图片加载完成
+  const handleImageLoad = (field) => {
+    if (onImageLoad) {
+      onImageLoad(field)
+    } else {
+      setLocalImageLoadingStates(prev => ({
+        ...prev,
+        [field]: false
+      }))
+    }
+  }
+
+  // 处理图片加载错误
+  const handleImageError = (field) => {
+    if (onImageError) {
+      onImageError(field)
+    } else {
+      setLocalImageLoadingStates(prev => ({
+        ...prev,
+        [field]: false
+      }))
+    }
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -90,40 +153,70 @@ const ImageForm = ({
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0]
     if (file) {
-      setUploadedImageFile(file)
-
-      // 立即创建预览URL并更新到彩色图片URL
-      const previewUrl = URL.createObjectURL(file)
-      console.log('用户上传图片，创建预览URL:', previewUrl)
-
-      // 立即更新彩色图片URL为预览URL
-      if (onInputChange) {
-        onInputChange('colorUrl', null, previewUrl)
-        console.log('已更新彩色图片URL为预览URL')
+      // 防止重复处理同一个文件
+      if (uploadedImageFile && uploadedImageFile.name === file.name && uploadedImageFile.size === file.size) {
+        return
       }
+
+      console.log('用户上传图片:', file.name, file.size)
+
+      // 如果之前有URL，先释放它
+      if (uploadedImageUrl) {
+        URL.revokeObjectURL(uploadedImageUrl)
+      }
+
+      // 创建新的预览URL
+      const previewUrl = URL.createObjectURL(file)
+      console.log('创建预览URL:', previewUrl)
+
+      // 更新状态
+      setUploadedImageFile(file)
+      setUploadedImageUrl(previewUrl)
+
+      // 使用 setTimeout 在下一个事件循环中更新状态，避免死循环
+      setTimeout(() => {
+        if (onInputChange) {
+          onInputChange('colorUrl', null, previewUrl)
+          console.log('已更新colorUrl为预览URL')
+        }
+      }, 10)
     }
   }
 
   const removeUploadedImage = () => {
+    console.log('开始移除上传的图片')
+
+    // 释放缓存的blob URL
+    if (uploadedImageUrl) {
+      URL.revokeObjectURL(uploadedImageUrl)
+      console.log('已释放缓存的预览URL:', uploadedImageUrl)
+    }
+
     // 如果当前彩色图片URL是blob预览URL，需要释放它
     if (formData.colorUrl && formData.colorUrl.startsWith('blob:')) {
       URL.revokeObjectURL(formData.colorUrl)
-      console.log('已释放预览URL:', formData.colorUrl)
+      console.log('已释放formData中的预览URL:', formData.colorUrl)
     }
 
+    // 清空状态
     setUploadedImageFile(null)
-
-    // 清空彩色图片URL
-    if (onInputChange) {
-      onInputChange('colorUrl', null, '')
-      console.log('已清空彩色图片URL')
-    }
+    setUploadedImageUrl(null)
+    console.log('已清空uploadedImageFile和uploadedImageUrl状态')
 
     // 清空文件输入
-    const fileInput = document.getElementById('imageUpload')
+    const fileInput = document.getElementById(`imageUpload-${formData.id || 'new'}`)
     if (fileInput) {
       fileInput.value = ''
+      console.log('已清空文件输入框')
     }
+
+    // 使用 setTimeout 在下一个事件循环中清空colorUrl，避免死循环
+    setTimeout(() => {
+      if (onInputChange) {
+        onInputChange('colorUrl', null, '')
+        console.log('已清空colorUrl')
+      }
+    }, 10)
   }
 
   return (
@@ -320,13 +413,24 @@ const ImageForm = ({
               readOnly={readOnly}
             />
             {formData.defaultUrl && (
-              <div className="mt-2">
+              <div className="mt-2 relative">
+                {/* Loading状态 */}
+                {getCurrentImageLoadingStates().defaultUrl && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded border z-10">
+                    <div className="flex flex-col items-center gap-2">
+                      <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                      <span className="text-xs text-gray-500">加载中...</span>
+                    </div>
+                  </div>
+                )}
                 <img
                   src={formData.defaultUrl}
                   alt="默认图片预览"
                   className="w-full object-contain rounded border bg-gray-50 cursor-pointer hover:opacity-80 transition-opacity"
                   onClick={() => window.open(formData.defaultUrl, '_blank')}
+                  onLoad={() => handleImageLoad('defaultUrl')}
                   onError={(e) => {
+                    handleImageError('defaultUrl')
                     e.target.style.display = 'none'
                     e.target.nextSibling.style.display = 'flex'
                   }}
@@ -380,13 +484,24 @@ const ImageForm = ({
               readOnly={readOnly}
             />
             {formData.coloringUrl && (
-              <div className="mt-2">
+              <div className="mt-2 relative">
+                {/* Loading状态 */}
+                {getCurrentImageLoadingStates().coloringUrl && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded border z-10">
+                    <div className="flex flex-col items-center gap-2">
+                      <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                      <span className="text-xs text-gray-500">加载中...</span>
+                    </div>
+                  </div>
+                )}
                 <img
                   src={formData.coloringUrl}
                   alt="上色结果预览"
                   className="w-full object-contain rounded border bg-gray-50 cursor-pointer hover:opacity-80 transition-opacity"
                   onClick={() => window.open(formData.coloringUrl, '_blank')}
+                  onLoad={() => handleImageLoad('coloringUrl')}
                   onError={(e) => {
+                    handleImageError('coloringUrl')
                     e.target.style.display = 'none'
                     e.target.nextSibling.style.display = 'flex'
                   }}
@@ -435,6 +550,35 @@ const ImageForm = ({
               placeholder="用户上传的彩色图URL"
               readOnly={readOnly}
             />
+            {formData.colorUrl && !uploadedImageFile && (
+              <div className="mt-2 relative">
+                {/* Loading状态 */}
+                {getCurrentImageLoadingStates().colorUrl && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded border z-10">
+                    <div className="flex flex-col items-center gap-2">
+                      <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                      <span className="text-xs text-gray-500">加载中...</span>
+                    </div>
+                  </div>
+                )}
+                <img
+                  src={formData.colorUrl}
+                  alt="彩色图片预览"
+                  className="w-full object-contain rounded border bg-gray-50 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => window.open(formData.colorUrl, '_blank')}
+                  onLoad={() => handleImageLoad('colorUrl')}
+                  onError={(e) => {
+                    handleImageError('colorUrl')
+                    e.target.style.display = 'none'
+                    e.target.nextSibling.style.display = 'flex'
+                  }}
+                  title="点击查看原图"
+                />
+                <div className="hidden w-full items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
+                  图片加载失败
+                </div>
+              </div>
+            )}
 
             {/* 图片上传区域 */}
             {!readOnly && (
@@ -442,14 +586,36 @@ const ImageForm = ({
                 <div className="text-sm font-medium text-gray-700 mb-2">上传彩色图片</div>
                 <div
                   className={`w-full h-32 bg-gray-50 rounded-lg border border-gray-200 flex flex-col items-center justify-center transition-colors relative cursor-pointer hover:bg-gray-100`}
-                  onClick={() => document.getElementById(`imageUpload-${formData.id || 'new'}`)?.click()}
+                  onClick={() => {
+                    const fileInput = document.getElementById(`imageUpload-${formData.id || 'new'}`)
+                    if (fileInput) {
+                      fileInput.click()
+                    }
+                  }}
                 >
-                  {uploadedImageFile ? (
+                  {uploadedImageFile && uploadedImageUrl ? (
                     <div className="w-full h-full relative flex items-center justify-center">
+                      {/* Loading状态 */}
+                      {getCurrentImageLoadingStates().colorUrl && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg z-10">
+                          <div className="flex flex-col items-center gap-2">
+                            <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                            <span className="text-xs text-gray-500">加载中...</span>
+                          </div>
+                        </div>
+                      )}
                       <img
-                        src={URL.createObjectURL(uploadedImageFile)}
+                        src={uploadedImageUrl}
                         alt="上传的图片"
                         className="max-w-full max-h-full object-contain rounded-lg"
+                        onLoad={() => {
+                          // 使用防抖机制避免频繁调用
+                          setTimeout(() => handleImageLoad('colorUrl'), 100)
+                        }}
+                        onError={() => {
+                          // 使用防抖机制避免频繁调用
+                          setTimeout(() => handleImageError('colorUrl'), 100)
+                        }}
                       />
                       <button
                         onClick={(e) => {
@@ -457,6 +623,7 @@ const ImageForm = ({
                           removeUploadedImage();
                         }}
                         className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
+                        title="删除图片"
                       >
                         ×
                       </button>
@@ -628,4 +795,4 @@ const ImageForm = ({
   )
 }
 
-export default ImageForm 
+export default ImageForm

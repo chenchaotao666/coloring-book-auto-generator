@@ -28,15 +28,20 @@ export const buildApiUrl = (path) => {
 export const apiFetch = async (path, options = {}) => {
   const url = buildApiUrl(path);
 
-  // 设置默认headers
-  const defaultHeaders = {
-    'Content-Type': 'application/json',
-    ...options.headers
-  };
+  // 设置默认headers，但如果body是FormData则不设置Content-Type
+  const defaultHeaders = {};
+
+  // 只有当body不是FormData时才设置Content-Type
+  if (!(options.body instanceof FormData)) {
+    defaultHeaders['Content-Type'] = 'application/json';
+  }
 
   const finalOptions = {
     ...options,
-    headers: defaultHeaders
+    headers: {
+      ...defaultHeaders,
+      ...options.headers
+    }
   };
 
   return fetch(url, finalOptions);

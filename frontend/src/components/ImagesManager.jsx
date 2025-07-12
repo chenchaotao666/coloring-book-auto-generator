@@ -79,6 +79,9 @@ const ImagesManager = () => {
   // 多语言编辑状态
   const [editingLanguages, setEditingLanguages] = useState([]) // 不强制默认语言
 
+  // 图片加载状态
+  const [imageLoadingStates, setImageLoadingStates] = useState(new Map()) // key: imageId, value: {defaultUrl: boolean, coloringUrl: boolean}
+
   // 筛选状态
   const [filters, setFilters] = useState({
     search: '',
@@ -88,6 +91,9 @@ const ImagesManager = () => {
     page: 1,
     limit: 20
   })
+
+  // 搜索输入框的值（独立于filters.search）
+  const [searchTerm, setSearchTerm] = useState('')
 
   // 分页状态
   const [pagination, setPagination] = useState({
@@ -156,6 +162,39 @@ const ImagesManager = () => {
 
   // 比例选项（动态获取）
   const ratioOptions = getSupportedRatios(selectedApiType)
+
+  // 处理图片加载完成
+  const handleImageLoad = (imageId, field) => {
+    setImageLoadingStates(prev => {
+      const newMap = new Map(prev)
+      const currentState = newMap.get(imageId) || {}
+      newMap.set(imageId, { ...currentState, [field]: false })
+      return newMap
+    })
+  }
+
+  // 处理图片加载错误
+  const handleImageError = (imageId, field) => {
+    setImageLoadingStates(prev => {
+      const newMap = new Map(prev)
+      const currentState = newMap.get(imageId) || {}
+      newMap.set(imageId, { ...currentState, [field]: false })
+      return newMap
+    })
+  }
+
+  // 初始化图片加载状态
+  const initImageLoadingState = (imageId, fields) => {
+    setImageLoadingStates(prev => {
+      const newMap = new Map(prev)
+      const loadingState = {}
+      fields.forEach(field => {
+        loadingState[field] = true
+      })
+      newMap.set(imageId, loadingState)
+      return newMap
+    })
+  }
 
   // 获取所有已有的语言版本
   const getExistingLanguages = (formData) => {
@@ -235,6 +274,16 @@ const ImagesManager = () => {
         if (data.pagination) {
           setPagination(data.pagination)
         }
+
+        // 初始化图片加载状态
+        data.data.forEach(image => {
+          const fields = []
+          if (image.defaultUrl) fields.push('defaultUrl')
+          if (image.coloringUrl) fields.push('coloringUrl')
+          if (fields.length > 0) {
+            initImageLoadingState(image.id, fields)
+          }
+        })
       } else {
         setError(data.message || '加载图片失败')
       }
@@ -294,10 +343,10 @@ const ImagesManager = () => {
     }
   }, [internationalizationResults, activeInternationalizationLanguage])
 
-  // 筛选变化时重新加载
+  // 筛选变化时重新加载（除了search字段）
   useEffect(() => {
     loadImages()
-  }, [filters])
+  }, [filters.type, filters.categoryId, filters.isPublic, filters.page, filters.limit, filters.search])
 
   // 当API类型变化时，检查并调整表单中的图片比例
   useEffect(() => {
@@ -376,6 +425,22 @@ const ImagesManager = () => {
       [field]: value,
       page: 1 // 重置到第一页
     }))
+  }
+
+  // 处理搜索（只在回车时触发）
+  const handleSearch = () => {
+    setFilters(prev => ({
+      ...prev,
+      search: searchTerm,
+      page: 1 // 重置到第一页
+    }))
+  }
+
+  // 处理搜索框回车事件
+  const handleSearchKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleSearch()
+    }
   }
 
   // 格式化多语言字段显示
@@ -2119,7 +2184,8 @@ const ImagesManager = () => {
 
       const response = await apiFetch('/api/images/image-to-image', {
         method: 'POST',
-        body: formDataObj
+        body: formDataObj,
+        headers: {} // 清空默认headers，让浏览器自动设置multipart/form-data
       })
 
       const result = await response.json()
@@ -2503,9 +2569,10 @@ const ImagesManager = () => {
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <Input
-              placeholder="搜索图片..."
-              value={filters.search}
-              onChange={(e) => handleFilterChange('search', e.target.value)}
+              placeholder="搜索图片（回车搜索）..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyPress={handleSearchKeyPress}
               className="pl-10"
             />
           </div>
@@ -2545,6 +2612,23 @@ const ImagesManager = () => {
               <SelectItem value="false">私有</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            onClick={() => {
+              setSearchTerm('')
+              setFilters({
+                search: '',
+                type: '',
+                categoryId: '',
+                isPublic: '',
+                page: 1,
+                limit: 20
+              })
+            }}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            清除筛选
+          </Button>
           <Select value={selectedApiType} onValueChange={setSelectedApiType}>
             <SelectTrigger>
               <SelectValue placeholder="图像生成API" />
@@ -2554,20 +2638,6 @@ const ImagesManager = () => {
               <SelectItem value="flux-kontext">Flux Kontext 图像生成</SelectItem>
             </SelectContent>
           </Select>
-          <Button
-            onClick={() => setFilters({
-              search: '',
-              type: '',
-              categoryId: '',
-              isPublic: '',
-              page: 1,
-              limit: 20
-            })}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
-            清除筛选
-          </Button>
         </div>
       </div>
 
@@ -2835,25 +2905,35 @@ const ImagesManager = () => {
                     </button>
 
                     {/* 图片预览 */}
-                    <div className="flex-shrink-0">
+                    <div className="flex-shrink-0 relative">
                       {image.defaultUrl ? (
-                        <img
-                          src={image.defaultUrl}
-                          alt={formatMultiLangField(image.title)}
-                          className="w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => {
-                            // 优先显示上色版本，然后是彩色版本，最后是线稿版本
-                            const urls = [image.defaultUrl, image.coloringUrl, image.colorUrl].filter(Boolean)
-                            if (urls.length > 0) {
-                              window.open(urls[0], '_blank')
-                            }
-                          }}
-                          onError={(e) => {
-                            e.target.style.display = 'none'
-                            e.target.nextSibling.style.display = 'flex'
-                          }}
-                          title="点击查看原图"
-                        />
+                        <>
+                          {/* Loading状态 */}
+                          {imageLoadingStates.get(image.id)?.defaultUrl && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded border z-10">
+                              <RefreshCw className="w-4 h-4 animate-spin text-gray-400" />
+                            </div>
+                          )}
+                          <img
+                            src={image.defaultUrl}
+                            alt={formatMultiLangField(image.title)}
+                            className="w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => {
+                              // 优先显示上色版本，然后是彩色版本，最后是线稿版本
+                              const urls = [image.defaultUrl, image.coloringUrl, image.colorUrl].filter(Boolean)
+                              if (urls.length > 0) {
+                                window.open(urls[0], '_blank')
+                              }
+                            }}
+                            onLoad={() => handleImageLoad(image.id, 'defaultUrl')}
+                            onError={(e) => {
+                              handleImageError(image.id, 'defaultUrl')
+                              e.target.style.display = 'none'
+                              e.target.nextSibling.style.display = 'flex'
+                            }}
+                            title="点击查看原图"
+                          />
+                        </>
                       ) : null}
                       <div className="hidden w-12 h-12 items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
                         无图片
