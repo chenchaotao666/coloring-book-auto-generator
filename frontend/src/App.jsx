@@ -136,14 +136,14 @@ Each theme should:
 Please return in JSON array format, each object containing:
 - title: Creative title
 - description: Brief description (within 30 words)
-- prompt: Detailed English image generation description for AI to generate coloring pages
+- prompt: Description of the coloring page content, used for AI to generate black and white coloring pages (note: the description should not emphasize the complexity of the page content)
 
 Example format:
 [
   {
     "title": "Butterfly Garden Dance",
     "description": "Butterflies dancing gracefully in a blooming flower garden",
-    "prompt": "Detailed coloring page of butterflies dancing in a garden, intricate line art, flowers and butterflies, black and white outlines, suitable for coloring"
+    "prompt": "Butterflies dancing in a garden, flowers and butterflies"
   }
 ]`
 
@@ -280,10 +280,48 @@ Output \${count} festival themes in JSON format.`
   const [coloringPrompt, setColoringPrompt] = useState('用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明')
 
   // 文生图提示词状态
-  const [text2imagePrompt, setText2imagePrompt] = useState(`1、生成适合儿童涂色的黑白线稿，线条简洁清晰。
-2、内容要简单，减少细节，应该简约卡通。
-3、不要有彩色内容。
-4、主体内容的轮廓，采用比较粗的线条。`)
+  const [text2imagePrompt, setText2imagePrompt] = useState(`The image is a black and white line drawing for coloring, no color content`)
+
+  // 难度等级对应的默认提示词模板
+  const defaultDifficultyPrompts = [
+    'extremely simple shapes, very thick lines, minimal details, very easy for young children (2-5 years)',
+    'simple shapes, clear outlines, moderate details, suitable for children (5-10 years)',
+    'more complex shapes, detailed patterns, intricate designs, challenging for teenagers (10-18 years)',
+    'highly detailed, complex patterns, intricate artwork, sophisticated designs for adults (18+ years)'
+  ].join('\n')
+
+  const difficultyTemplates = {
+    toddler: 'extremely simple shapes, very thick lines, minimal details, very easy for young children (2-5 years)',
+    children: 'simple shapes, clear outlines, moderate details, suitable for children (5-10 years)',
+    teen: 'more complex shapes, detailed patterns, intricate designs, challenging for teenagers (10-18 years)',
+    adult: 'highly detailed, complex patterns, intricate artwork, sophisticated designs for adults (18+ years)'
+  }
+
+  // 难度等级和难度提示词状态
+  const [difficultyLevel, setDifficultyLevel] = useState('children') // 默认儿童级别
+  const [difficultyPrompts, setDifficultyPrompts] = useState(defaultDifficultyPrompts) // 所有难度提示词，每行一个级别
+
+  // 从多行文本解析出各个难度级别的提示词
+  const parseDifficultyPrompts = (text) => {
+    const lines = text.split('\n').filter(line => line.trim())
+    return {
+      toddler: lines[0] || difficultyTemplates.toddler,
+      children: lines[1] || difficultyTemplates.children,
+      teen: lines[2] || difficultyTemplates.teen,
+      adult: lines[3] || difficultyTemplates.adult
+    }
+  }
+
+  // 处理难度等级变化
+  const handleDifficultyLevelChange = (newLevel) => {
+    setDifficultyLevel(newLevel)
+  }
+
+  // 获取当前难度提示词（根据选中的难度级别从多行文本中提取）
+  const getCompleteDifficultyPrompt = () => {
+    const parsedPrompts = parseDifficultyPrompts(difficultyPrompts)
+    return parsedPrompts[difficultyLevel] || ''
+  }
 
   // 图生图提示词状态
   const [imageToImagePrompt, setImageToImagePrompt] = useState('将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰')
@@ -838,7 +876,8 @@ Output \${count} festival themes in JSON format.`
           }),
           apiType: selectedApiType, // 添加API类型
           model: selectedApiType === 'flux-kontext' ? fluxModel : undefined, // 添加模型选择
-          imageFormat: selectedApiType === 'flux-kontext' ? imageFormat : undefined // 添加图片格式选择
+          imageFormat: selectedApiType === 'flux-kontext' ? imageFormat : undefined, // 添加图片格式选择
+          difficultyPrompt: getCompleteDifficultyPrompt() // 完整的难度提示词
         }),
       })
 
@@ -1127,6 +1166,7 @@ Output \${count} festival themes in JSON format.`
             method: 'POST',
             body: JSON.stringify({
               imageUrl: imageUrl, // 直接使用图片URL
+              title: item.title, // 传递图片标题用于文件命名
               prompt: prompt,
               coloringPrompt: coloringPrompt.trim() || null, // 传递用户自定义的上色提示词
               options: {
@@ -2322,11 +2362,15 @@ Output \${count} festival themes in JSON format.`
       // 构造提示词 - 优先使用AI提示词字段
       const prompt = formData.prompt?.zh || '涂色页'
 
+      // 获取图片标题用于文件命名
+      const imageTitle = imageItem ? imageItem.title : (formData.title || `single-image-${formData.id || 'unknown'}`);
+
       // 调用上色API，直接使用图片URL而不是数据库ID
       const response = await apiFetch('/api/images/color-generate', {
         method: 'POST',
         body: JSON.stringify({
           imageUrl: formData.defaultUrl, // 直接使用图片URL
+          title: imageTitle, // 传递图片标题用于文件命名
           prompt: prompt,
           coloringPrompt: coloringPrompt.trim() || null, // 传递用户自定义的上色提示词
           options: {
@@ -2733,6 +2777,8 @@ Output \${count} festival themes in JSON format.`
       console.log('- formData.name:', formData.name)
       console.log('- aiPrompt (AI提示词-单张图片描述):', aiPrompt)
       console.log('- text2imagePromptValue (文生图提示词-通用描述):', text2imagePromptValue)
+      console.log('- difficultyLevel:', difficultyLevel)
+      console.log('- difficultyPrompt:', getCompleteDifficultyPrompt())
 
       const requestData = {
         aiPrompt: aiPrompt,  // AI提示词（单张图片描述）
@@ -2740,7 +2786,8 @@ Output \${count} festival themes in JSON format.`
         apiType: selectedApiType,
         model: selectedApiType === 'flux-kontext' ? fluxModel : undefined,
         imageRatio: formData.ratio || '1:1',  // 修正参数名
-        imageFormat: selectedApiType === 'flux-kontext' ? imageFormat : undefined // 添加图片格式
+        imageFormat: selectedApiType === 'flux-kontext' ? imageFormat : undefined, // 添加图片格式
+        difficultyPrompt: getCompleteDifficultyPrompt() // 完整的难度提示词
       }
 
       console.log('🚀 发送文生图请求数据:', JSON.stringify(requestData, null, 2))
@@ -3673,6 +3720,18 @@ Output \${count} festival themes in JSON format.`
                     </div>
 
                     <div className="space-y-2">
+                      <Label htmlFor="difficultyLevel" className="text-sm font-medium">难度等级</Label>
+                      <Select value={difficultyLevel} onValueChange={handleDifficultyLevelChange}>
+                        <SelectTrigger className="h-10">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="toddler">幼儿 (2-5岁)</SelectItem>
+                          <SelectItem value="children">儿童 (5-10岁)</SelectItem>
+                          <SelectItem value="teen">青少年 (10-18岁)</SelectItem>
+                          <SelectItem value="adult">成人 (18+岁)</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
 
@@ -3739,6 +3798,24 @@ Output \${count} festival themes in JSON format.`
                     )}
 
                     <div></div>
+                  </div>
+
+                  {/* 难度设置 */}
+                  <div className="space-y-4 mb-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="difficultyPrompts" className="text-sm font-medium">难度提示词（可编辑）</Label>
+                      <Textarea
+                        id="difficultyPrompts"
+                        placeholder="每行一个难度级别的提示词：&#10;第1行: 幼儿级别&#10;第2行: 儿童级别&#10;第3行: 青少年级别&#10;第4行: 成人级别"
+                        value={difficultyPrompts}
+                        onChange={(e) => setDifficultyPrompts(e.target.value)}
+                        rows={4}
+                        className="resize-none text-sm"
+                      />
+                      <p className="text-xs text-gray-500">
+                        每行对应一个难度级别：第1行=幼儿，第2行=儿童，第3行=青少年，第4行=成人。当前选中的难度级别会使用对应行的内容。
+                      </p>
+                    </div>
                   </div>
 
                   {/* 提示词设置 - 一排2个 */}

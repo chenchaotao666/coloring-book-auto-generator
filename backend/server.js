@@ -355,7 +355,7 @@ app.post('/api/resume-image-generation/:taskId', (req, res) => {
 
 // 生成图片的API（使用重构后的服务）
 app.post('/api/generate-images', async (req, res) => {
-  const { contents, apiType = 'gpt4o', model, imageFormat = 'png' } = req.body
+  const { contents, apiType = 'gpt4o', model, imageFormat = 'png', difficultyPrompt } = req.body
   const taskId = uuidv4()
   const BATCH_SIZE = 5
 
@@ -377,6 +377,7 @@ app.post('/api/generate-images', async (req, res) => {
     apiType: apiType,
     model: model,
     imageFormat: imageFormat,
+    difficultyPrompt: difficultyPrompt,
     currentBatch: 0,
     totalBatches: Math.ceil(contents.length / BATCH_SIZE),
     results: {}
@@ -448,12 +449,14 @@ async function generateImagesConcurrently(taskId) {
           // 使用重构后的图片服务
           const result = await imageService.completeImageGeneration({
             type: 'text-to-image',
+            title: item.title,  // 图片标题（用于生成文件名）
             aiPrompt: item.aiPrompt,  // AI提示词（单张图片描述）
             text2imagePrompt: item.text2imagePrompt,  // 文生图提示词（通用描述）
             apiType: task.apiType,
             model: task.model,
             imageRatio: item.imageRatio || '1:1',
             imageFormat: task.imageFormat,
+            difficultyPrompt: task.difficultyPrompt,
             progressCallback: (imageProgress) => {
               const currentProgress = taskProgress.get(taskId)
               if (currentProgress && currentProgress.images[item.id]) {
@@ -637,7 +640,7 @@ Example format:
   {
     "title": "Butterfly Garden Dance",
     "description": "Butterflies dancing gracefully in a blooming flower garden",
-    "prompt": "Detailed coloring page of butterflies dancing in a garden, intricate line art, flowers and butterflies, black and white outlines, suitable for coloring"
+    "prompt": "Detailed coloring page of butterflies dancing in a garden, intricate line art, flowers and butterflies."
   }
 ]`;
   } else {

@@ -333,18 +333,63 @@ async function downloadAndSaveImage(imageUrl, filename, imageType = 'TEXT_TO_IMA
 }
 
 /**
+ * 从标题生成文件名前缀
+ * @param {string|object} title - 图片标题（可能是字符串或多语言对象）
+ * @returns {string} - 文件名前缀（英文用连字符格式，中文直接返回）
+ */
+function generateFilenamePrefix(title) {
+  console.log('🔍 生成文件名前缀:', title);
+  let titleText = '';
+  
+  // 处理多语言对象
+  if (typeof title === 'object' && title !== null) {
+    // 优先使用英文，然后中文，最后取第一个可用值
+    titleText = title.en || title.zh || Object.values(title)[0] || '';
+  } else {
+    titleText = String(title || '');
+  }
+  
+  // 如果为空，返回默认值
+  if (!titleText.trim()) {
+    return 'untitled';
+  }
+  
+  // 检查是否包含英文字母
+  const hasEnglish = /[a-zA-Z]/.test(titleText);
+  
+  if (hasEnglish) {
+    // 包含英文字母，使用英文文件名格式（小写+连字符）
+    return titleText
+      .toLowerCase()                          // 转小写
+      .replace(/[^a-z0-9\s\-]/g, '')         // 只保留字母、数字、空格和连字符
+      .replace(/\s+/g, '-')                  // 空格转连字符
+      .replace(/-+/g, '-')                   // 多个连字符合并为一个
+      .replace(/^-|-$/g, '')                 // 移除首尾连字符
+      || 'untitled';                         // 如果处理后为空则使用默认值
+  } else {
+    // 纯中文或其他字符，直接返回原始标题（清理一下特殊字符）
+    return titleText
+      .replace(/[<>:"/\\|?*]/g, '')          // 移除文件系统不安全字符
+      .trim() || 'untitled';
+  }
+}
+
+/**
  * 构建专业涂色页prompt
  * @param {string} aiPrompt - AI提示词（单张图片描述）
  * @param {string} generalPrompt - 通用提示词（文生图或图生图的全局描述）
  * @returns {string} - 专业的涂色页prompt
  */
-function buildProfessionalColoringPagePrompt(aiPrompt, generalPrompt) {
+function buildProfessionalColoringPagePrompt(aiPrompt, generalPrompt, difficultyPrompt) {
   // 如果有用户自定义的通用提示词，使用用户的；否则使用默认的
   const defaultGeneralPrompt = 'coloring page style, black and white line art, simple line drawing, clean outlines, no shading, no fill, white background, suitable for coloring, cartoon style, vector art style, printable coloring page, kid-friendly design, clear line work, minimal details, bold outlines';
 
   const finalGeneralPrompt = generalPrompt && generalPrompt.trim() ? generalPrompt.trim() : defaultGeneralPrompt;
 
-  return `${aiPrompt}。 ${finalGeneralPrompt}`;
+  // 添加用户传递的完整难度提示词
+  const completeDifficultyText = difficultyPrompt && difficultyPrompt.trim() ? `, ${difficultyPrompt.trim()}` : '';
+
+  return `Image content: ${aiPrompt}. Image style: ${finalGeneralPrompt}. Difficulty: ${completeDifficultyText}. Pictures should prioritize difficulty requirements.`;
 }
 
 
@@ -366,16 +411,17 @@ function buildProfessionalColoringPagePrompt(aiPrompt, generalPrompt) {
  * @param {Function} options.progressCallback - 进度回调
  * @returns {Object} - 任务信息
  */
-async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png', progressCallback }) {
+async function generateTextToImage({ aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png', difficultyPrompt, progressCallback }) {
   try {
     console.log('开始文生图任务');
     console.log('AI提示词 (单张图片描述):', aiPrompt);
     console.log('文生图提示词 (通用描述):', text2imagePrompt);
     console.log('API类型:', apiType);
     console.log('图片比例:', imageRatio);
+    console.log('完整难度提示词:', difficultyPrompt);
 
-    // 构建专业涂色页prompt - AI提示词 + 文生图提示词
-    let professionalPrompt = buildProfessionalColoringPagePrompt(aiPrompt, text2imagePrompt);
+    // 构建专业涂色页prompt - AI提示词 + 文生图提示词 + 完整难度提示词
+    let professionalPrompt = buildProfessionalColoringPagePrompt(aiPrompt, text2imagePrompt, difficultyPrompt);
     console.log(`🔧 专业prompt已构建，长度: ${professionalPrompt.length} 字符`);
 
     let taskId;
@@ -571,11 +617,12 @@ async function generateImageToImage({ imageUrl, aiPrompt, image2imagePrompt, api
  * @param {Object} options - 上色选项
  * @param {string} options.imageUrl - 图片URL
  * @param {string} options.prompt - 上色prompt
+ * @param {string|object} options.title - 图片标题（用于生成文件名，可选）
  * @param {string} options.apiType - API类型
  * @param {string} options.model - 模型名称
  * @returns {Object} - 任务信息
  */
-async function generateColoredImage({ imageUrl, prompt, coloringPrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png' }) {
+async function generateColoredImage({ imageUrl, prompt, coloringPrompt, title, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png' }) {
   try {
     console.log('开始图片上色任务');
     console.log('原始图片URL:', imageUrl);
@@ -823,11 +870,12 @@ function processTaskStatus(taskStatus, apiType) {
  * @param {string} options.aiPrompt - AI提示词（单张图片描述）
  * @param {string} options.text2imagePrompt - 文生图提示词（通用描述，可选）
  * @param {string} options.image2imagePrompt - 图生图提示词（通用描述，可选）
+ * @param {string|object} options.title - 图片标题（用于生成文件名）
  * @param {Function} options.progressCallback - 进度回调
  * @returns {string} - 本地图片路径
  */
 async function completeImageGeneration(options) {
-  const { type, progressCallback, ...generationOptions } = options;
+  const { type, title, progressCallback, ...generationOptions } = options;
 
   try {
     // 1. 创建任务
@@ -895,8 +943,11 @@ async function completeImageGeneration(options) {
                 imageType = 'TEXT_TO_IMAGE';
             }
 
+            // 生成文件名前缀
+            const filenamePrefix = generateFilenamePrefix(title);
+            
             // 直接上传到分类存储
-            const filename = `${type}_${Date.now()}_${uuidv4().split('-')[0]}.png`;
+            const filename = `${filenamePrefix}_${uuidv4().split('-')[0]}.png`;
             const uploadResult = await downloadAndUploadToPublic(status.imageUrl, imageType, filename);
 
             if (progressCallback) progressCallback(100);
@@ -969,6 +1020,7 @@ module.exports = {
   downloadAndSaveImage, // 兼容性函数
   downloadAndUploadToPublic, // 新的直接上传函数
   buildProfessionalColoringPagePrompt,
+  generateFilenamePrefix,
 
   // 向后兼容的函数名
   checkColoringTaskStatus: checkTaskStatus

@@ -35,6 +35,7 @@ const upload = multer({
 // 上色任务的图片处理缓存，防止重复上传
 const coloringImageCache = new Map()
 const taskImageCache = new Map() // 任务图片缓存
+const taskTitleCache = new Map() // 任务标题缓存，用于文件命名
 
 // 获取所有图片（支持分页和筛选）
 router.get('/', async (req, res) => {
@@ -641,7 +642,7 @@ router.post('/text-to-image', async (req, res) => {
   try {
     console.log('🔍 收到文生图请求 - req.body:', JSON.stringify(req.body, null, 2));
 
-    const { aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png' } = req.body;
+    const { aiPrompt, text2imagePrompt, apiType = 'gpt4o', model, imageRatio = '1:1', imageFormat = 'png', difficultyPrompt } = req.body;
 
     console.log('🔍 解构后的参数:', {
       aiPrompt: aiPrompt,
@@ -649,7 +650,8 @@ router.post('/text-to-image', async (req, res) => {
       apiType: apiType,
       model: model,
       imageRatio: imageRatio,
-      imageFormat: imageFormat
+      imageFormat: imageFormat,
+      difficultyPrompt: difficultyPrompt
     });
 
     if (!aiPrompt) {
@@ -662,7 +664,7 @@ router.post('/text-to-image', async (req, res) => {
 
     // 注意：现在服务层可以处理所有比例，通过在prompt中添加landscape描述来支持不标准的比例
 
-    console.log('✅ 收到文生图请求:', { aiPrompt, text2imagePrompt, apiType, model, imageRatio });
+    console.log('✅ 收到文生图请求:', { aiPrompt, text2imagePrompt, apiType, model, imageRatio, difficultyPrompt });
 
     const result = await imageService.generateTextToImage({
       aiPrompt,
@@ -670,7 +672,8 @@ router.post('/text-to-image', async (req, res) => {
       apiType,
       model,
       imageRatio,
-      imageFormat
+      imageFormat,
+      difficultyPrompt
     });
 
     res.json({
@@ -785,7 +788,7 @@ router.post('/image-to-image', upload.single('image'), async (req, res) => {
 // 图片上色API
 router.post('/color-generate', async (req, res) => {
   try {
-    const { imageId, imageUrl, prompt, coloringPrompt, apiType = 'gpt4o', model, options } = req.body;
+    const { imageId, imageUrl, prompt, coloringPrompt, title, apiType = 'gpt4o', model, options } = req.body;
 
     // 从options中提取apiType、model和imageFormat（向后兼容）
     const finalApiType = options?.apiType || apiType;
@@ -794,6 +797,7 @@ router.post('/color-generate', async (req, res) => {
 
     // 支持两种方式：直接提供imageUrl或通过imageId从数据库获取
     let actualImageUrl = imageUrl;
+    let actualTitle = title;
 
     if (!actualImageUrl && imageId) {
       // 通过imageId从数据库获取图片信息
@@ -805,6 +809,15 @@ router.post('/color-generate', async (req, res) => {
         });
       }
       actualImageUrl = image.defaultUrl;
+      // 如果没有直接提供title，尝试从数据库获取
+      if (!actualTitle) {
+        actualTitle = image.title || image.displayName || `colored-image-${imageId}`;
+      }
+    }
+
+    // 如果仍然没有title，使用默认值
+    if (!actualTitle) {
+      actualTitle = 'colored-image';
     }
 
     if (!actualImageUrl || !prompt) {
@@ -817,6 +830,7 @@ router.post('/color-generate', async (req, res) => {
     console.log('收到图片上色请求:', {
       imageId,
       imageUrl: actualImageUrl,
+      title: actualTitle,
       prompt,
       coloringPrompt,
       apiType: finalApiType,
@@ -824,20 +838,28 @@ router.post('/color-generate', async (req, res) => {
       imageFormat: finalImageFormat // 添加日志输出
     });
 
+    // 首先创建上色任务（保持异步模式，兼容前端）
     const result = await imageService.generateColoredImage({
       imageUrl: actualImageUrl,
       prompt,
       coloringPrompt,
+      title: actualTitle, // 传递title用于后续文件命名
       apiType: finalApiType,
       model: finalModel,
       imageRatio: options?.ratio || '1:1',
-      imageFormat: finalImageFormat // 添加imageFormat参数
+      imageFormat: finalImageFormat
     });
+
+    // 保存taskId和title的映射，用于后续文件命名
+    if (result.taskId) {
+      taskTitleCache.set(result.taskId, actualTitle);
+      console.log('💾 保存任务标题映射:', { taskId: result.taskId, title: actualTitle });
+    }
 
     res.json({
       success: true,
       data: {
-        coloringResult: result  // 包装在coloringResult对象中，匹配前端期望
+        coloringResult: result  // 返回原始的任务信息，包含taskId
       },
       message: '图片上色任务创建成功'
     });
@@ -855,7 +877,7 @@ router.post('/color-generate', async (req, res) => {
 router.get('/task-status/:taskId', async (req, res) => {
   try {
     const { taskId } = req.params;
-    const { apiType = 'gpt4o', taskType = 'unknown' } = req.query;
+    const { apiType = 'gpt4o', taskType = 'unknown', title } = req.query;
 
     if (!taskId) {
       return res.status(400).json({
@@ -864,7 +886,7 @@ router.get('/task-status/:taskId', async (req, res) => {
       });
     }
 
-    console.log('查询任务状态:', { taskId, apiType, taskType });
+    console.log('查询任务状态:', { taskId, apiType, taskType, title });
 
     const status = await imageService.checkTaskStatus(taskId, apiType);
 
@@ -906,29 +928,63 @@ router.get('/task-status/:taskId', async (req, res) => {
         try {
           console.log('📥 任务完成，正在下载图片并上传到分类存储:', status.imageUrl);
 
-          // 根据任务类型确定存储分类和文件名前缀
-          let imageType, filenamePrefix;
+          // 根据任务类型确定存储分类
+          let imageType;
           switch (taskType) {
             case 'text-to-image':
               imageType = 'TEXT_TO_IMAGE';  // 保存到 sketch/ 目录
-              filenamePrefix = 'text-to-image';
               break;
             case 'image-to-image':
               imageType = 'TEXT_TO_IMAGE';  // 图生图生成的黑白线稿也保存到 sketch/ 目录
-              filenamePrefix = 'image-to-image';
               break;
             case 'image-coloring':
               imageType = 'IMAGE_COLORING'; // 保存到 coloring/ 目录
-              filenamePrefix = 'image-coloring';
               break;
             default:
               imageType = 'TEXT_TO_IMAGE';
-              filenamePrefix = 'generated';
+          }
+
+          // 生成文件名前缀（优先使用缓存的title，其次使用query参数的title，最后使用任务类型）
+          let filenamePrefix;
+          let finalTitle = title; // 从query参数获取的title
+          
+          // 如果没有query参数中的title，尝试从缓存获取
+          if (!finalTitle && taskTitleCache.has(taskId)) {
+            finalTitle = taskTitleCache.get(taskId);
+            console.log('📋 从缓存获取任务标题:', { taskId, title: finalTitle });
+          }
+          
+          if (finalTitle) {
+            filenamePrefix = imageService.generateFilenamePrefix(finalTitle);
+          } else {
+            // 如果没有title，使用任务类型作为后备
+            switch (taskType) {
+              case 'text-to-image':
+                filenamePrefix = 'text-to-image';
+                break;
+              case 'image-to-image':
+                filenamePrefix = 'image-to-image';
+                break;
+              case 'image-coloring':
+                filenamePrefix = 'image-coloring';
+                break;
+              default:
+                filenamePrefix = 'generated';
+            }
           }
 
           // 生成唯一文件名
           const { v4: uuidv4 } = require('uuid');
-          const filename = `${filenamePrefix}_${Date.now()}_${uuidv4().split('-')[0]}.png`;
+          const filename = `${filenamePrefix}_${uuidv4().split('-')[0]}.png`;
+          
+          console.log('📝 生成文件名:', {
+            queryTitle: title,
+            cachedTitle: taskTitleCache.get(taskId),
+            finalTitle: finalTitle,
+            taskType: taskType,
+            filenamePrefix: filenamePrefix,
+            filename: filename
+          });
 
           // 使用分类存储功能上传图片
           const { downloadAndUploadToCategory } = require('../utils/storageUtil');
@@ -946,6 +1002,12 @@ router.get('/task-status/:taskId', async (req, res) => {
           setTimeout(() => {
             taskImageCache.delete(cacheKey);
           }, 30 * 60 * 1000);
+
+          // 清理title缓存（任务完成后不再需要）
+          if (taskTitleCache.has(taskId)) {
+            taskTitleCache.delete(taskId);
+            console.log('🗑️ 清理任务标题缓存:', taskId);
+          }
 
         } catch (uploadError) {
           console.error('❌ 上传生成图片到分类存储失败:', uploadError);

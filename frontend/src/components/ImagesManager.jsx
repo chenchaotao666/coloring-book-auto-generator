@@ -694,6 +694,7 @@ const ImagesManager = () => {
         method: 'POST',
         body: JSON.stringify({
           imageId: imageId,
+          title: imageData.title, // 传递图片标题用于文件命名
           prompt: prompt,
           options: {
             isEnhance: false,
@@ -922,6 +923,7 @@ const ImagesManager = () => {
         method: 'POST',
         body: JSON.stringify({
           imageUrl: formData.defaultUrl,
+          title: formData.title, // 传递图片标题用于文件命名
           prompt: prompt,
           options: {
             ratio: formData.ratio || '1:1',
