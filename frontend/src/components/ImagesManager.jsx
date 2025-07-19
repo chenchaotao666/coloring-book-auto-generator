@@ -80,7 +80,6 @@ const ImagesManager = () => {
   const [editingLanguages, setEditingLanguages] = useState([]) // 不强制默认语言
 
   // 图片加载状态
-  const [imageLoadingStates, setImageLoadingStates] = useState(new Map()) // key: imageId, value: {defaultUrl: boolean, coloringUrl: boolean}
 
   // 筛选状态
   const [filters, setFilters] = useState({
@@ -163,38 +162,6 @@ const ImagesManager = () => {
   // 比例选项（动态获取）
   const ratioOptions = getSupportedRatios(selectedApiType)
 
-  // 处理图片加载完成
-  const handleImageLoad = (imageId, field) => {
-    setImageLoadingStates(prev => {
-      const newMap = new Map(prev)
-      const currentState = newMap.get(imageId) || {}
-      newMap.set(imageId, { ...currentState, [field]: false })
-      return newMap
-    })
-  }
-
-  // 处理图片加载错误
-  const handleImageError = (imageId, field) => {
-    setImageLoadingStates(prev => {
-      const newMap = new Map(prev)
-      const currentState = newMap.get(imageId) || {}
-      newMap.set(imageId, { ...currentState, [field]: false })
-      return newMap
-    })
-  }
-
-  // 初始化图片加载状态
-  const initImageLoadingState = (imageId, fields) => {
-    setImageLoadingStates(prev => {
-      const newMap = new Map(prev)
-      const loadingState = {}
-      fields.forEach(field => {
-        loadingState[field] = true
-      })
-      newMap.set(imageId, loadingState)
-      return newMap
-    })
-  }
 
   // 获取所有已有的语言版本
   const getExistingLanguages = (formData) => {
@@ -275,15 +242,6 @@ const ImagesManager = () => {
           setPagination(data.pagination)
         }
 
-        // 初始化图片加载状态
-        data.data.forEach(image => {
-          const fields = []
-          if (image.defaultUrl) fields.push('defaultUrl')
-          if (image.coloringUrl) fields.push('coloringUrl')
-          if (fields.length > 0) {
-            initImageLoadingState(image.id, fields)
-          }
-        })
       } else {
         setError(data.message || '加载图片失败')
       }
@@ -691,6 +649,9 @@ const ImagesManager = () => {
         if (!silent) {
           resetForm()
         }
+        
+        // 在调用loadImages之前先重置loading状态，避免状态冲突
+        setLoading(false)
         loadImages()
 
         return data.data // 返回创建/更新的数据
@@ -2907,33 +2868,23 @@ const ImagesManager = () => {
                     {/* 图片预览 */}
                     <div className="flex-shrink-0 relative">
                       {image.defaultUrl ? (
-                        <>
-                          {/* Loading状态 */}
-                          {imageLoadingStates.get(image.id)?.defaultUrl && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded border z-10">
-                              <RefreshCw className="w-4 h-4 animate-spin text-gray-400" />
-                            </div>
-                          )}
-                          <img
-                            src={image.defaultUrl}
-                            alt={formatMultiLangField(image.title)}
-                            className="w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
-                            onClick={() => {
-                              // 优先显示上色版本，然后是彩色版本，最后是线稿版本
-                              const urls = [image.defaultUrl, image.coloringUrl, image.colorUrl].filter(Boolean)
-                              if (urls.length > 0) {
-                                window.open(urls[0], '_blank')
-                              }
-                            }}
-                            onLoad={() => handleImageLoad(image.id, 'defaultUrl')}
-                            onError={(e) => {
-                              handleImageError(image.id, 'defaultUrl')
-                              e.target.style.display = 'none'
-                              e.target.nextSibling.style.display = 'flex'
-                            }}
-                            title="点击查看原图"
-                          />
-                        </>
+                        <img
+                          src={image.defaultUrl}
+                          alt={formatMultiLangField(image.title)}
+                          className="w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => {
+                            // 优先显示上色版本，然后是彩色版本，最后是线稿版本
+                            const urls = [image.defaultUrl, image.coloringUrl, image.colorUrl].filter(Boolean)
+                            if (urls.length > 0) {
+                              window.open(urls[0], '_blank')
+                            }
+                          }}
+                          onError={(e) => {
+                            e.target.style.display = 'none'
+                            e.target.nextSibling.style.display = 'flex'
+                          }}
+                          title="点击查看原图"
+                        />
                       ) : null}
                       <div className="hidden w-12 h-12 items-center justify-center text-xs text-gray-400 bg-gray-100 rounded border">
                         无图片

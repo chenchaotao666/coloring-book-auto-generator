@@ -162,7 +162,7 @@ router.post('/save', async (req, res) => {
         const idField = type === 'categories' ? 'category_id' : 'tag_id'
 
         const currentRows = await executeQuery(
-          `SELECT display_name, description FROM ${tableName} WHERE ${idField} = ?`,
+          `SELECT display_name, description, seo_title, seo_desc FROM ${tableName} WHERE ${idField} = ?`,
           [itemId]
         )
 
@@ -177,6 +177,8 @@ router.post('/save', async (req, res) => {
         // 解析当前的多语言数据
         let displayName = {}
         let description = {}
+        let seoTitle = {}
+        let seoDesc = {}
 
         if (typeof currentItem.display_name === 'string') {
           try {
@@ -198,6 +200,26 @@ router.post('/save', async (req, res) => {
           description = currentItem.description || {}
         }
 
+        if (typeof currentItem.seo_title === 'string') {
+          try {
+            seoTitle = JSON.parse(currentItem.seo_title)
+          } catch {
+            seoTitle = { zh: currentItem.seo_title }
+          }
+        } else if (typeof currentItem.seo_title === 'object') {
+          seoTitle = currentItem.seo_title || {}
+        }
+
+        if (typeof currentItem.seo_desc === 'string') {
+          try {
+            seoDesc = JSON.parse(currentItem.seo_desc)
+          } catch {
+            seoDesc = { zh: currentItem.seo_desc }
+          }
+        } else if (typeof currentItem.seo_desc === 'object') {
+          seoDesc = currentItem.seo_desc || {}
+        }
+
         // 合并新的翻译
         for (const [langCode, translation] of Object.entries(itemTranslations)) {
           if (translation.name) {
@@ -206,12 +228,18 @@ router.post('/save', async (req, res) => {
           if (translation.description) {
             description[langCode] = translation.description
           }
+          if (translation.seoTitle) {
+            seoTitle[langCode] = translation.seoTitle
+          }
+          if (translation.seoDesc) {
+            seoDesc[langCode] = translation.seoDesc
+          }
         }
 
         // 更新数据库
         await executeQuery(
-          `UPDATE ${tableName} SET display_name = ?, description = ? WHERE ${idField} = ?`,
-          [JSON.stringify(displayName), JSON.stringify(description), itemId]
+          `UPDATE ${tableName} SET display_name = ?, description = ?, seo_title = ?, seo_desc = ? WHERE ${idField} = ?`,
+          [JSON.stringify(displayName), JSON.stringify(description), JSON.stringify(seoTitle), JSON.stringify(seoDesc), itemId]
         )
 
         savedCount++
@@ -475,7 +503,9 @@ async function translateItems(type, items, targetLanguages) {
             } else {
               results[item.id][lang] = {
                 name: item.name || '未翻译',
-                description: item.description || ''
+                description: item.description || '',
+                seoTitle: item.seoTitle || '',
+                seoDesc: item.seoDesc || ''
               }
             }
           })
@@ -623,6 +653,8 @@ AI提示词: ${item.prompt || ''}
 ID: ${item.id} (原文语言: ${itemBaseLanguageName})
 名称: ${item.name}
 描述: ${item.description || ''}
+SEO标题: ${item.seoTitle || ''}
+SEO描述: ${item.seoDesc || ''}
 ---`
     }
   })
@@ -634,8 +666,8 @@ ID: ${item.id} (原文语言: ${itemBaseLanguageName})
   "${items[0]?.id}": {
     "${targetLanguages[0]}": {
       "name": "翻译后的简短名称",${type === 'content' ? '\n      "title": "翻译后的完整标题",' : ''}
-      "description": "翻译后的描述"${type === 'content' ? ',\n      "prompt": "翻译后的AI提示词",\n      "additionalInfo": "翻译后的文案内容"' : ''}
-    }${targetLanguages.length > 1 ? `,\n    "${targetLanguages[1]}": {\n      "name": "翻译后的简短名称",${type === 'content' ? '\n      "title": "翻译后的完整标题",' : ''}\n      "description": "翻译后的描述"${type === 'content' ? ',\n      "prompt": "翻译后的AI提示词",\n      "additionalInfo": "翻译后的文案内容"' : ''}\n    }` : ''}
+      "description": "翻译后的描述"${type === 'content' ? ',\n      "prompt": "翻译后的AI提示词",\n      "additionalInfo": "翻译后的文案内容"' : type === 'categories' ? ',\n      "seoTitle": "翻译后的SEO标题",\n      "seoDesc": "翻译后的SEO描述"' : ''}
+    }${targetLanguages.length > 1 ? `,\n    "${targetLanguages[1]}": {\n      "name": "翻译后的简短名称",${type === 'content' ? '\n      "title": "翻译后的完整标题",' : ''}\n      "description": "翻译后的描述"${type === 'content' ? ',\n      "prompt": "翻译后的AI提示词",\n      "additionalInfo": "翻译后的文案内容"' : type === 'categories' ? ',\n      "seoTitle": "翻译后的SEO标题",\n      "seoDesc": "翻译后的SEO描述"' : ''}\n    }` : ''}
   }${items.length > 1 ? `,\n  "${items[1]?.id}": {\n    // 同样的语言翻译格式\n  }` : ''}
 }
 

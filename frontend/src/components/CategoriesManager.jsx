@@ -48,25 +48,107 @@ const CategoriesManager = () => {
 
   // 全局AI设置状态
   const [aiModel, setAiModel] = useState('deepseek-chat')
-  const defaultAiPrompt = `为分类 \${displayName} 生成详细的分类描述，包含以下内容：
+  const defaultAiPrompt = `Generate a comprehensive category description for \${displayName} coloring pages. IMPORTANT: All section titles MUST be wrapped in <h2></h2> HTML tags. 
 
-1. 主题介绍：详细介绍这个分类的特点和魅力
-2. 适用对象：说明适合哪些年龄段和人群
-3. 涂色技巧：提供具体的涂色建议和技巧
-4. 创意想法：提供相关的DIY创意和玩法建议
+Follow this exact structure and quality level based on this Unicorn example:
 
-请用温馨、专业的语调，内容要实用且有启发性。每个部分2-3句话即可。
+EXAMPLE CONTENT (replace "Unicorn" with \${displayName} and add <h2></h2> tags to all titles):
 
-示例格式：
-<h2>\${displayName}是什么?</h2>
-[详细介绍内容...]
+Free Unicorn Coloring Pages: Magical Creatures Come to Life
+Enter the enchanting realm of unicorn coloring pages where imagination meets the mystical beauty of these legendary creatures. Our collection features stunning printable coloring sheets that capture every magical detail from flowing manes to sparkling horns.
 
-<h2>\${displayName}填色页该怎么画?</h2>
-[涂色技巧和建议...]
+These fantasy coloring pages offer endless creative possibilities for artistic expression and imaginative play. Whether you're seeking engaging activities for children, therapeutic outlets for stress relief, or educational tools for developing fine motor skills, our designs will transport you into a world of rainbow magic and wonder.
 
-<h2>\${displayName}填色页的创意想法</h2>
-[创意DIY建议...]`
+Meet Unicorns: Symbols of Magic and Wonder
+Unicorn coloring pages showcase these beloved mythical creatures known for their purity, grace, and magical healing powers throughout folklore and fairy tales. From ancient legends to modern fantasy stories, unicorns represent hope, innocence, and the power of believing in magic.
+
+These mythical creature coloring sheets provide children with opportunities to explore creativity while learning about different cultures and storytelling traditions. The therapeutic benefits of coloring intricate unicorn details, flowing manes, and magical backgrounds help improve focus, reduce anxiety, and boost self-confidence.
+
+Parents and educators appreciate how these fantasy-themed coloring activities naturally encourage discussions about imagination, kindness, and believing in oneself. Each coloring session becomes both entertaining and meaningful while developing artistic skills and color recognition abilities.
+
+Coloring Tips for Perfect Unicorn Artwork
+Material Selection: Choose your favorite unicorn coloring pages and gather quality coloring materials like colored pencils, markers, or gel pens for vibrant magical effects.
+
+Rainbow Mane Magic: Create stunning rainbow manes using bold, vibrant colors in flowing patterns. Blend pink, purple, blue, and yellow for magical gradient effects that capture unicorn beauty.
+
+Horn Detailing: Use metallic silver, gold, or pearl colors for the spiraled horn, adding small highlights to create dimensional shimmer and magical sparkle.
+
+Background Enchantment: Fill backgrounds with pastel clouds, rainbow arcs, and twinkling stars using soft blues, pinks, and purples for dreamy magical landscapes.
+
+Sparkle Effects: Add glitter, white gel pen dots, or leave small areas uncolored to represent magical sparkles and light reflecting off the unicorn's coat.
+
+10 Creative DIY Ideas with Unicorn Coloring Pages
+1. Bedroom Wall Gallery: Transform completed unicorn coloring pages into a magical bedroom gallery by framing them in pastel or white frames. Arrange multiple pieces in different sizes to create an enchanting unicorn sanctuary.
+
+2. Birthday Party Decorations: Cut out colored unicorn figures and mount them on wooden sticks to create magical table centerpieces. Place in mason jars filled with colorful tissue paper and glitter for sparkly party displays.
+
+3. Custom Greeting Cards: Fold shimmer cardstock and glue finished unicorn artwork to create personalized birthday cards, thank you notes, or friendship cards. Add rainbow washi tape and glitter for extra magical touches.
+
+4. Educational Fantasy Books: Bind several printable coloring sheets together with colored pages to create personalized unicorn storybooks. Children can write their own magical adventures alongside their colored illustrations.
+
+5. Collaborative Classroom Projects: Teachers can have students work together on large poster-sized unicorn scenes, with each child coloring different magical elements. Display finished collaborative artwork as inspiring classroom decorations celebrating creativity.
+
+6. Personalized Bookmarks: Cut colored unicorn designs into bookmark shapes and laminate for durability. Punch holes and add rainbow ribbon tassels to create functional reading accessories perfect for fairy tale books.
+
+7. Gift Wrapping Magic: Use completed unicorn coloring pages as unique wrapping paper for special gifts. The personalized touch makes presents extra magical, especially for unicorn enthusiasts and fantasy lovers.
+
+8. Decorative Magnets: Glue finished coloring pages onto magnetic sheets, then cut around unicorn figures. These custom refrigerator magnets make wonderful keepsakes and can display important notes with magical flair.
+
+9. Window Clings: Tape colored unicorn pages to windows to create beautiful translucent decorations. Natural light filtering through creates rainbow effects, especially when combined with prism decorations and crystal hangings.
+
+10. Scrapbook Memory Pages: Incorporate fantasy coloring activities into family scrapbooks alongside photos from fantasy-themed parties, zoo visits, or magical movie nights. Add journaling about creative experiences and imagination.
+
+Start Your Magical Coloring Adventure Today
+Unleash your creativity with our stunning collection of unicorn coloring pages and experience the joy of bringing these mystical creatures to life through vibrant colors and imagination.
+
+With instant access to premium designs and simple downloading, you can begin your artistic journey immediately and discover the therapeutic benefits of magical creative expression.
+
+CRITICAL REQUIREMENTS:
+- ALL section titles must use <h2></h2> tags exactly as shown above
+- Replace "Unicorn" with \${displayName} throughout the content
+- Follow the EXACT content structure, quality, and detail level from the example
+- Include all 5 specific coloring techniques with detailed explanations
+- Provide all 10 complete DIY ideas with specific, actionable instructions
+- Maintain the same professional, engaging tone and comprehensive detail
+- DO NOT use markdown formatting like **bold** or *italic* - use plain text only
+- For technique names in coloring tips, use format like "Rainbow Mane Magic:" not "**Rainbow Mane Magic:**"`
   const [aiPrompt, setAiPrompt] = useState(defaultAiPrompt)
+  
+  // SEO相关AI提示词
+  const defaultSeoTitlePrompt = `Write exactly one SEO title for \${displayName} coloring pages. Your response must be ONLY the title text. Do NOT include:
+- Multiple options
+- Explanations
+- Character counts
+- Formatting like ** or numbers
+- Any other text
+
+Title requirements:
+- Under 60 characters
+- Include "\${displayName} coloring pages"
+- Include "free" and "printable"
+- Engaging for kids/parents
+
+Respond with ONLY the title. Nothing else.`
+  const [seoTitlePrompt, setSeoTitlePrompt] = useState(defaultSeoTitlePrompt)
+  
+  const defaultSeoDescPrompt = `Write exactly one SEO meta description for \${displayName} coloring pages. Your response must be ONLY the description text. Do NOT include:
+- Character counts like (158 characters)
+- Checkmarks or bullet points
+- Multiple options
+- Explanations about keywords
+- Formatting or emojis
+- Any other text
+
+Description requirements:
+- Under 160 characters
+- Include "\${displayName} coloring pages"
+- Include "free", "printable", "download"
+- Mention benefits for kids
+- End with call-to-action
+
+Respond with ONLY the description. Nothing else.`
+  const [seoDescPrompt, setSeoDescPrompt] = useState(defaultSeoDescPrompt)
+  
   const [showAiSettings, setShowAiSettings] = useState(false) // AI设置面板折叠状态
 
   // 表单状态
@@ -76,9 +158,13 @@ const CategoriesManager = () => {
   const [formData, setFormData] = useState({
     displayName: { zh: '' },
     description: { zh: '' },
+    seoTitle: { zh: '' },
+    seoDesc: { zh: '' },
     imageId: ''
   })
-  const [aiGenerating, setAiGenerating] = useState(false) // AI生成状态
+  const [aiGeneratingDescription, setAiGeneratingDescription] = useState(false) // AI生成描述状态
+  const [aiGeneratingSeoTitle, setAiGeneratingSeoTitle] = useState(false) // AI生成SEO标题状态
+  const [aiGeneratingSeoDesc, setAiGeneratingSeoDesc] = useState(false) // AI生成SEO描述状态
   // 基础语言状态
   const [baseLanguage, setBaseLanguage] = useState('en') // 新增分类的基础语言，默认英文
 
@@ -188,6 +274,8 @@ const CategoriesManager = () => {
     setFormData({
       displayName: { [language]: '' },
       description: { [language]: '' },
+      seoTitle: { [language]: '' },
+      seoDesc: { [language]: '' },
       imageId: '',
       hotness: 0
     })
@@ -228,6 +316,14 @@ const CategoriesManager = () => {
       if (newData.description) {
         const { [langCode]: __, ...restDescription } = newData.description
         newData.description = restDescription
+      }
+      if (newData.seoTitle) {
+        const { [langCode]: ___, ...restSeoTitle } = newData.seoTitle
+        newData.seoTitle = restSeoTitle
+      }
+      if (newData.seoDesc) {
+        const { [langCode]: ____, ...restSeoDesc } = newData.seoDesc
+        newData.seoDesc = restSeoDesc
       }
       return newData
     })
@@ -272,9 +368,11 @@ const CategoriesManager = () => {
 
   // 开始编辑
   const startEdit = (category) => {
-    // 数据库字段名是 display_name 和 description
+    // 数据库字段名是 display_name, description, seo_title, seo_desc
     let displayName = {}
     let description = {}
+    let seoTitle = {}
+    let seoDesc = {}
 
     // 处理 display_name 字段
     if (typeof category.display_name === 'string') {
@@ -298,11 +396,35 @@ const CategoriesManager = () => {
       description = category.description || {}
     }
 
+    // 处理 seo_title 字段
+    if (typeof category.seo_title === 'string') {
+      try {
+        seoTitle = JSON.parse(category.seo_title)
+      } catch {
+        seoTitle = { zh: category.seo_title }
+      }
+    } else if (typeof category.seo_title === 'object') {
+      seoTitle = category.seo_title || {}
+    }
+
+    // 处理 seo_desc 字段
+    if (typeof category.seo_desc === 'string') {
+      try {
+        seoDesc = JSON.parse(category.seo_desc)
+      } catch {
+        seoDesc = { zh: category.seo_desc }
+      }
+    } else if (typeof category.seo_desc === 'object') {
+      seoDesc = category.seo_desc || {}
+    }
+
     const imageId = category.image_id || ''
     const hotness = category.hotness || 0
     setFormData({
       displayName: displayName || { zh: '' },
       description: description || { zh: '' },
+      seoTitle: seoTitle || { zh: '' },
+      seoDesc: seoDesc || { zh: '' },
       imageId: imageId,
       hotness: hotness
     })
@@ -360,6 +482,8 @@ const CategoriesManager = () => {
       const requestData = {
         displayName: formData.displayName,
         description: formData.description,
+        seoTitle: formData.seoTitle,
+        seoDesc: formData.seoDesc,
         imageId: formData.imageId.trim(),
         hotness: parseInt(formData.hotness) || 0
       }
@@ -511,12 +635,16 @@ const CategoriesManager = () => {
         items: selectedCategories.map(cat => {
           const nameBase = getBaseLanguageContent(cat.display_name)
           const descBase = getBaseLanguageContent(cat.description)
+          const seoTitleBase = getBaseLanguageContent(cat.seo_title)
+          const seoDescBase = getBaseLanguageContent(cat.seo_desc)
 
           return {
             id: cat.category_id,
             name: nameBase.content,
             description: descBase.content,
-            baseLanguage: nameBase.lang === 'en' || descBase.lang === 'en' ? 'en' : 'zh' // 如果任一字段有英文就用英文作为基础语言
+            seoTitle: seoTitleBase.content,
+            seoDesc: seoDescBase.content,
+            baseLanguage: nameBase.lang === 'en' || descBase.lang === 'en' || seoTitleBase.lang === 'en' || seoDescBase.lang === 'en' ? 'en' : 'zh' // 如果任一字段有英文就用英文作为基础语言
           }
         }),
         targetLanguages: selectedLanguages
@@ -807,8 +935,8 @@ const CategoriesManager = () => {
           </CardHeader>
           {showAiSettings && (
             <CardContent>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* 左侧：模型选择 */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* 左侧：模型选择和描述提示词 */}
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="aiModel" className="text-sm font-medium">文案模型</Label>
@@ -825,13 +953,10 @@ const CategoriesManager = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-
-                {/* 右侧：AI提示词 */}
-                <div className="space-y-4">
+                  
                   <div>
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="aiPrompt" className="text-sm font-medium">AI文案生成提示词</Label>
+                      <Label htmlFor="aiPrompt" className="text-sm font-medium">描述生成提示词</Label>
                       <Button
                         type="button"
                         variant="outline"
@@ -844,15 +969,75 @@ const CategoriesManager = () => {
                     </div>
                     <Textarea
                       id="aiPrompt"
-                      placeholder="输入AI文案生成提示词，使用 ${displayName} 作为分类名称的占位符"
+                      placeholder="输入AI描述生成提示词，使用 ${displayName} 作为分类名称的占位符"
                       value={aiPrompt}
                       onChange={(e) => setAiPrompt(e.target.value)}
-                      rows={8}
+                      rows={12}
                       className="resize-none text-sm"
                     />
                     <div className="text-xs text-gray-500 space-y-1">
                       <p>• 使用 <code className="bg-gray-100 px-1 rounded">{'${displayName}'}</code> 作为分类名称的占位符</p>
-                      <p>• 这个提示词将发送给AI来生成分类描述内容</p>
+                      <p>• 用于生成分类详细描述内容</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 中间：SEO标题提示词 */}
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="seoTitlePrompt" className="text-sm font-medium">SEO标题生成提示词</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSeoTitlePrompt(defaultSeoTitlePrompt)}
+                        className="text-xs h-6 px-2"
+                      >
+                        重置默认
+                      </Button>
+                    </div>
+                    <Textarea
+                      id="seoTitlePrompt"
+                      placeholder="输入AI SEO标题生成提示词，使用 ${displayName} 作为分类名称的占位符"
+                      value={seoTitlePrompt}
+                      onChange={(e) => setSeoTitlePrompt(e.target.value)}
+                      rows={16}
+                      className="resize-none text-sm"
+                    />
+                    <div className="text-xs text-gray-500 space-y-1">
+                      <p>• 用于生成SEO优化的页面标题</p>
+                      <p>• 建议长度: 50-60字符</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 右侧：SEO描述提示词 */}
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="seoDescPrompt" className="text-sm font-medium">SEO描述生成提示词</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSeoDescPrompt(defaultSeoDescPrompt)}
+                        className="text-xs h-6 px-2"
+                      >
+                        重置默认
+                      </Button>
+                    </div>
+                    <Textarea
+                      id="seoDescPrompt"
+                      placeholder="输入AI SEO描述生成提示词，使用 ${displayName} 作为分类名称的占位符"
+                      value={seoDescPrompt}
+                      onChange={(e) => setSeoDescPrompt(e.target.value)}
+                      rows={16}
+                      className="resize-none text-sm"
+                    />
+                    <div className="text-xs text-gray-500 space-y-1">
+                      <p>• 用于生成SEO优化的页面描述</p>
+                      <p>• 建议长度: 150-160字符</p>
                     </div>
                   </div>
                 </div>
@@ -970,6 +1155,41 @@ const CategoriesManager = () => {
                                 placeholder="翻译描述"
                                 rows={8}
                               />
+                            </div>
+                          )}
+
+                          {/* SEO标题 */}
+                          {translation.seoTitle !== undefined && (
+                            <div>
+                              <Label className="text-xs text-gray-600">SEO标题</Label>
+                              <Input
+                                value={translation.seoTitle || ''}
+                                onChange={(e) => handleTranslationEdit(categoryId, activeInternationalizationLanguage, 'seoTitle', e.target.value)}
+                                className="mt-1 text-sm bg-gray-50"
+                                placeholder="翻译SEO标题"
+                                maxLength={60}
+                              />
+                              <div className="text-xs text-gray-400 mt-1">
+                                建议长度: 50-60字符 (当前: {(translation.seoTitle || '').length}字符)
+                              </div>
+                            </div>
+                          )}
+
+                          {/* SEO描述 */}
+                          {translation.seoDesc !== undefined && (
+                            <div>
+                              <Label className="text-xs text-gray-600">SEO描述</Label>
+                              <Textarea
+                                value={translation.seoDesc || ''}
+                                onChange={(e) => handleTranslationEdit(categoryId, activeInternationalizationLanguage, 'seoDesc', e.target.value)}
+                                className="mt-1 text-sm bg-gray-50"
+                                placeholder="翻译SEO描述"
+                                rows={3}
+                                maxLength={160}
+                              />
+                              <div className="text-xs text-gray-400 mt-1">
+                                建议长度: 150-160字符 (当前: {(translation.seoDesc || '').length}字符)
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1439,14 +1659,14 @@ const CategoriesManager = () => {
                                       type="button"
                                       size="sm"
                                       variant="link"
-                                      disabled={aiGenerating || !formData.displayName[activeFormLanguage]}
+                                      disabled={aiGeneratingDescription || !formData.displayName[activeFormLanguage]}
                                       onClick={async () => {
                                         if (!formData.displayName[activeFormLanguage]) {
                                           alert(`请先输入${language.name}名称`)
                                           return
                                         }
 
-                                        setAiGenerating(true)
+                                        setAiGeneratingDescription(true)
                                         try {
                                           // 使用当前AI设置生成描述
                                           const displayName = formData.displayName[activeFormLanguage]
@@ -1473,13 +1693,13 @@ const CategoriesManager = () => {
                                           console.error('生成描述错误:', error)
                                           alert('生成描述失败: ' + error.message)
                                         } finally {
-                                          setAiGenerating(false)
+                                          setAiGeneratingDescription(false)
                                         }
                                       }}
                                       className="text-xs h-auto p-1 text-blue-600 hover:text-blue-800"
                                       title={`使用AI生成${language.name}描述`}
                                     >
-                                      {aiGenerating ? (
+                                      {aiGeneratingDescription ? (
                                         <span className="flex items-center gap-1">
                                           <RefreshCw className="w-3 h-3 animate-spin" />
                                           生成中...
@@ -1497,9 +1717,158 @@ const CategoriesManager = () => {
                                     value={formData.description[activeFormLanguage] || ''}
                                     onChange={(e) => handleInputChange('description', activeFormLanguage, e.target.value)}
                                     placeholder={`请输入${language.name}分类描述（可选）`}
-                                    rows={10}
+                                    rows={16}
                                     className="mt-1"
                                   />
+                                </div>
+
+                                {/* SEO标题 */}
+                                <div>
+                                  <div className="flex items-center justify-between">
+                                    <Label htmlFor={`seoTitle_${activeFormLanguage}`} className="text-sm text-gray-600">
+                                      SEO标题
+                                    </Label>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="link"
+                                      disabled={aiGeneratingSeoTitle || !formData.displayName[activeFormLanguage]}
+                                      onClick={async () => {
+                                        if (!formData.displayName[activeFormLanguage]) {
+                                          alert(`请先输入${language.name}名称`)
+                                          return
+                                        }
+
+                                        setAiGeneratingSeoTitle(true)
+                                        try {
+                                          const displayName = formData.displayName[activeFormLanguage]
+                                          const prompt = seoTitlePrompt.replace(/\$\{displayName\}/g, displayName)
+
+                                          const response = await apiFetch('/api/generate-text', {
+                                            method: 'POST',
+                                            body: JSON.stringify({
+                                              model: aiModel,
+                                              prompt: prompt,
+                                              language: activeFormLanguage
+                                            })
+                                          })
+
+                                          const data = await response.json()
+                                          if (!response.ok) {
+                                            throw new Error(data.message || '生成失败')
+                                          }
+
+                                          handleInputChange('seoTitle', activeFormLanguage, data.content)
+
+                                        } catch (error) {
+                                          console.error('生成SEO标题错误:', error)
+                                          alert('生成SEO标题失败: ' + error.message)
+                                        } finally {
+                                          setAiGeneratingSeoTitle(false)
+                                        }
+                                      }}
+                                      className="text-xs h-auto p-1 text-blue-600 hover:text-blue-800"
+                                      title={`使用AI生成${language.name}SEO标题`}
+                                    >
+                                      {aiGeneratingSeoTitle ? (
+                                        <span className="flex items-center gap-1">
+                                          <RefreshCw className="w-3 h-3 animate-spin" />
+                                          生成中...
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-1">
+                                          <RefreshCw className="w-3 h-3" />
+                                          AI生成
+                                        </span>
+                                      )}
+                                    </Button>
+                                  </div>
+                                  <Input
+                                    id={`seoTitle_${activeFormLanguage}`}
+                                    value={formData.seoTitle[activeFormLanguage] || ''}
+                                    onChange={(e) => handleInputChange('seoTitle', activeFormLanguage, e.target.value)}
+                                    placeholder={`请输入${language.name}SEO标题（可选）`}
+                                    className="mt-1"
+                                    maxLength={60}
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    建议长度: 50-60字符 (当前: {(formData.seoTitle[activeFormLanguage] || '').length}字符)
+                                  </div>
+                                </div>
+
+                                {/* SEO描述 */}
+                                <div>
+                                  <div className="flex items-center justify-between">
+                                    <Label htmlFor={`seoDesc_${activeFormLanguage}`} className="text-sm text-gray-600">
+                                      SEO描述
+                                    </Label>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="link"
+                                      disabled={aiGeneratingSeoDesc || !formData.displayName[activeFormLanguage]}
+                                      onClick={async () => {
+                                        if (!formData.displayName[activeFormLanguage]) {
+                                          alert(`请先输入${language.name}名称`)
+                                          return
+                                        }
+
+                                        setAiGeneratingSeoDesc(true)
+                                        try {
+                                          const displayName = formData.displayName[activeFormLanguage]
+                                          const prompt = seoDescPrompt.replace(/\$\{displayName\}/g, displayName)
+
+                                          const response = await apiFetch('/api/generate-text', {
+                                            method: 'POST',
+                                            body: JSON.stringify({
+                                              model: aiModel,
+                                              prompt: prompt,
+                                              language: activeFormLanguage
+                                            })
+                                          })
+
+                                          const data = await response.json()
+                                          if (!response.ok) {
+                                            throw new Error(data.message || '生成失败')
+                                          }
+
+                                          handleInputChange('seoDesc', activeFormLanguage, data.content)
+
+                                        } catch (error) {
+                                          console.error('生成SEO描述错误:', error)
+                                          alert('生成SEO描述失败: ' + error.message)
+                                        } finally {
+                                          setAiGeneratingSeoDesc(false)
+                                        }
+                                      }}
+                                      className="text-xs h-auto p-1 text-blue-600 hover:text-blue-800"
+                                      title={`使用AI生成${language.name}SEO描述`}
+                                    >
+                                      {aiGeneratingSeoDesc ? (
+                                        <span className="flex items-center gap-1">
+                                          <RefreshCw className="w-3 h-3 animate-spin" />
+                                          生成中...
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-1">
+                                          <RefreshCw className="w-3 h-3" />
+                                          AI生成
+                                        </span>
+                                      )}
+                                    </Button>
+                                  </div>
+                                  <Textarea
+                                    id={`seoDesc_${activeFormLanguage}`}
+                                    value={formData.seoDesc[activeFormLanguage] || ''}
+                                    onChange={(e) => handleInputChange('seoDesc', activeFormLanguage, e.target.value)}
+                                    placeholder={`请输入${language.name}SEO描述（可选）`}
+                                    rows={3}
+                                    className="mt-1"
+                                    maxLength={160}
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    建议长度: 150-160字符 (当前: {(formData.seoDesc[activeFormLanguage] || '').length}字符)
+                                  </div>
                                 </div>
                               </div>
                             </div>
