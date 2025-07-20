@@ -41,7 +41,9 @@ const ImageForm = ({
   // 图片加载状态相关props
   imageLoadingStates = {},
   onImageLoad = null,
-  onImageError = null
+  onImageError = null,
+  // 难度等级默认值
+  defaultDifficultyLevel = 'children'
 }) => {
   const [uploadedImageFile, setUploadedImageFile] = useState(null)
   const [activeLanguage, setActiveLanguage] = useState(editingLanguages[0] || 'zh')
@@ -652,10 +654,10 @@ const ImageForm = ({
         </div>
       </div>
 
-      {/* 基础信息 - 四列布局 */}
+      {/* 基础信息 - 五列布局 */}
       <div className="space-y-4">
         <h3 className="text-lg font-medium">基础信息</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <Label>类型</Label>
             <Select value={formData.type} onValueChange={readOnly ? undefined : (value) => onInputChange('type', null, value)} disabled={readOnly}>
@@ -703,6 +705,20 @@ const ImageForm = ({
                     </SelectItem>
                   )
                 })}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>难度等级</Label>
+            <Select value={formData.difficulty || defaultDifficultyLevel || 'children'} onValueChange={readOnly ? undefined : (value) => onInputChange('difficulty', null, value)} disabled={readOnly}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="toddler">幼儿 (2-5岁)</SelectItem>
+                <SelectItem value="children">儿童 (5-10岁)</SelectItem>
+                <SelectItem value="teen">青少年 (10-18岁)</SelectItem>
+                <SelectItem value="adult">成人 (18+岁)</SelectItem>
               </SelectContent>
             </Select>
           </div>

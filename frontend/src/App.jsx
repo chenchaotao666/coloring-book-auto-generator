@@ -868,7 +868,7 @@ Output \${count} festival themes in JSON format.`
 
             return {
               id: item.id,
-              title: getDisplayText(item.title),
+              title: getDisplayText(item.title, 'zh', true), // 优先使用英文名
               aiPrompt: aiPrompt,  // AI提示词（单张图片描述）
               text2imagePrompt: text2imagePromptValue,  // 文生图提示词（通用描述）
               imageRatio: item.imageRatio || globalImageRatio // 使用项目特定比例或全局比例
@@ -941,7 +941,11 @@ Output \${count} festival themes in JSON format.`
             if (!item.imagePath) {
               initImageLoadingState(item.id, ['defaultUrl'])
             }
-            return { ...item, imagePath: imageInfo.imagePath }
+            return { 
+              ...item, 
+              imagePath: imageInfo.imagePath,
+              difficulty: item.difficulty || difficultyLevel
+            }
           }
           return item
         }))
@@ -1166,7 +1170,7 @@ Output \${count} festival themes in JSON format.`
             method: 'POST',
             body: JSON.stringify({
               imageUrl: imageUrl, // 直接使用图片URL
-              title: item.title, // 传递图片标题用于文件命名
+              title: getDisplayText(item.title, 'zh', true), // 优先使用英文名
               prompt: prompt,
               coloringPrompt: coloringPrompt.trim() || null, // 传递用户自定义的上色提示词
               options: {
@@ -1486,7 +1490,8 @@ Output \${count} festival themes in JSON format.`
           tagIds: tagIds,
           userId: 'system',
           additionalInfo: formatMultiLangField(item.content),
-          frontendId: item.id // 添加前端ID用于关联
+          frontendId: item.id, // 添加前端ID用于关联
+          difficulty: item.difficulty || difficultyLevel // 添加难度等级字段
         }
 
 
@@ -2320,6 +2325,8 @@ Output \${count} festival themes in JSON format.`
                 setImageTagSelections(newTagSelections)
               }
               return item
+            case 'difficulty':
+              return { ...item, difficulty: value }
             default:
               return item
           }
@@ -2362,8 +2369,8 @@ Output \${count} festival themes in JSON format.`
       // 构造提示词 - 优先使用AI提示词字段
       const prompt = formData.prompt?.zh || '涂色页'
 
-      // 获取图片标题用于文件命名
-      const imageTitle = imageItem ? imageItem.title : (formData.title || `single-image-${formData.id || 'unknown'}`);
+      // 获取图片标题用于文件命名，优先使用英文名
+      const imageTitle = imageItem ? getDisplayText(imageItem.title, 'zh', true) : getDisplayText(formData.title, 'zh', true) || `single-image-${formData.id || 'unknown'}`;
 
       // 调用上色API，直接使用图片URL而不是数据库ID
       const response = await apiFetch('/api/images/color-generate', {
@@ -3084,7 +3091,8 @@ Output \${count} festival themes in JSON format.`
                 return {
                   ...item,
                   imagePath: result.data.imageUrl,
-                  defaultUrl: result.data.imageUrl
+                  defaultUrl: result.data.imageUrl,
+                  difficulty: item.difficulty || difficultyLevel
                 }
               }
               return item
@@ -3282,7 +3290,8 @@ Output \${count} festival themes in JSON format.`
                   imagePath: result.data.imageUrl,
                   defaultUrl: result.data.imageUrl,
                   // 保留之前可能保存的彩色图片URL
-                  colorUrl: item.colorUrl || item.uploadedColorUrl
+                  colorUrl: item.colorUrl || item.uploadedColorUrl,
+                  difficulty: item.difficulty || difficultyLevel
                 }
               }
               return item
@@ -4086,10 +4095,26 @@ Output \${count} festival themes in JSON format.`
                         </div>
                         <h3 className="font-medium text-purple-900 mb-2">生成图片</h3>
                         <p className="text-sm text-purple-700 mb-2">AI生成专业黑白涂色图片</p>
-                        <p className="text-xs text-purple-600 mb-4">
+                        <p className="text-xs text-purple-600 mb-2">
                           当前API: {selectedApiType === 'flux-kontext' ? 'Flux Kontext' : 'GPT-4O'}
                           {selectedApiType === 'flux-kontext' && ` (${fluxModel === 'flux-kontext-pro' ? 'Pro' : 'Max'})`}
                         </p>
+
+                        {/* 难度等级选择 */}
+                        <div className="mb-4">
+                          <Label htmlFor="imageDifficultyLevel" className="text-xs text-purple-700 mb-1 block">难度等级</Label>
+                          <Select value={difficultyLevel} onValueChange={handleDifficultyLevelChange}>
+                            <SelectTrigger className="h-8 text-xs border-purple-200">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="toddler">幼儿 (2-5岁)</SelectItem>
+                              <SelectItem value="children">儿童 (5-10岁)</SelectItem>
+                              <SelectItem value="teen">青少年 (10-18岁)</SelectItem>
+                              <SelectItem value="adult">成人 (18+岁)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
 
                         <Button
                           onClick={generateImages}
@@ -4647,6 +4672,7 @@ Output \${count} festival themes in JSON format.`
                                   ratioOptions={getSupportedRatios(selectedApiType)}
                                   loading={false}
                                   mode="generation" // 生成图片模式
+                                  defaultDifficultyLevel={difficultyLevel} // 传递基础设置的难度等级
                                   onInputChange={(field, lang, value) => handleContentFormChange(item.id, field, lang, value)}
                                   // 图片加载状态相关props
                                   imageLoadingStates={imageLoadingStates.get(item.id) || {}}
@@ -4767,6 +4793,7 @@ Output \${count} festival themes in JSON format.`
                 ratioOptions={getSupportedRatios(selectedApiType)}
                 loading={false}
                 mode="generation" // 生成图片模式
+                defaultDifficultyLevel={difficultyLevel} // 传递基础设置的难度等级
                 // 图片加载状态相关props
                 imageLoadingStates={viewingContent ? (imageLoadingStates.get(viewingContent.id) || {}) : {}}
                 onImageLoad={(field) => viewingContent && handleImageLoad(viewingContent.id, field)}

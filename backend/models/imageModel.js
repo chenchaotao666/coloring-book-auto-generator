@@ -120,7 +120,7 @@ class ImageModel {
   static async create(imageData) {
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, isOnline, hotness, prompt, userId, categoryId, size, additionalInfo, taskId, tagIds
+      type, ratio, isPublic, isOnline, hotness, prompt, userId, categoryId, size, additionalInfo, taskId, tagIds, difficulty
     } = imageData
 
     const imageId = uuidv4() // 使用UUID作为主键
@@ -131,8 +131,8 @@ class ImageModel {
     const insertImageSql = `
       INSERT INTO images (
         id, name, defaultUrl, colorUrl, coloringUrl, title, description,
-        type, ratio, isPublic, isOnline, hotness, prompt, userId, categoryId, size, additionalInfo, taskId
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        type, ratio, isPublic, isOnline, hotness, prompt, userId, categoryId, size, additionalInfo, taskId, difficulty
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     const insertImageParams = [
       imageId,
@@ -152,7 +152,8 @@ class ImageModel {
       categoryId || null,
       size || null,
       JSON.stringify(additionalInfo || {}),
-      taskId || null
+      taskId || null,
+      difficulty || 'children' // 默认儿童难度
     ]
 
     queries.push({ sql: insertImageSql, params: insertImageParams })
@@ -247,6 +248,10 @@ class ImageModel {
     if (imageData.taskId !== undefined) {
       updateFields.push('taskId = ?')
       params.push(imageData.taskId)
+    }
+    if (imageData.difficulty !== undefined) {
+      updateFields.push('difficulty = ?')
+      params.push(imageData.difficulty)
     }
 
     // 如果有字段需要更新

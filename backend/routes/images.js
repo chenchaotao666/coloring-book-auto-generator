@@ -361,7 +361,7 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params
     const {
       name, defaultUrl, colorUrl, coloringUrl, title, description,
-      type, ratio, isPublic, isOnline, hotness, prompt, userId, categoryId, size, additionalInfo, tagIds
+      type, ratio, isPublic, isOnline, hotness, prompt, userId, categoryId, size, additionalInfo, tagIds, difficulty
     } = req.body
 
     console.log('🔍 PUT /api/images/:id - 接收到的数据:', {
@@ -415,7 +415,8 @@ router.put('/:id', async (req, res) => {
       additionalInfo: typeof additionalInfo === 'object' ?
         additionalInfo :
         (additionalInfo !== undefined ? additionalInfo : existingImage.additionalInfo),
-      tagIds: tagIds !== undefined ? tagIds : []
+      tagIds: tagIds !== undefined ? tagIds : [],
+      difficulty: difficulty !== undefined ? difficulty : existingImage.difficulty
     }
 
     console.log(`🔧 PUT /api/images/${id} - 更新数据:`, {

@@ -1550,19 +1550,19 @@ Respond with ONLY the description. Nothing else.`
       )}
 
       {/* 新增/编辑表单弹出框 */}
-      <Dialog isOpen={showForm} onClose={() => {
-        setShowForm(false)
-        resetForm()
-      }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <div className="space-y-6">
-            <div className="border-b pb-4">
-              <h2 className="text-xl font-semibold">{editingId ? '编辑分类' : '新增分类'}</h2>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* 多语言内容编辑 */}
-              {(() => {
+      <Dialog 
+        isOpen={showForm} 
+        onClose={() => {
+          setShowForm(false)
+          resetForm()
+        }}
+        title={editingId ? '编辑分类' : '新增分类'}
+        maxWidth="max-w-6xl"
+      >
+        <DialogContent>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* 多语言内容编辑 */}
+            {(() => {
                 const languages = editingId
                   ? Object.keys(formData.displayName || {}).length > 0
                     ? Object.keys(formData.displayName)
@@ -1624,15 +1624,6 @@ Respond with ONLY the description. Nothing else.`
 
                           return (
                             <div className="border border-gray-200 rounded-lg p-4">
-                              <div className="mb-3">
-                                <h4 className="font-medium text-gray-900">
-                                  {language.name}内容编辑
-                                </h4>
-                                <p className="text-sm text-gray-500">
-                                  编辑{language.name}版本的分类信息
-                                </p>
-                              </div>
-
                               <div className="space-y-4">
                                 {/* 分类名称 */}
                                 <div>
@@ -1880,73 +1871,94 @@ Respond with ONLY the description. Nothing else.`
                 )
               })()}
 
-              <div>
-                <Label htmlFor="hotness">热度值</Label>
-                <Input
-                  id="hotness"
-                  type="number"
-                  min="0"
-                  max="1000"
-                  value={formData.hotness || 0}
-                  onChange={(e) => setFormData(prev => ({ ...prev, hotness: parseInt(e.target.value) || 0 }))}
-                  placeholder="请输入热度值（0-1000）"
-                />
-                <p className="text-sm text-gray-500 mt-1">热度值范围：0-1000，数值越高表示越热门</p>
-              </div>
+              {/* 热度值和关联图片 - 一行两列 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="hotness">热度值</Label>
+                  <Input
+                    id="hotness"
+                    type="number"
+                    min="0"
+                    max="1000"
+                    value={formData.hotness || 0}
+                    onChange={(e) => setFormData(prev => ({ ...prev, hotness: parseInt(e.target.value) || 0 }))}
+                    placeholder="请输入热度值（0-1000）"
+                  />
+                  <p className="text-sm text-gray-500 mt-1">热度值范围：0-1000，数值越高表示越热门</p>
+                </div>
 
-              <div>
-                <Label htmlFor="imageId">关联图片</Label>
-                <Select value={formData.imageId || "none"} onValueChange={(value) => handleImageSelect(value === "none" ? "" : value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="请选择关联的图片（可选）" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">无关联图片</SelectItem>
-                    {availableImages.map((image) => {
-                      // 解析图片标题
-                      let title = '未命名图片'
-                      if (image.title) {
-                        if (typeof image.title === 'string') {
-                          try {
-                            const parsed = JSON.parse(image.title)
-                            title = parsed.zh || parsed.en || title
-                          } catch {
-                            title = image.title
+                <div>
+                  <Label htmlFor="imageId">关联图片</Label>
+                  <Select value={formData.imageId || "none"} onValueChange={(value) => handleImageSelect(value === "none" ? "" : value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="请选择关联的图片（可选）" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">无关联图片</SelectItem>
+                      {availableImages.map((image) => {
+                        // 解析图片标题
+                        let title = '未命名图片'
+                        if (image.title) {
+                          if (typeof image.title === 'string') {
+                            try {
+                              const parsed = JSON.parse(image.title)
+                              title = parsed.zh || parsed.en || title
+                            } catch {
+                              title = image.title
+                            }
+                          } else if (typeof image.title === 'object') {
+                            title = image.title.zh || image.title.en || title
                           }
-                        } else if (typeof image.title === 'object') {
-                          title = image.title.zh || image.title.en || title
                         }
-                      }
 
-                      return (
-                        <SelectItem key={image.id} value={image.id}>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs text-gray-500">{image.id.slice(0, 8)}...</span>
-                            <span>{title}</span>
-                            <span className="text-xs text-gray-400">({image.type})</span>
-                          </div>
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
+                        return (
+                          <SelectItem key={image.id} value={image.id}>
+                            <div className="flex items-center gap-3">
+                              {/* 图片预览 */}
+                              <div className="w-8 h-8 border border-gray-200 rounded overflow-hidden bg-gray-50 flex-shrink-0">
+                                {image.defaultUrl ? (
+                                  <img
+                                    src={image.defaultUrl}
+                                    alt="图片预览"
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      e.target.style.display = 'none'
+                                      e.target.nextSibling.style.display = 'flex'
+                                    }}
+                                  />
+                                ) : null}
+                                <div className={`w-full h-full items-center justify-center text-xs text-gray-400 ${image.defaultUrl ? 'hidden' : 'flex'}`}>
+                                  无图
+                                </div>
+                              </div>
+                              {/* 图片信息 */}
+                              <div className="flex flex-col">
+                                <span className="text-sm">{title}</span>
+                                <span className="text-xs text-gray-400">({image.type})</span>
+                              </div>
+                            </div>
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectContent>
+                  </Select>
 
-                {/* 选中图片的预览 */}
-                {selectedImage && (
-                  <div className="mt-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
-                    <div className="text-sm font-medium text-gray-700 mb-2">选中的图片预览</div>
-                    <div className="space-y-2">
-                      <div className="text-xs text-gray-600">
-                        <span className="font-medium">ID:</span> {selectedImage.id}
-                      </div>
+                  {/* 选中图片的预览 */}
+                  {selectedImage && (
+                    <div className="mt-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className="text-sm font-medium text-gray-700 mb-2">选中的图片预览</div>
+                      <div className="space-y-2">
+                        <div className="text-xs text-gray-600">
+                          <span className="font-medium">ID:</span> {selectedImage.id}
+                        </div>
 
-                      {/* 黑白图片预览 */}
-                      {selectedImage.defaultUrl && (
-                        <div>
-                          <div className="text-xs text-gray-600 mb-1">
-                            <span className="font-medium">黑白图片 (defaultUrl):</span>
-                          </div>
-                          <div className="w-32 h-32 border border-gray-200 rounded overflow-hidden bg-white">
+                        {/* 黑白图片预览 */}
+                        {selectedImage.defaultUrl && (
+                          <div>
+                            <div className="text-xs text-gray-600 mb-1">
+                              <span className="font-medium">黑白图片 (defaultUrl):</span>
+                            </div>
+                            <div className="w-32 h-32 border border-gray-200 rounded overflow-hidden bg-white">
                             <img
                               src={selectedImage.defaultUrl}
                               alt="黑白图片预览"
@@ -1999,31 +2011,31 @@ Respond with ONLY the description. Nothing else.`
                     </div>
                   </div>
                 )}
+                </div>
               </div>
 
-              <div className="flex gap-2 pt-4 border-t">
-                <Button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center gap-2"
-                >
-                  <Save className="w-4 h-4" />
-                  {loading ? '保存中...' : (editingId ? '更新分类' : '创建分类')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setShowForm(false)
-                    resetForm()
-                  }}
-                  disabled={loading}
-                >
-                  取消
-                </Button>
-              </div>
+            <div className="flex gap-2 pt-4 border-t">
+              <Button
+                type="submit"
+                disabled={loading}
+                className="flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                {loading ? '保存中...' : (editingId ? '更新分类' : '创建分类')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowForm(false)
+                  resetForm()
+                }}
+                disabled={loading}
+              >
+                取消
+              </Button>
+            </div>
             </form>
-          </div>
         </DialogContent>
       </Dialog>
     </div>
