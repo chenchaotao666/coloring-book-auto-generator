@@ -18,8 +18,8 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  acquireTimeout: 60000,  // 60秒获取连接超时
-  timeout: 60000,         // 60秒查询超时
+  acquireTimeout: 10000,  // 10秒获取连接超时
+  timeout: 10000,         // 10秒查询超时
   reconnect: true,        // 自动重连
   idleTimeout: 300000,    // 5分钟空闲超时
   maxIdle: 10             // 最大空闲连接数

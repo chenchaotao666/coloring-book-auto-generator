@@ -9,12 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { apiFetch } from '@/config/api'
-import { AlertCircle, Check, CheckCircle, Clock, Edit3, Home, Image, ImageIcon, Languages, Palette, PlusCircle, Save, Settings, Tag, Trash2, X } from 'lucide-react'
+import { AlertCircle, Check, CheckCircle, Clock, Edit3, Home, Image, ImageIcon, Languages, Palette, PlusCircle, Save, Settings, Tag, Trash2, Users, X } from 'lucide-react'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import CategoriesManager from './components/CategoriesManager'
 import ImageForm from './components/ImageForm'
 import ImagesManager from './components/ImagesManager'
 import TagsManager from './components/TagsManager'
+import UsersManager from './components/UsersManager'
 import { eventBus } from './utils/eventBus'
 
 // 工具函数：从多语言对象中提取显示文本
@@ -3571,6 +3572,14 @@ Output \${count} festival themes in JSON format.`
                   <Tag className="w-4 h-4" />
                   标签管理
                 </Button>
+                <Button
+                  variant={currentPage === 'users' ? 'default' : 'outline'}
+                  onClick={() => setCurrentPage('users')}
+                  className="flex items-center gap-2"
+                >
+                  <Users className="w-4 h-4" />
+                  用户管理
+                </Button>
               </div>
             </div>
           </div>
@@ -4767,6 +4776,8 @@ Output \${count} festival themes in JSON format.`
             <TagsManager />
           ) : currentPage === 'images' ? (
             <ImagesManager />
+          ) : currentPage === 'users' ? (
+            <UsersManager />
           ) : null}
         </div>
 

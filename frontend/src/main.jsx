@@ -6,11 +6,9 @@ import { ToastProvider } from './components/ui/toast.jsx'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <ToastProvider>
-      <ConfirmDialogProvider>
-        <App />
-      </ConfirmDialogProvider>
-    </ToastProvider>
-  </React.StrictMode>,
+  <ToastProvider>
+    <ConfirmDialogProvider>
+      <App />
+    </ConfirmDialogProvider>
+  </ToastProvider>
 ) 

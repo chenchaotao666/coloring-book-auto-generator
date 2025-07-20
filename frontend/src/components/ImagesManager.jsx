@@ -166,17 +166,31 @@ const ImagesManager = () => {
   // 获取所有已有的语言版本
   const getExistingLanguages = (formData) => {
     const allLanguages = new Set()
+    
+    // 支持的语言代码列表（用于验证）
+    const validLanguageCodes = supportedLanguages.map(lang => lang.code)
 
-      // 检查各个多语言字段中存在的语言
-      ;['name', 'title', 'description', 'prompt', 'additionalInfo'].forEach(field => {
+      // 检查各个多语言字段中存在的语言（排除additionalInfo字段）
+      ;['name', 'title', 'description', 'prompt'].forEach(field => {
         if (formData[field] && typeof formData[field] === 'object') {
           Object.keys(formData[field]).forEach(lang => {
-            if (formData[field][lang]) {
+            // 只添加有效的语言代码
+            if (formData[field][lang] && validLanguageCodes.includes(lang)) {
               allLanguages.add(lang)
             }
           })
         }
       })
+      
+      // 单独处理additionalInfo字段，只获取有效的语言代码
+      if (formData.additionalInfo && typeof formData.additionalInfo === 'object') {
+        Object.keys(formData.additionalInfo).forEach(key => {
+          // 只添加有效的语言代码，过滤掉FROMTASK、TIMESTAMP、GENERATEDBY等元数据
+          if (formData.additionalInfo[key] && validLanguageCodes.includes(key)) {
+            allLanguages.add(key)
+          }
+        })
+      }
 
     // 如果没有找到任何语言，默认返回中文
     return Array.from(allLanguages).length > 0 ? Array.from(allLanguages) : ['zh']
@@ -282,7 +296,6 @@ const ImagesManager = () => {
 
   // 初始加载
   useEffect(() => {
-    loadImages()
     loadCategoriesAndTags()
   }, [])
 
@@ -381,7 +394,8 @@ const ImagesManager = () => {
     setFilters(prev => ({
       ...prev,
       [field]: value,
-      page: 1 // 重置到第一页
+      // 只有在非页码字段变化时才重置到第一页
+      ...(field !== 'page' ? { page: 1 } : {})
     }))
   }
 
@@ -2506,6 +2520,48 @@ const ImagesManager = () => {
     return imageToImageTasks.get(taskKey)
   }
 
+  // 生成分页按钮数组
+  const generatePaginationButtons = () => {
+    const buttons = []
+    const currentPage = pagination.page
+    const totalPages = pagination.pages
+    
+    // 如果总页数小于等于7，显示所有页码
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) {
+        buttons.push(i)
+      }
+    } else {
+      // 总页数大于7时，智能显示页码
+      if (currentPage <= 4) {
+        // 当前页在前部：1, 2, 3, 4, 5, ..., last
+        for (let i = 1; i <= 5; i++) {
+          buttons.push(i)
+        }
+        buttons.push('...')
+        buttons.push(totalPages)
+      } else if (currentPage >= totalPages - 3) {
+        // 当前页在后部：1, ..., last-4, last-3, last-2, last-1, last
+        buttons.push(1)
+        buttons.push('...')
+        for (let i = totalPages - 4; i <= totalPages; i++) {
+          buttons.push(i)
+        }
+      } else {
+        // 当前页在中部：1, ..., current-1, current, current+1, ..., last
+        buttons.push(1)
+        buttons.push('...')
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+          buttons.push(i)
+        }
+        buttons.push('...')
+        buttons.push(totalPages)
+      }
+    }
+    
+    return buttons
+  }
+
   return (
     <div className="space-y-6">
       {/* 页面标题和操作栏 */}
@@ -2905,9 +2961,13 @@ const ImagesManager = () => {
                           }`}>
                           {typeOptions.find(opt => opt.value === image.type)?.label || image.type}
                         </span>
-                        {image.isPublic && (
+                        {image.isPublic ? (
                           <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-800 whitespace-nowrap">
                             公开
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-800 whitespace-nowrap">
+                            不公开
                           </span>
                         )}
                         {image.isOnline ? (
@@ -2992,11 +3052,12 @@ const ImagesManager = () => {
 
               {/* 分页 */}
               {pagination.pages > 1 && (
-                <div className="flex items-center justify-between pt-4 border-t">
-                  <div className="text-sm text-gray-700">
+                <div className="flex flex-col gap-4 pt-4 border-t">
+                  <div className="text-sm text-gray-700 text-center">
                     第 {pagination.page} 页，共 {pagination.pages} 页 (总计 {pagination.total} 个图片)
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex items-center justify-center gap-2">
+                    {/* 上一页按钮 */}
                     <Button
                       variant="outline"
                       size="sm"
@@ -3005,6 +3066,36 @@ const ImagesManager = () => {
                     >
                       上一页
                     </Button>
+                    
+                    {/* 页码按钮 */}
+                    {generatePaginationButtons().map((pageNum, index) => {
+                      if (pageNum === '...') {
+                        return (
+                          <span key={`ellipsis-${index}`} className="px-2 text-gray-400">
+                            ...
+                          </span>
+                        )
+                      }
+                      
+                      const isCurrentPage = pageNum === pagination.page
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={isCurrentPage ? "default" : "outline"}
+                          size="sm"
+                          className={`min-w-[36px] ${
+                            isCurrentPage 
+                              ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                              : 'hover:bg-gray-50'
+                          }`}
+                          onClick={() => handleFilterChange('page', pageNum)}
+                        >
+                          {pageNum}
+                        </Button>
+                      )
+                    })}
+                    
+                    {/* 下一页按钮 */}
                     <Button
                       variant="outline"
                       size="sm"

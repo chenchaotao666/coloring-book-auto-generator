@@ -4,14 +4,23 @@ const CategoryModel = require('../models/categoryModel')
 
 // 获取所有分类
 router.get('/', async (req, res) => {
+  const startTime = Date.now()
+  console.log('🚀 开始获取分类列表...')
+  
   try {
+    console.log('📊 正在查询分类数据...')
     const categories = await CategoryModel.getAll()
+    
+    const queryTime = Date.now() - startTime
+    console.log(`✅ 分类查询完成，耗时: ${queryTime}ms，数量: ${categories.length}`)
+    
     res.json({
       success: true,
       data: categories
     })
   } catch (error) {
-    console.error('获取分类列表失败:', error)
+    const errorTime = Date.now() - startTime
+    console.error(`❌ 获取分类列表失败，耗时: ${errorTime}ms，错误:`, error)
     res.status(500).json({
       success: false,
       message: '获取分类列表失败',

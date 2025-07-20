@@ -14,6 +14,7 @@ const categoriesRouter = require('./routes/categories')
 const tagsRouter = require('./routes/tags')
 const imagesRouter = require('./routes/images')
 const internationalizationRouter = require('./routes/internationalization')
+const usersRouter = require('./routes/users')
 
 // 引入重构后的图片服务
 const imageService = require('./services/imageColoringService')
@@ -66,6 +67,7 @@ app.use('/api/tags', tagsRouter)
 app.use('/api/images', imagesRouter)
 app.use('/api/db-images', imagesRouter)
 app.use('/api/internationalization', internationalizationRouter)
+app.use('/api/users', usersRouter)
 
 // 创建必要的目录
 const storageDir = path.join(__dirname, '../storage')

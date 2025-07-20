@@ -68,14 +68,55 @@ class ImageModel {
 
     const images = await executeQuery(sql, dataParams)
 
-    // 为每个图片获取标签
-    for (let image of images) {
+    // 批量获取所有图片的标签（避免N+1查询问题）
+    if (images.length > 0) {
+      const imageIds = images.map(img => img.id)
+      const placeholders = imageIds.map(() => '?').join(',')
+      
+      const tagsSql = `
+        SELECT 
+          it.image_id,
+          t.tag_id, 
+          t.display_name, 
+          t.description
+        FROM image_tags it
+        INNER JOIN tags t ON it.tag_id = t.tag_id
+        WHERE it.image_id IN (${placeholders})
+        ORDER BY it.image_id, t.tag_id
+      `
+      
       try {
-        image.tags = await this.getImageTags(image.id)
+        const allTags = await executeQuery(tagsSql, imageIds)
+        
+        // 将标签按图片ID分组
+        const tagsByImageId = {}
+        allTags.forEach(tag => {
+          if (!tagsByImageId[tag.image_id]) {
+            tagsByImageId[tag.image_id] = []
+          }
+          tagsByImageId[tag.image_id].push({
+            tag_id: tag.tag_id,
+            display_name: tag.display_name,
+            description: tag.description
+          })
+        })
+        
+        // 将标签分配给对应的图片
+        images.forEach(image => {
+          image.tags = tagsByImageId[image.id] || []
+        })
       } catch (error) {
-        console.error(`获取图片 ${image.id} 标签失败:`, error)
-        image.tags = [] // 设置默认空数组
+        console.error('批量获取图片标签失败:', error)
+        // 如果批量获取失败，给所有图片设置空标签数组
+        images.forEach(image => {
+          image.tags = []
+        })
       }
+    } else {
+      // 如果没有图片，直接设置空标签
+      images.forEach(image => {
+        image.tags = []
+      })
     }
 
     return {

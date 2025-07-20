@@ -4,13 +4,21 @@ const { v4: uuidv4 } = require('uuid')
 class CategoryModel {
   // 获取所有分类
   static async getAll() {
+    console.log('🔍 CategoryModel.getAll() 开始执行...')
     const sql = `
       SELECT category_id, display_name, description, seo_title, seo_desc, image_id, hotness,
              created_at, updated_at 
       FROM categories 
       ORDER BY created_at DESC
     `
-    return await executeQuery(sql)
+    console.log('📝 执行SQL:', sql.replace(/\s+/g, ' ').trim())
+    
+    const startTime = Date.now()
+    const result = await executeQuery(sql)
+    const queryTime = Date.now() - startTime
+    
+    console.log(`💾 数据库查询完成，耗时: ${queryTime}ms，返回: ${result.length} 条记录`)
+    return result
   }
 
   // 根据ID获取分类
