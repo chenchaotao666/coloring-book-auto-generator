@@ -1,9 +1,11 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MultiSelect } from '@/components/ui/multi-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { apiFetch } from '@/config/api'
 import {
@@ -40,10 +42,14 @@ const TagsManager = () => {
   // 表单状态
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [activeFormLanguage, setActiveFormLanguage] = useState('en') // 表单的活跃语言
   const [formData, setFormData] = useState({
-    displayName: { zh: '' },
-    description: { zh: '' }
+    displayName: { en: '' },
+    description: { en: '' }
   })
+
+  // 基础语言状态
+  const [baseLanguage, setBaseLanguage] = useState('en') // 新增标签的基础语言，默认英文
 
   // 支持的语言
   const supportedLanguages = [
@@ -119,24 +125,24 @@ const TagsManager = () => {
   }, [error, success])
 
   // 重置表单
-  const resetForm = () => {
+  const resetForm = (language = 'en') => {
     setFormData({
-      displayName: { zh: '' },
-      description: { zh: '' }
+      displayName: { [language]: '' },
+      description: { [language]: '' }
     })
     setEditingId(null)
-    setShowForm(false)
+    setActiveFormLanguage(language) // 使用传入的语言
   }
 
   // 删除语言
   const handleDeleteLanguage = (langCode) => {
     if (!editingId) return // 只在编辑时允许删除
 
-    const currentLanguages = getExistingLanguages(tags.find(tag => tag.tag_id === editingId))
+    const currentLanguages = Object.keys(formData.displayName || {})
 
-    // 不能删除必需的语言(中文)，也不能删除最后一个语言
-    if (langCode === 'zh' || currentLanguages.length <= 1) {
-      alert('无法删除此语言')
+    // 不能删除最后一个语言
+    if (currentLanguages.length <= 1) {
+      alert('至少需要保留一个语言')
       return
     }
 
@@ -153,6 +159,14 @@ const TagsManager = () => {
       }
       return newData
     })
+
+    // 如果删除的是当前活跃语言，切换到剩余语言中的第一个
+    if (activeFormLanguage === langCode) {
+      const remainingLanguages = currentLanguages.filter(lang => lang !== langCode)
+      if (remainingLanguages.length > 0) {
+        setActiveFormLanguage(remainingLanguages[0])
+      }
+    }
   }
 
   // 添加语言
@@ -238,16 +252,26 @@ const TagsManager = () => {
     }
 
     setFormData({
-      displayName: displayName || { zh: '' },
-      description: description || { zh: '' }
+      displayName: displayName || { en: '' },
+      description: description || { en: '' }
     })
     setEditingId(tag.tag_id)
     setShowForm(true)
+
+    // 设置活跃语言为可用语言的第一个，优先英文，然后中文
+    const existingLanguages = getExistingLanguages(tag)
+    if (existingLanguages.includes('en')) {
+      setActiveFormLanguage('en')
+    } else if (existingLanguages.includes('zh')) {
+      setActiveFormLanguage('zh')
+    } else {
+      setActiveFormLanguage(existingLanguages[0] || 'en')
+    }
   }
 
   // 开始新增
   const startAdd = () => {
-    resetForm()
+    resetForm(baseLanguage) // 传递基础语言给resetForm
     setShowForm(true)
   }
 
@@ -255,9 +279,10 @@ const TagsManager = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    // 验证必填字段
-    if (!formData.displayName.zh?.trim()) {
-      setError('请输入中文名称')
+    // 验证必填字段 - 确保至少有一个语言有名称
+    const hasAnyName = Object.values(formData.displayName || {}).some(name => name && name.trim())
+    if (!hasAnyName) {
+      setError('请至少输入一个语言的名称')
       return
     }
 
@@ -289,6 +314,7 @@ const TagsManager = () => {
 
       if (data.success) {
         setSuccess(editingId ? '标签更新成功！' : '标签创建成功！')
+        setShowForm(false)
         resetForm()
         loadTags() // 重新加载列表
 
@@ -598,6 +624,18 @@ const TagsManager = () => {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               刷新
             </Button>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="baseLanguage" className="text-sm font-medium whitespace-nowrap">基础语言:</Label>
+              <Select value={baseLanguage} onValueChange={setBaseLanguage}>
+                <SelectTrigger className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">英文</SelectItem>
+                  <SelectItem value="zh">中文</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Button
               onClick={startAdd}
               className="flex items-center gap-2"
@@ -744,143 +782,6 @@ const TagsManager = () => {
           </Card>
         )}
 
-        {/* 新增/编辑表单 */}
-        {showForm && (
-          <Card>
-            <CardHeader>
-              <CardTitle>{editingId ? '编辑标签' : '新增标签'}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {/* 根据现有语言显示多语言输入框 */}
-                {(() => {
-                  const languages = editingId
-                    ? Object.keys(formData.displayName || {}).length > 0
-                      ? Object.keys(formData.displayName)
-                      : getExistingLanguages(tags.find(tag => tag.tag_id === editingId))
-                    : ['zh']
-
-                  return (
-                    <>
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-lg font-medium">名称</h3>
-                          {/* 添加语言按钮 - 仅在编辑时显示 */}
-                          {editingId && (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-gray-600">添加语言：</span>
-                              <div className="flex flex-wrap gap-1">
-                                {supportedLanguages
-                                  .filter(lang => !languages.includes(lang.code))
-                                  .map(lang => (
-                                    <button
-                                      key={lang.code}
-                                      type="button"
-                                      onClick={() => handleAddLanguage(lang.code)}
-                                      className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
-                                    >
-                                      + {lang.name}
-                                    </button>
-                                  ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                          {languages.map(langCode => {
-                            const language = supportedLanguages.find(l => l.code === langCode) || { name: langCode === 'zh' ? '中文' : langCode }
-                            const canDelete = editingId && languages.length > 1 && langCode !== 'zh'
-
-                            return (
-                              <div key={langCode} className="relative">
-                                <Label htmlFor={`displayName_${langCode}`}>
-                                  {language.name} {langCode === 'zh' && '*'}
-                                </Label>
-                                {/* 删除语言按钮 */}
-                                {canDelete && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteLanguage(langCode)}
-                                    className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white rounded-full text-xs hover:bg-red-600 transition-colors flex items-center justify-center"
-                                    title={`删除${language.name}语言`}
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                )}
-                                <Input
-                                  id={`displayName_${langCode}`}
-                                  value={formData.displayName[langCode] || ''}
-                                  onChange={(e) => handleInputChange('displayName', langCode, e.target.value)}
-                                  placeholder={`请输入${language.name}名称${langCode === 'zh' ? '（必填）' : '（可选）'}`}
-                                  required={langCode === 'zh'}
-                                />
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-medium">描述</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                          {languages.map(langCode => {
-                            const language = supportedLanguages.find(l => l.code === langCode) || { name: langCode === 'zh' ? '中文' : langCode }
-                            const canDelete = editingId && languages.length > 1 && langCode !== 'zh'
-
-                            return (
-                              <div key={langCode} className="relative">
-                                <Label htmlFor={`description_${langCode}`}>
-                                  {language.name}描述
-                                </Label>
-                                {/* 删除语言按钮 */}
-                                {canDelete && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteLanguage(langCode)}
-                                    className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white rounded-full text-xs hover:bg-red-600 transition-colors flex items-center justify-center"
-                                    title={`删除${language.name}语言`}
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                )}
-                                <Textarea
-                                  id={`description_${langCode}`}
-                                  value={formData.description[langCode] || ''}
-                                  onChange={(e) => handleInputChange('description', langCode, e.target.value)}
-                                  placeholder={`请输入${language.name}描述（可选）`}
-                                  rows={3}
-                                />
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    </>
-                  )
-                })()}
-
-                <div className="flex gap-2">
-                  <Button
-                    type="submit"
-                    disabled={loading}
-                    className="flex items-center gap-2"
-                  >
-                    <Save className="w-4 h-4" />
-                    {loading ? '保存中...' : (editingId ? '更新标签' : '创建标签')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={resetForm}
-                    disabled={loading}
-                  >
-                    取消
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        )}
 
         {/* 标签列表 */}
         <Card>
@@ -1068,7 +969,168 @@ const TagsManager = () => {
             )}
           </CardContent>
         </Card>
+
       </div>
+
+      {/* 新增/编辑表单弹出框 */}
+      <Dialog 
+        isOpen={showForm} 
+        onClose={() => {
+          setShowForm(false)
+          resetForm()
+        }}
+        title={editingId ? '编辑标签' : '新增标签'}
+        maxWidth="max-w-4xl"
+      >
+        <DialogContent>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* 多语言内容编辑 */}
+            {(() => {
+                const languages = editingId
+                  ? Object.keys(formData.displayName || {}).length > 0
+                    ? Object.keys(formData.displayName)
+                    : getExistingLanguages(tags.find(tag => tag.tag_id === editingId))
+                  : [baseLanguage] // 使用选中的基础语言而不是硬编码的'zh'
+
+                return (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium">多语言内容</h3>
+
+                    {/* 语言选项卡 */}
+                    <div className="flex flex-wrap gap-2 border-b mb-4">
+                      {languages.map(langCode => {
+                        const language = supportedLanguages.find(lang => lang.code === langCode) || { name: langCode === 'zh' ? '中文' : langCode === 'en' ? '英语' : langCode }
+                        const isActive = activeFormLanguage === langCode
+                        const isRequired = (!editingId && langCode === baseLanguage)
+                        const canDelete = editingId && languages.length > 1
+
+                        return (
+                          <div key={langCode} className="relative group">
+                            <button
+                              type="button"
+                              onClick={() => setActiveFormLanguage(langCode)}
+                              className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${isActive
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                                }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Languages className="w-4 h-4" />
+                                {language.name}
+                                {isRequired && <span className="text-red-500">*</span>}
+                              </div>
+                            </button>
+                            {/* 删除语言按钮 */}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeleteLanguage(langCode)
+                                }}
+                                className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs hover:bg-red-600 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
+                                title={`删除${language.name}语言`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+
+                      {/* 添加语言按钮 */}
+                      {editingId && supportedLanguages.filter(lang => !languages.includes(lang.code)).length > 0 && (
+                        <div className="flex items-center gap-2 ml-4">
+                          <span className="text-sm text-gray-600">添加语言:</span>
+                          {supportedLanguages
+                            .filter(lang => !languages.includes(lang.code))
+                            .slice(0, 3)
+                            .map(lang => (
+                              <button
+                                key={lang.code}
+                                type="button"
+                                onClick={() => handleAddLanguage(lang.code)}
+                                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                              >
+                                + {lang.name}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 当前语言的内容编辑 */}
+                    {activeFormLanguage && (
+                      <div className="space-y-4">
+                        {(() => {
+                          const language = supportedLanguages.find(l => l.code === activeFormLanguage) || { name: activeFormLanguage === 'zh' ? '中文' : activeFormLanguage === 'en' ? '英语' : activeFormLanguage }
+
+                          return (
+                            <div className="border border-gray-200 rounded-lg p-4">
+                              <div className="space-y-4">
+                                {/* 标签名称 */}
+                                <div>
+                                  <Label htmlFor={`displayName_${activeFormLanguage}`} className="text-sm text-gray-600">
+                                    标签名称 {(!editingId && activeFormLanguage === baseLanguage) && <span className="text-red-500">*</span>}
+                                  </Label>
+                                  <Input
+                                    id={`displayName_${activeFormLanguage}`}
+                                    value={formData.displayName[activeFormLanguage] || ''}
+                                    onChange={(e) => handleInputChange('displayName', activeFormLanguage, e.target.value)}
+                                    placeholder={`请输入${language.name}标签名称${(!editingId && activeFormLanguage === baseLanguage) ? '（必填）' : '（可选）'}`}
+                                    required={(!editingId && activeFormLanguage === baseLanguage)}
+                                    className="mt-1"
+                                  />
+                                </div>
+
+                                {/* 标签描述 */}
+                                <div>
+                                  <Label htmlFor={`description_${activeFormLanguage}`} className="text-sm text-gray-600">
+                                    标签描述
+                                  </Label>
+                                  <Textarea
+                                    id={`description_${activeFormLanguage}`}
+                                    value={formData.description[activeFormLanguage] || ''}
+                                    onChange={(e) => handleInputChange('description', activeFormLanguage, e.target.value)}
+                                    placeholder={`请输入${language.name}标签描述（可选）`}
+                                    rows={3}
+                                    className="mt-1"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+            <div className="flex gap-2 pt-4 border-t">
+              <Button
+                type="submit"
+                disabled={loading}
+                className="flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                {loading ? '保存中...' : (editingId ? '更新标签' : '创建标签')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowForm(false)
+                  resetForm()
+                }}
+                disabled={loading}
+              >
+                取消
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
