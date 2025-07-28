@@ -424,13 +424,23 @@ const ImagesManager = () => {
       try {
         parsed = JSON.parse(field)
       } catch {
-        parsed = { zh: field }
+        // 如果不是JSON字符串，直接返回原字符串
+        return field
       }
-    } else if (typeof field === 'object') {
-      parsed = field || {}
+    } else if (typeof field === 'object' && field !== null) {
+      parsed = field
+    } else {
+      return field || '未设置'
     }
 
-    return parsed.zh || parsed.en || Object.values(parsed)[0] || '未设置'
+    const zh = parsed.zh?.trim()
+    const en = parsed.en?.trim()
+    
+    if (zh && en && zh !== en) {
+      return `${zh} / ${en}`
+    }
+    
+    return zh || en || Object.values(parsed)[0] || '未设置'
   }
 
   // 双语显示多语言字段（中文+英文）

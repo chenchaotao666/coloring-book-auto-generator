@@ -499,19 +499,57 @@ async function generateImagesConcurrently(taskId) {
           return { success: true, id: item.id, imagePath: publicUrl, result: result }
 
         } catch (error) {
-          console.error(`生成图片失败 (${item.id}):`, error.message)
+          console.error(`生成图片失败 (${item.id}):`, error)
+
+          // 详细的错误分析和用户友好的错误消息
+          let userFriendlyError = '生成失败'
+          let errorType = 'unknown'
+          
+          if (error.message) {
+            const errorMsg = error.message.toLowerCase()
+            
+            // API相关错误
+            if (errorMsg.includes('api key') || errorMsg.includes('authentication') || errorMsg.includes('unauthorized')) {
+              userFriendlyError = 'API密钥配置错误或已过期，请联系管理员'
+              errorType = 'auth_error'
+            } else if (errorMsg.includes('quota') || errorMsg.includes('rate limit') || errorMsg.includes('billing')) {
+              userFriendlyError = 'API配额不足或达到速率限制，请稍后重试'
+              errorType = 'quota_error'
+            } else if (errorMsg.includes('timeout') || errorMsg.includes('econnaborted')) {
+              userFriendlyError = 'API请求超时，请检查网络连接或稍后重试'
+              errorType = 'timeout_error'
+            } else if (errorMsg.includes('network') || errorMsg.includes('econnrefused') || errorMsg.includes('enotfound')) {
+              userFriendlyError = '网络连接失败，请检查网络设置'
+              errorType = 'network_error'
+            } else if (errorMsg.includes('unsupported') || errorMsg.includes('invalid format')) {
+              userFriendlyError = '不支持的图片格式或参数设置'
+              errorType = 'format_error'
+            } else if (errorMsg.includes('content policy') || errorMsg.includes('safety')) {
+              userFriendlyError = '内容不符合安全策略，请修改提示词'
+              errorType = 'policy_error'
+            } else if (errorMsg.includes('server error') || errorMsg.includes('internal error')) {
+              userFriendlyError = '服务器内部错误，请稍后重试'
+              errorType = 'server_error'
+            } else {
+              userFriendlyError = `生成失败: ${error.message}`
+              errorType = 'api_error'
+            }
+          } else {
+            userFriendlyError = '未知错误，请重试'
+          }
 
           const currentProgress = taskProgress.get(taskId)
           if (currentProgress) {
             currentProgress.images[item.id].status = 'failed'
             currentProgress.images[item.id].progress = 100
-            currentProgress.images[item.id].message = `生成失败: ${error.message}`
+            currentProgress.images[item.id].message = userFriendlyError
             currentProgress.images[item.id].error = error.message
+            currentProgress.images[item.id].errorType = errorType
             currentProgress.completedImages++
             taskProgress.set(taskId, currentProgress)
           }
 
-          return { success: false, id: item.id, error: error.message }
+          return { success: false, id: item.id, error: error.message, userFriendlyError, errorType }
         }
       })
 
@@ -533,10 +571,26 @@ async function generateImagesConcurrently(taskId) {
 
   } catch (error) {
     console.error(`任务 ${taskId} 处理失败:`, error)
+    
+    // 批量任务级别的错误处理
+    let batchErrorMessage = '批量生成失败'
+    if (error.message) {
+      const errorMsg = error.message.toLowerCase()
+      if (errorMsg.includes('api key') || errorMsg.includes('authentication')) {
+        batchErrorMessage = 'API密钥配置错误，请联系管理员'
+      } else if (errorMsg.includes('quota') || errorMsg.includes('rate limit')) {
+        batchErrorMessage = 'API配额不足，请稍后重试'
+      } else if (errorMsg.includes('network')) {
+        batchErrorMessage = '网络连接失败，请检查网络设置'
+      } else {
+        batchErrorMessage = `批量生成失败: ${error.message}`
+      }
+    }
+    
     const finalProgress = taskProgress.get(taskId)
     if (finalProgress) {
       finalProgress.status = 'failed'
-      finalProgress.message = `批量生成失败: ${error.message}`
+      finalProgress.message = batchErrorMessage
       taskProgress.set(taskId, finalProgress)
     }
   }

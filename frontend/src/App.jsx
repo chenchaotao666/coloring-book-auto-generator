@@ -955,11 +955,11 @@ Output \${count} festival themes in JSON format.`
         if (progress.status === 'completed' || progress.status === 'error') {
           setIsGeneratingImages(false)
 
-          // 3秒后清除进度显示
+          // 5秒后清除进度显示
           setTimeout(() => {
             setImageProgress(null)
             setCurrentImageTaskId(null)
-          }, 3000)
+          }, 5000)
 
           return
         }
@@ -2176,22 +2176,30 @@ Output \${count} festival themes in JSON format.`
 
   // 格式化多语言字段
   const formatMultiLangField = (field) => {
-    if (!field) return ''
+    if (!field) return '未设置'
 
+    let parsed = {}
     if (typeof field === 'string') {
       try {
-        const parsed = JSON.parse(field)
-        return parsed.zh || parsed.en || Object.values(parsed)[0] || ''
+        parsed = JSON.parse(field)
       } catch {
+        // 如果不是JSON字符串，直接返回原字符串
         return field
       }
+    } else if (typeof field === 'object' && field !== null) {
+      parsed = field
+    } else {
+      return field || '未设置'
     }
 
-    if (typeof field === 'object') {
-      return field.zh || field.en || Object.values(field)[0] || ''
+    const zh = parsed.zh?.trim()
+    const en = parsed.en?.trim()
+    
+    if (zh && en && zh !== en) {
+      return `${zh} / ${en}`
     }
-
-    return String(field)
+    
+    return zh || en || Object.values(parsed)[0] || '未设置'
   }
 
   // 将生成的内容项转换为ImageForm格式
@@ -3690,7 +3698,28 @@ Output \${count} festival themes in JSON format.`
                             const displayName = category.display_name || category.name
                             return (
                               <SelectItem key={categoryId} value={categoryId.toString()}>
-                                {typeof displayName === 'object' ? displayName.zh || displayName.en || Object.values(displayName)[0] : displayName}
+                                {(() => {
+                                  // 处理可能是JSON字符串的数据
+                                  let parsedDisplayName = displayName
+                                  if (typeof displayName === 'string') {
+                                    try {
+                                      parsedDisplayName = JSON.parse(displayName)
+                                    } catch (e) {
+                                      // 如果不是JSON，直接使用字符串
+                                      return displayName
+                                    }
+                                  }
+                                  
+                                  if (typeof parsedDisplayName === 'object' && parsedDisplayName !== null) {
+                                    const zh = parsedDisplayName.zh?.trim()
+                                    const en = parsedDisplayName.en?.trim()
+                                    if (zh && en && zh !== en) {
+                                      return `${zh} / ${en}`
+                                    }
+                                    return zh || en || Object.values(parsedDisplayName)[0] || '未命名'
+                                  }
+                                  return parsedDisplayName || '未命名'
+                                })()}
                               </SelectItem>
                             )
                           })}
@@ -4287,16 +4316,41 @@ Output \${count} festival themes in JSON format.`
                                       <span className="text-green-700">已完成</span>
                                     </>
                                   )}
-                                  {detail.status === 'error' && (
+                                  {detail.status === 'failed' && (
                                     <>
                                       <AlertCircle className="w-3 h-3 text-red-500" />
-                                      <span className="text-red-700 truncate max-w-24" title={detail.error}>失败</span>
+                                      <span className="text-red-700 truncate max-w-32" title={detail.message || detail.error}>
+                                        {detail.message || '生成失败'}
+                                      </span>
                                     </>
                                   )}
                                 </div>
                               </div>
                             )
                           })}
+                        </div>
+                      )}
+
+                      {/* 错误汇总 */}
+                      {imageProgress.details && Object.values(imageProgress.details).some(detail => detail.status === 'failed') && (
+                        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-2">
+                            <AlertCircle className="w-4 h-4 text-red-500" />
+                            <span className="text-sm font-medium text-red-800">生成失败详情</span>
+                          </div>
+                          <div className="space-y-1">
+                            {Object.entries(imageProgress.details)
+                              .filter(([_, detail]) => detail.status === 'failed')
+                              .map(([itemId, detail]) => {
+                                const item = contentList.find(c => c.id === itemId)
+                                return (
+                                  <div key={itemId} className="text-xs text-red-700">
+                                    <span className="font-medium">#{contentList.indexOf(item) + 1} {getDisplayText(detail.title)}:</span>
+                                    <span className="ml-2">{detail.message || detail.error || '未知错误'}</span>
+                                  </div>
+                                )
+                              })}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -4592,8 +4646,11 @@ Output \${count} festival themes in JSON format.`
                                       <Clock className="w-3 h-3 mr-1" />
                                       生成中
                                     </span>
-                                  ) : imageProgress?.details?.[item.id]?.status === 'error' ? (
-                                    <span className="inline-flex items-center px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
+                                  ) : imageProgress?.details?.[item.id]?.status === 'failed' ? (
+                                    <span 
+                                      className="inline-flex items-center px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full cursor-help"
+                                      title={imageProgress.details[item.id]?.message || imageProgress.details[item.id]?.error || '生成失败'}
+                                    >
                                       <AlertCircle className="w-3 h-3 mr-1" />
                                       失败
                                     </span>
