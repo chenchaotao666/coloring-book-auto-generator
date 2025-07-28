@@ -161,8 +161,12 @@ router.post('/save', async (req, res) => {
         const tableName = type === 'categories' ? 'categories' : 'tags'
         const idField = type === 'categories' ? 'category_id' : 'tag_id'
 
+        const selectFields = type === 'categories' 
+          ? 'display_name, description, seo_title, seo_desc'
+          : 'display_name, description'
+        
         const currentRows = await executeQuery(
-          `SELECT display_name, description, seo_title, seo_desc FROM ${tableName} WHERE ${idField} = ?`,
+          `SELECT ${selectFields} FROM ${tableName} WHERE ${idField} = ?`,
           [itemId]
         )
 
@@ -200,24 +204,27 @@ router.post('/save', async (req, res) => {
           description = currentItem.description || {}
         }
 
-        if (typeof currentItem.seo_title === 'string') {
-          try {
-            seoTitle = JSON.parse(currentItem.seo_title)
-          } catch {
-            seoTitle = { zh: currentItem.seo_title }
+        // SEO fields only for categories
+        if (type === 'categories') {
+          if (typeof currentItem.seo_title === 'string') {
+            try {
+              seoTitle = JSON.parse(currentItem.seo_title)
+            } catch {
+              seoTitle = { zh: currentItem.seo_title }
+            }
+          } else if (typeof currentItem.seo_title === 'object') {
+            seoTitle = currentItem.seo_title || {}
           }
-        } else if (typeof currentItem.seo_title === 'object') {
-          seoTitle = currentItem.seo_title || {}
-        }
 
-        if (typeof currentItem.seo_desc === 'string') {
-          try {
-            seoDesc = JSON.parse(currentItem.seo_desc)
-          } catch {
-            seoDesc = { zh: currentItem.seo_desc }
+          if (typeof currentItem.seo_desc === 'string') {
+            try {
+              seoDesc = JSON.parse(currentItem.seo_desc)
+            } catch {
+              seoDesc = { zh: currentItem.seo_desc }
+            }
+          } else if (typeof currentItem.seo_desc === 'object') {
+            seoDesc = currentItem.seo_desc || {}
           }
-        } else if (typeof currentItem.seo_desc === 'object') {
-          seoDesc = currentItem.seo_desc || {}
         }
 
         // 合并新的翻译
@@ -228,19 +235,28 @@ router.post('/save', async (req, res) => {
           if (translation.description) {
             description[langCode] = translation.description
           }
-          if (translation.seoTitle) {
-            seoTitle[langCode] = translation.seoTitle
-          }
-          if (translation.seoDesc) {
-            seoDesc[langCode] = translation.seoDesc
+          if (type === 'categories') {
+            if (translation.seoTitle) {
+              seoTitle[langCode] = translation.seoTitle
+            }
+            if (translation.seoDesc) {
+              seoDesc[langCode] = translation.seoDesc
+            }
           }
         }
 
         // 更新数据库
-        await executeQuery(
-          `UPDATE ${tableName} SET display_name = ?, description = ?, seo_title = ?, seo_desc = ? WHERE ${idField} = ?`,
-          [JSON.stringify(displayName), JSON.stringify(description), JSON.stringify(seoTitle), JSON.stringify(seoDesc), itemId]
-        )
+        if (type === 'categories') {
+          await executeQuery(
+            `UPDATE ${tableName} SET display_name = ?, description = ?, seo_title = ?, seo_desc = ? WHERE ${idField} = ?`,
+            [JSON.stringify(displayName), JSON.stringify(description), JSON.stringify(seoTitle), JSON.stringify(seoDesc), itemId]
+          )
+        } else {
+          await executeQuery(
+            `UPDATE ${tableName} SET display_name = ?, description = ? WHERE ${idField} = ?`,
+            [JSON.stringify(displayName), JSON.stringify(description), itemId]
+          )
+        }
 
         savedCount++
         console.log(`✅ 已保存 ${type} ID ${itemId} 的翻译`)
