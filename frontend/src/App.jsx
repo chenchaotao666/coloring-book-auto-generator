@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { apiFetch } from '@/config/api'
+import { DEFAULT_PROMPTS, DIFFICULTY_PROMPTS } from '@/config/prompts'
 import { AlertCircle, Check, CheckCircle, Clock, Edit3, Home, Image, ImageIcon, Languages, Palette, PlusCircle, Save, Settings, Tag, Trash2, Users, X } from 'lucide-react'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import CategoriesManager from './components/CategoriesManager'
@@ -278,18 +279,13 @@ Output \${count} festival themes in JSON format.`
   const [fluxModel, setFluxModel] = useState('flux-kontext-pro') // 'flux-kontext-pro' 或 'flux-kontext-max'
 
   // 上色提示词状态
-  const [coloringPrompt, setColoringPrompt] = useState('用马克笔给图像上色，要求色彩饱和度高，鲜艳明亮，色彩丰富，色彩对比鲜明，色彩层次分明')
+  const [coloringPrompt, setColoringPrompt] = useState(DEFAULT_PROMPTS.COLORING)
 
   // 文生图提示词状态
-  const [text2imagePrompt, setText2imagePrompt] = useState(`The image is a black and white line drawing for coloring, no color content`)
+  const [text2imagePrompt, setText2imagePrompt] = useState(DEFAULT_PROMPTS.TEXT_TO_IMAGE)
 
   // 难度等级对应的默认提示词模板
-  const defaultDifficultyPrompts = [
-    'extremely simple shapes, very thick lines, minimal details, very easy for young children (2-5 years)',
-    'simple shapes, clear outlines, moderate details, suitable for children (5-10 years)',
-    'more complex shapes, detailed patterns, intricate designs, challenging for teenagers (10-18 years)',
-    'highly detailed, complex patterns, intricate artwork, sophisticated designs for adults (18+ years)'
-  ].join('\n')
+  const defaultDifficultyPrompts = DIFFICULTY_PROMPTS.join('\n')
 
   const difficultyTemplates = {
     toddler: 'extremely simple shapes, very thick lines, minimal details, very easy for young children (2-5 years)',
@@ -325,7 +321,7 @@ Output \${count} festival themes in JSON format.`
   }
 
   // 图生图提示词状态
-  const [imageToImagePrompt, setImageToImagePrompt] = useState('将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰')
+  const [imageToImagePrompt, setImageToImagePrompt] = useState(DEFAULT_PROMPTS.IMAGE_TO_IMAGE)
 
   // 导航状态
   const [currentPage, setCurrentPage] = useState('generator') // 'generator'、'categories'、'tags' 或 'images'
@@ -1473,6 +1469,9 @@ Output \${count} festival themes in JSON format.`
           return { zh: value }
         }
 
+        const additionalInfo = formatMultiLangField(item.content)
+        additionalInfo.frontendId = item.id // 将前端ID添加到additionalInfo中
+        
         const imageData = {
           name: formatMultiLangField(item.name || item.title),
           title: formatMultiLangField(item.title),
@@ -1490,8 +1489,7 @@ Output \${count} festival themes in JSON format.`
           categoryId: categoryId,
           tagIds: tagIds,
           userId: 'system',
-          additionalInfo: formatMultiLangField(item.content),
-          frontendId: item.id, // 添加前端ID用于关联
+          additionalInfo: additionalInfo,
           difficulty: item.difficulty || difficultyLevel // 添加难度等级字段
         }
 
@@ -1531,10 +1529,16 @@ Output \${count} festival themes in JSON format.`
               prevList.map(item => {
                 if (selectedImages.has(item.id) && !item.databaseId) {
                   // 找到对应的已保存图片记录
-                  const savedImage = createResult.data.savedImages.find(saved =>
-                    saved.additionalInfo &&
-                    (saved.additionalInfo.frontendId === item.id || saved.name?.zh === getDisplayText(item.name || item.title))
-                  )
+                  const savedImage = createResult.data.savedImages.find(saved => {
+                    // 优先通过frontendId匹配
+                    if (saved.additionalInfo && saved.additionalInfo.frontendId === item.id) {
+                      return true
+                    }
+                    // 兜底方案：通过名称匹配
+                    const itemName = getDisplayText(item.name || item.title)
+                    const savedName = saved.name?.zh || (typeof saved.name === 'string' ? saved.name : '')
+                    return itemName && savedName && itemName === savedName
+                  })
 
                   if (savedImage) {
                     return {
@@ -2919,7 +2923,7 @@ Output \${count} festival themes in JSON format.`
 
       // 获取AI提示词（用户输入的提示词）和图生图提示词（通用描述）
       const aiPrompt = basePromptText  // AI提示词（基于用户输入的提示词字段）
-      const image2imagePromptValue = imageToImagePrompt.trim() || '将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰'  // 图生图提示词（通用描述），提供默认值
+      const image2imagePromptValue = imageToImagePrompt.trim() || DEFAULT_PROMPTS.IMAGE_TO_IMAGE  // 图生图提示词（通用描述），提供默认值
 
       formDataObj.append('image', uploadedFile)
       formDataObj.append('aiPrompt', basePromptText)  // AI提示词（单张图片描述）

@@ -7,6 +7,7 @@ import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
 import { apiFetch } from '@/config/api'
+import { DEFAULT_PROMPTS } from '@/config/prompts'
 import {
   AlertCircle,
   Check,
@@ -50,6 +51,10 @@ const ImagesManager = () => {
   const [selectedApiType, setSelectedApiType] = useState('flux-kontext') // 'gpt4o' 或 'flux-kontext'
   const [imageFormat, setImageFormat] = useState('jpeg') // 图片格式选择 'jpeg' 或 'png'
   const [fluxModel, setFluxModel] = useState('flux-kontext-pro') // 'flux-kontext-pro' 或 'flux-kontext-max'
+  // 提示词状态
+  const [text2imagePrompt, setText2imagePrompt] = useState(DEFAULT_PROMPTS.TEXT_TO_IMAGE)
+  const [imageToImagePrompt, setImageToImagePrompt] = useState(DEFAULT_PROMPTS.IMAGE_TO_IMAGE)
+  const [coloringPrompt, setColoringPrompt] = useState(DEFAULT_PROMPTS.COLORING)
 
   // 分类和标签数据
   const [categories, setCategories] = useState([])
@@ -665,14 +670,16 @@ const ImagesManager = () => {
           setSuccess(editingId ? '图片更新成功' : '图片创建成功')
         }
 
-        // 如果是新建图片，设置editingId
+        // 如果是新建图片，设置editingId并更新formData的id，使其变为编辑状态
         if (!editingId && data.data && data.data.id) {
           setEditingId(data.data.id)
+          setFormData(prev => ({
+            ...prev,
+            id: data.data.id
+          }))
         }
 
-        if (!silent) {
-          resetForm()
-        }
+        // 注意：这里不调用resetForm()，让表单保持在编辑状态，避免重复新增记录
         
         // 在调用loadImages之前先重置loading状态，避免状态冲突
         setLoading(false)
@@ -949,6 +956,7 @@ const ImagesManager = () => {
           imageUrl: formData.defaultUrl,
           title: formData.title, // 传递图片标题用于文件命名
           prompt: prompt,
+          coloringPrompt: coloringPrompt.trim() || null, // 传递用户自定义的上色提示词
           options: {
             ratio: formData.ratio || '1:1',
             isEnhance: false,
@@ -2044,10 +2052,6 @@ const ImagesManager = () => {
 
       // 使用formData中的内容作为提示词
       const aiPrompt = formData.title?.zh || formData.name?.zh || '生成涂色书图片'
-      const text2imagePrompt = `1、生成适合儿童涂色的黑白线稿，线条简洁清晰。
-2、内容要简单，减少细节，应该简约卡通。
-3、不要有彩色内容。
-4、主体内容的轮廓，采用比较粗的线条。`
 
       const requestData = {
         aiPrompt: aiPrompt,
@@ -2159,7 +2163,7 @@ const ImagesManager = () => {
 
       formDataObj.append('image', uploadedFile)
       formDataObj.append('aiPrompt', promptText)
-      formDataObj.append('image2imagePrompt', '将图片转换为适合儿童涂色的黑白线稿，保留主要轮廓，去除细节和色彩，线条简洁清晰')
+      formDataObj.append('image2imagePrompt', imageToImagePrompt.trim() || DEFAULT_PROMPTS.IMAGE_TO_IMAGE)
       formDataObj.append('apiType', selectedApiType)
       if (selectedApiType === 'flux-kontext' && fluxModel) {
         formDataObj.append('model', fluxModel)
@@ -2690,7 +2694,7 @@ const ImagesManager = () => {
         isOpen={showForm && tags.length >= 0}
         onClose={resetForm}
         title="编辑图片"
-        maxWidth="max-w-6xl"
+        maxWidth="max-w-7xl"
       >
         <DialogContent>
           <ImageForm
@@ -2719,6 +2723,12 @@ const ImagesManager = () => {
             onImageToImage={handleImageToImage} // 添加图生图回调
             isGeneratingImageToImage={isGeneratingImageToImage(formData)} // 添加图生图状态
             imageToImageTaskStatus={getImageToImageTaskStatus(formData)} // 添加图生图任务状态
+            text2imagePrompt={text2imagePrompt} // 添加文生图提示词
+            onText2imagePromptChange={setText2imagePrompt} // 添加文生图提示词变更回调
+            imageToImagePrompt={imageToImagePrompt} // 添加图生图提示词
+            onImageToImagePromptChange={setImageToImagePrompt} // 添加图生图提示词变更回调
+            coloringPrompt={coloringPrompt} // 添加上色提示词
+            onColoringPromptChange={setColoringPrompt} // 添加上色提示词变更回调
           />
         </DialogContent>
       </Dialog>

@@ -5,8 +5,9 @@ import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
-import { Image as ImageIcon, Languages, Palette, RefreshCw, Save, Upload } from 'lucide-react'
+import { Image as ImageIcon, Languages, Palette, RefreshCw, Save, Upload, Edit } from 'lucide-react'
 import React, { useState } from 'react'
+import { DEFAULT_PROMPTS, PROMPT_LABELS, DIALOG_TITLES, getPromptTypeByUrlType } from '@/config/prompts'
 
 const ImageForm = ({
   formData,
@@ -43,17 +44,29 @@ const ImageForm = ({
   onImageLoad = null,
   onImageError = null,
   // 难度等级默认值
-  defaultDifficultyLevel = 'children'
+  defaultDifficultyLevel = 'children',
+  // 提示词相关props
+  text2imagePrompt = '',
+  onText2imagePromptChange = null,
+  imageToImagePrompt = '',
+  onImageToImagePromptChange = null,
+  coloringPrompt = '',
+  onColoringPromptChange = null
 }) => {
   const [uploadedImageFile, setUploadedImageFile] = useState(null)
   const [activeLanguage, setActiveLanguage] = useState(editingLanguages[0] || 'zh')
   const [uploadedImageUrl, setUploadedImageUrl] = useState(null) // 新增：缓存blob URL
+  
+  // 提示词编辑对话框状态
+  const [isPromptDialogOpen, setIsPromptDialogOpen] = useState(false)
+  const [editingPromptType, setEditingPromptType] = useState('')
+  const [tempPrompt, setTempPrompt] = useState('')
 
   // 图片加载状态
   const [localImageLoadingStates, setLocalImageLoadingStates] = useState({
-    defaultUrl: true,
-    coloringUrl: true,
-    colorUrl: true
+    defaultUrl: false,
+    coloringUrl: false,
+    colorUrl: false
   })
 
   // Toast通知
@@ -66,7 +79,7 @@ const ImageForm = ({
     }
   }, [editingLanguages, activeLanguage])
 
-  // 当图片URL变化时，重置loading状态（只在没有外部状态管理时）
+  // 初始化loading状态
   React.useEffect(() => {
     if (!onImageLoad && !onImageError) {
       setLocalImageLoadingStates({
@@ -74,6 +87,43 @@ const ImageForm = ({
         coloringUrl: !!formData.coloringUrl,
         colorUrl: !!formData.colorUrl
       })
+    }
+  }, [onImageLoad, onImageError]) // 只在外部状态管理相关props变化时执行
+
+  // 跟踪上一次的URL值，避免不必要的loading状态设置
+  const [prevUrls, setPrevUrls] = useState({
+    defaultUrl: formData.defaultUrl || '',
+    coloringUrl: formData.coloringUrl || '',
+    colorUrl: formData.colorUrl || ''
+  })
+
+  // 当图片URL变化时，检查是否为新URL，只有真正的新URL才设置loading状态
+  React.useEffect(() => {
+    if (!onImageLoad && !onImageError) {
+      const currentUrls = {
+        defaultUrl: formData.defaultUrl || '',
+        coloringUrl: formData.coloringUrl || '',
+        colorUrl: formData.colorUrl || ''
+      }
+
+      // 检查哪些URL发生了变化且不为空
+      const changes = {}
+      Object.keys(currentUrls).forEach(key => {
+        if (currentUrls[key] && currentUrls[key] !== prevUrls[key]) {
+          changes[key] = true
+        }
+      })
+
+      // 如果有变化，更新loading状态
+      if (Object.keys(changes).length > 0) {
+        setLocalImageLoadingStates(prev => ({
+          ...prev,
+          ...changes
+        }))
+      }
+
+      // 更新记录的URL
+      setPrevUrls(currentUrls)
     }
   }, [formData.defaultUrl, formData.coloringUrl, formData.colorUrl, onImageLoad, onImageError])
 
@@ -219,6 +269,46 @@ const ImageForm = ({
         console.log('已清空colorUrl')
       }
     }, 10)
+  }
+
+  // 打开提示词编辑对话框
+  const openPromptDialog = (urlType) => {
+    setEditingPromptType(urlType)
+    const promptType = getPromptTypeByUrlType(urlType)
+    
+    // 根据类型设置对应的提示词
+    if (promptType === 'TEXT_TO_IMAGE') {
+      setTempPrompt(text2imagePrompt || '')
+    } else if (promptType === 'COLORING') {
+      setTempPrompt(coloringPrompt || '')
+    } else if (promptType === 'IMAGE_TO_IMAGE') {
+      setTempPrompt(imageToImagePrompt || '')
+    }
+    setIsPromptDialogOpen(true)
+  }
+
+  // 保存提示词
+  const savePrompt = () => {
+    const promptType = getPromptTypeByUrlType(editingPromptType)
+    
+    // 根据编辑类型调用对应的回调
+    if (promptType === 'TEXT_TO_IMAGE' && onText2imagePromptChange) {
+      onText2imagePromptChange(tempPrompt)
+    } else if (promptType === 'COLORING' && onColoringPromptChange) {
+      onColoringPromptChange(tempPrompt)
+    } else if (promptType === 'IMAGE_TO_IMAGE' && onImageToImagePromptChange) {
+      onImageToImagePromptChange(tempPrompt)
+    }
+    setIsPromptDialogOpen(false)
+    setTempPrompt('')
+    setEditingPromptType('')
+  }
+
+  // 取消编辑提示词
+  const cancelPromptEdit = () => {
+    setIsPromptDialogOpen(false)
+    setTempPrompt('')
+    setEditingPromptType('')
   }
 
   return (
@@ -383,6 +473,17 @@ const ImageForm = ({
                       type="button"
                       size="sm"
                       variant="outline"
+                      onClick={() => openPromptDialog('defaultUrl')}
+                      disabled={readOnly}
+                      className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-700 disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      <Edit className="w-3 h-3" />
+                      编辑提示词
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
                       onClick={handleTextToImage}
                       disabled={isGeneratingTextToImage || readOnly}
                       className="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 border-blue-300 text-blue-700 disabled:bg-gray-100 disabled:text-gray-400"
@@ -426,6 +527,7 @@ const ImageForm = ({
                   </div>
                 )}
                 <img
+                  key={formData.defaultUrl}
                   src={formData.defaultUrl}
                   alt="默认图片预览"
                   className="w-full object-contain rounded border bg-gray-50 cursor-pointer hover:opacity-80 transition-opacity"
@@ -454,12 +556,23 @@ const ImageForm = ({
                       type="button"
                       size="sm"
                       variant="outline"
+                      onClick={() => openPromptDialog('coloringUrl')}
+                      disabled={readOnly}
+                      className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-700 disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      <Edit className="w-3 h-3" />
+                      编辑提示词
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
                       onClick={handleGenerateColoring}
                       disabled={isGeneratingColoring || !formData.defaultUrl || readOnly}
                       className="flex items-center gap-1 bg-orange-100 hover:bg-orange-200 border-orange-300 text-orange-700 disabled:bg-gray-100 disabled:text-gray-400"
                     >
                       <Palette className="w-3 h-3" />
-                      {isGeneratingColoring ? '生成中...' : '生成上色图片'}
+                      {isGeneratingColoring ? '生成中...' : '图片上色'}
                     </Button>
                     {coloringTaskStatus && coloringTaskStatus.status !== 'failed' && (
                       <div className="flex items-center gap-1 text-xs text-gray-600">
@@ -497,6 +610,7 @@ const ImageForm = ({
                   </div>
                 )}
                 <img
+                  key={formData.coloringUrl}
                   src={formData.coloringUrl}
                   alt="上色结果预览"
                   className="w-full object-contain rounded border bg-gray-50 cursor-pointer hover:opacity-80 transition-opacity"
@@ -519,6 +633,19 @@ const ImageForm = ({
             <div className="flex items-center justify-between min-h-[36px]">
               <Label>彩色图片URL</Label>
               <div className="flex items-center gap-2">
+                {mode === 'edit' && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openPromptDialog('colorUrl')}
+                    disabled={readOnly}
+                    className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-700 disabled:bg-gray-100 disabled:text-gray-400"
+                  >
+                    <Edit className="w-3 h-3" />
+                    编辑提示词
+                  </Button>
+                )}
                 <Button
                   type="button"
                   size="sm"
@@ -564,6 +691,7 @@ const ImageForm = ({
                   </div>
                 )}
                 <img
+                  key={formData.colorUrl}
                   src={formData.colorUrl}
                   alt="彩色图片预览"
                   className="w-full object-contain rounded border bg-gray-50 cursor-pointer hover:opacity-80 transition-opacity"
@@ -607,6 +735,7 @@ const ImageForm = ({
                         </div>
                       )}
                       <img
+                        key={uploadedImageUrl}
                         src={uploadedImageUrl}
                         alt="上传的图片"
                         className="max-w-full max-h-full object-contain rounded-lg"
@@ -807,6 +936,72 @@ const ImageForm = ({
           </Button>
         </div>
       )}
+
+      {/* 提示词编辑对话框 */}
+      {isPromptDialogOpen && (() => {
+        const promptType = getPromptTypeByUrlType(editingPromptType)
+        const labels = PROMPT_LABELS[promptType]
+        const dialogTitle = DIALOG_TITLES[promptType]
+        const defaultPrompt = DEFAULT_PROMPTS[promptType]
+        
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium">{dialogTitle}</h3>
+                  <button
+                    onClick={cancelPromptEdit}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    ×
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-medium">{labels.title}</Label>
+                    <p className="text-xs text-gray-500 mb-2">{labels.description}</p>
+                    <Textarea
+                      value={tempPrompt}
+                      onChange={(e) => setTempPrompt(e.target.value)}
+                      placeholder={labels.placeholder}
+                      rows={8}
+                      className="resize-none text-sm"
+                    />
+                  </div>
+                  
+                  <div className="text-xs text-gray-500">
+                    <p className="mb-1">默认提示词：</p>
+                    <code className="bg-gray-100 p-2 rounded text-xs block">
+                      {defaultPrompt}
+                    </code>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end gap-2 mt-6">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={cancelPromptEdit}
+                    className="bg-gray-100 hover:bg-gray-200 border-gray-300"
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={savePrompt}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    保存
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </form>
   )
 }
