@@ -157,21 +157,35 @@ router.post('/save', async (req, res) => {
     // 遍历每个项目的翻译
     for (const [itemId, itemTranslations] of Object.entries(translations)) {
       try {
-        // 获取当前项目的数据
-        const tableName = type === 'categories' ? 'categories' : 'tags'
-        const idField = type === 'categories' ? 'category_id' : 'tag_id'
+        let tableName, idField, selectFields, currentRows
 
-        const selectFields = type === 'categories' 
-          ? 'display_name, description, seo_title, seo_desc'
-          : 'display_name, description'
-        
-        const currentRows = await executeQuery(
-          `SELECT ${selectFields} FROM ${tableName} WHERE ${idField} = ?`,
-          [itemId]
-        )
+        if (type === 'content') {
+          // 处理content类型 - 博客文章
+          tableName = 'posts'
+          idField = 'post_id'
+          selectFields = 'title, excerpt, content'
+          
+          currentRows = await executeQuery(
+            `SELECT ${selectFields} FROM ${tableName} WHERE ${idField} = ?`,
+            [itemId]
+          )
+        } else {
+          // 处理categories和tags
+          tableName = type === 'categories' ? 'categories' : 'tags'
+          idField = type === 'categories' ? 'category_id' : 'tag_id'
+          selectFields = type === 'categories' 
+            ? 'display_name, description, seo_title, seo_desc'
+            : 'display_name, description'
+          
+          currentRows = await executeQuery(
+            `SELECT ${selectFields} FROM ${tableName} WHERE ${idField} = ?`,
+            [itemId]
+          )
+        }
 
         if (currentRows.length === 0) {
-          errors.push(`${type === 'categories' ? '分类' : '标签'} ID ${itemId} 不存在`)
+          const itemType = type === 'categories' ? '分类' : type === 'tags' ? '标签' : '博客文章'
+          errors.push(`${itemType} ID ${itemId} 不存在`)
           errorCount++
           continue
         }
@@ -179,74 +193,136 @@ router.post('/save', async (req, res) => {
         const currentItem = currentRows[0]
 
         // 解析当前的多语言数据
-        let displayName = {}
-        let description = {}
-        let seoTitle = {}
-        let seoDesc = {}
+        let displayName = {}, description = {}, seoTitle = {}, seoDesc = {}
+        let title = {}, excerpt = {}, content = {}
 
-        if (typeof currentItem.display_name === 'string') {
-          try {
-            displayName = JSON.parse(currentItem.display_name)
-          } catch {
-            displayName = { zh: currentItem.display_name }
-          }
-        } else if (typeof currentItem.display_name === 'object') {
-          displayName = currentItem.display_name || {}
-        }
-
-        if (typeof currentItem.description === 'string') {
-          try {
-            description = JSON.parse(currentItem.description)
-          } catch {
-            description = { zh: currentItem.description }
-          }
-        } else if (typeof currentItem.description === 'object') {
-          description = currentItem.description || {}
-        }
-
-        // SEO fields only for categories
-        if (type === 'categories') {
-          if (typeof currentItem.seo_title === 'string') {
+        if (type === 'content') {
+          // 处理博客文章的字段
+          if (typeof currentItem.title === 'string') {
             try {
-              seoTitle = JSON.parse(currentItem.seo_title)
+              title = JSON.parse(currentItem.title)
             } catch {
-              seoTitle = { zh: currentItem.seo_title }
+              title = { zh: currentItem.title }
             }
-          } else if (typeof currentItem.seo_title === 'object') {
-            seoTitle = currentItem.seo_title || {}
+          } else if (typeof currentItem.title === 'object') {
+            title = currentItem.title || {}
           }
 
-          if (typeof currentItem.seo_desc === 'string') {
+          if (typeof currentItem.excerpt === 'string') {
             try {
-              seoDesc = JSON.parse(currentItem.seo_desc)
+              excerpt = JSON.parse(currentItem.excerpt)
             } catch {
-              seoDesc = { zh: currentItem.seo_desc }
+              excerpt = { zh: currentItem.excerpt }
             }
-          } else if (typeof currentItem.seo_desc === 'object') {
-            seoDesc = currentItem.seo_desc || {}
+          } else if (typeof currentItem.excerpt === 'object') {
+            excerpt = currentItem.excerpt || {}
+          }
+
+          if (typeof currentItem.content === 'string') {
+            try {
+              content = JSON.parse(currentItem.content)
+            } catch {
+              content = { zh: currentItem.content }
+            }
+          } else if (typeof currentItem.content === 'object') {
+            content = currentItem.content || {}
+          }
+        } else {
+          // 处理categories和tags的字段
+          if (typeof currentItem.display_name === 'string') {
+            try {
+              displayName = JSON.parse(currentItem.display_name)
+            } catch {
+              displayName = { zh: currentItem.display_name }
+            }
+          } else if (typeof currentItem.display_name === 'object') {
+            displayName = currentItem.display_name || {}
+          }
+
+          if (typeof currentItem.description === 'string') {
+            try {
+              description = JSON.parse(currentItem.description)
+            } catch {
+              description = { zh: currentItem.description }
+            }
+          } else if (typeof currentItem.description === 'object') {
+            description = currentItem.description || {}
+          }
+
+          // SEO fields only for categories
+          if (type === 'categories') {
+            if (typeof currentItem.seo_title === 'string') {
+              try {
+                seoTitle = JSON.parse(currentItem.seo_title)
+              } catch {
+                seoTitle = { zh: currentItem.seo_title }
+              }
+            } else if (typeof currentItem.seo_title === 'object') {
+              seoTitle = currentItem.seo_title || {}
+            }
+
+            if (typeof currentItem.seo_desc === 'string') {
+              try {
+                seoDesc = JSON.parse(currentItem.seo_desc)
+              } catch {
+                seoDesc = { zh: currentItem.seo_desc }
+              }
+            } else if (typeof currentItem.seo_desc === 'object') {
+              seoDesc = currentItem.seo_desc || {}
+            }
           }
         }
 
         // 合并新的翻译
         for (const [langCode, translation] of Object.entries(itemTranslations)) {
-          if (translation.name) {
-            displayName[langCode] = translation.name
-          }
-          if (translation.description) {
-            description[langCode] = translation.description
-          }
-          if (type === 'categories') {
-            if (translation.seoTitle) {
-              seoTitle[langCode] = translation.seoTitle
+          console.log(`🔄 处理 ${type} ID ${itemId} 的 ${langCode} 翻译:`, translation)
+          
+          if (type === 'content') {
+            // 处理博客文章的翻译字段
+            // translation.name 和 translation.title 都对应title字段，优先使用title
+            if (translation.title) {
+              title[langCode] = translation.title
+              console.log(`✅ 已保存title字段: ${langCode} = ${translation.title}`)
+            } else if (translation.name) {
+              title[langCode] = translation.name
+              console.log(`✅ 已保存title字段(使用name): ${langCode} = ${translation.name}`)
             }
-            if (translation.seoDesc) {
-              seoDesc[langCode] = translation.seoDesc
+            // translation.description对应excerpt字段
+            if (translation.description) {
+              excerpt[langCode] = translation.description
+              console.log(`✅ 已保存excerpt字段: ${langCode} = ${translation.description.substring(0, 50)}...`)
+            }
+            // translation.additionalInfo对应content字段
+            if (translation.additionalInfo) {
+              content[langCode] = translation.additionalInfo
+              console.log(`✅ 已保存content字段: ${langCode} = ${translation.additionalInfo.substring(0, 50)}...`)
+            }
+          } else {
+            // 处理categories和tags的翻译字段
+            if (translation.name) {
+              displayName[langCode] = translation.name
+            }
+            if (translation.description) {
+              description[langCode] = translation.description
+            }
+            if (type === 'categories') {
+              if (translation.seoTitle) {
+                seoTitle[langCode] = translation.seoTitle
+              }
+              if (translation.seoDesc) {
+                seoDesc[langCode] = translation.seoDesc
+              }
             }
           }
         }
 
         // 更新数据库
-        if (type === 'categories') {
+        if (type === 'content') {
+          await executeQuery(
+            `UPDATE ${tableName} SET title = ?, excerpt = ?, content = ? WHERE ${idField} = ?`,
+            [JSON.stringify(title), JSON.stringify(excerpt), JSON.stringify(content), itemId]
+          )
+        } else if (type === 'categories') {
           await executeQuery(
             `UPDATE ${tableName} SET display_name = ?, description = ?, seo_title = ?, seo_desc = ? WHERE ${idField} = ?`,
             [JSON.stringify(displayName), JSON.stringify(description), JSON.stringify(seoTitle), JSON.stringify(seoDesc), itemId]

@@ -10,8 +10,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { apiFetch } from '@/config/api'
 import { DEFAULT_PROMPTS, DIFFICULTY_PROMPTS } from '@/config/prompts'
-import { AlertCircle, Check, CheckCircle, Clock, Edit3, Home, Image, ImageIcon, Languages, Palette, PlusCircle, Save, Settings, Tag, Trash2, Users, X } from 'lucide-react'
+import { AlertCircle, Check, CheckCircle, Clock, Edit3, FileText, Home, Image, ImageIcon, Languages, Palette, PlusCircle, Save, Settings, Tag, Trash2, Users, X } from 'lucide-react'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import BlogManager from './components/BlogManager'
 import CategoriesManager from './components/CategoriesManager'
 import ImageForm from './components/ImageForm'
 import ImagesManager from './components/ImagesManager'
@@ -324,7 +325,7 @@ Output \${count} festival themes in JSON format.`
   const [imageToImagePrompt, setImageToImagePrompt] = useState(DEFAULT_PROMPTS.IMAGE_TO_IMAGE)
 
   // 导航状态
-  const [currentPage, setCurrentPage] = useState('generator') // 'generator'、'categories'、'tags' 或 'images'
+  const [currentPage, setCurrentPage] = useState('generator') // 'generator'、'categories'、'tags'、'images'、'users' 或 'blog'
 
   // 国际化相关状态
   // 默认选中中文作为国际化语言
@@ -1912,6 +1913,8 @@ Output \${count} festival themes in JSON format.`
         items: itemsWithBaseLanguage.map(({ translationData }) => translationData),
         targetLanguages: effectiveTargetLanguages
       }
+
+      console.log('国际化请求数据:', requestData)
 
       const response = await apiFetch('/api/internationalization', {
         method: 'POST',
@@ -3592,6 +3595,14 @@ Output \${count} festival themes in JSON format.`
                   <Users className="w-4 h-4" />
                   用户管理
                 </Button>
+                <Button
+                  variant={currentPage === 'blog' ? 'default' : 'outline'}
+                  onClick={() => setCurrentPage('blog')}
+                  className="flex items-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  博客管理
+                </Button>
               </div>
             </div>
           </div>
@@ -4839,6 +4850,8 @@ Output \${count} festival themes in JSON format.`
             <ImagesManager />
           ) : currentPage === 'users' ? (
             <UsersManager />
+          ) : currentPage === 'blog' ? (
+            <BlogManager />
           ) : null}
         </div>
 

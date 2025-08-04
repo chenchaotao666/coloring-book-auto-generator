@@ -2,7 +2,7 @@ import { X } from 'lucide-react'
 import React, { useEffect } from 'react'
 import { Button } from './button'
 
-const Dialog = ({ isOpen, onClose, children, title, maxWidth = 'max-w-4xl' }) => {
+const Dialog = ({ isOpen, onClose, children, title, maxWidth = 'max-w-6xl' }) => {
   // 按ESC键关闭弹窗
   useEffect(() => {
     const handleEsc = (event) => {

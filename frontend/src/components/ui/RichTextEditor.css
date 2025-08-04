@@ -1,0 +1,45 @@
+/* ReactQuill Rich Text Editor Styles */
+.rich-text-editor-wrapper {
+  background: white;
+}
+
+.rich-text-editor-wrapper .ql-editor {
+  min-height: 300px;
+  max-height: 500px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-y: auto;
+}
+
+.rich-text-editor-wrapper .ql-toolbar {
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  border-bottom: 1px solid #d1d5db;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  background: #f9fafb;
+}
+
+.rich-text-editor-wrapper .ql-container {
+  border: none;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  font-family: inherit;
+}
+
+.rich-text-editor-wrapper .ql-snow .ql-tooltip {
+  z-index: 1000;
+}
+
+/* Placeholder styling */
+.rich-text-editor-wrapper .ql-editor.ql-blank::before {
+  color: #9ca3af;
+  font-style: normal;
+}
+
+/* Focus styles */
+.rich-text-editor-wrapper:focus-within {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}

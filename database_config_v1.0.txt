@@ -65,6 +65,23 @@ CREATE TABLE image_tags (
     ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+-- 创建 posts 表（博客文章）
+CREATE TABLE posts (
+  post_id VARCHAR(36) PRIMARY KEY,
+  title JSON NOT NULL,                        -- 多语言标题 { "en": "title", "zh": "标题" }
+  slug VARCHAR(255) NOT NULL UNIQUE,          -- URL友好的slug
+  author VARCHAR(255) NOT NULL,               -- 作者名称
+  published_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  status ENUM('draft', 'published') DEFAULT 'draft',
+  featured_image VARCHAR(500),                -- 特色图片URL
+  excerpt JSON,                               -- 多语言摘要 { "en": "excerpt", "zh": "摘要" }
+  content JSON NOT NULL,                      -- 多语言富文本内容 { "en": "content", "zh": "内容" }
+  meta_title JSON,                            -- 多语言SEO标题 { "en": "meta title", "zh": "SEO标题" }
+  meta_description JSON,                      -- 多语言SEO描述 { "en": "meta description", "zh": "SEO描述" }
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
 -- 创建索引以提高查询性能
 CREATE INDEX idx_images_category ON images(categoryId);
 CREATE INDEX idx_images_user ON images(userId);
@@ -73,3 +90,10 @@ CREATE INDEX idx_images_public ON images(isPublic);
 CREATE INDEX idx_images_created ON images(createdAt);
 CREATE INDEX idx_images_hotness ON images(hotness);
 CREATE INDEX idx_categories_hotness ON categories(hotness);
+
+-- 博客相关索引
+CREATE INDEX idx_posts_slug ON posts(slug);
+CREATE INDEX idx_posts_author ON posts(author);
+CREATE INDEX idx_posts_status ON posts(status);
+CREATE INDEX idx_posts_published_date ON posts(published_date);
+CREATE INDEX idx_posts_created ON posts(created_at);
