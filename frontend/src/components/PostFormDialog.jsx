@@ -91,7 +91,7 @@ const PostFormDialog = React.memo(({
   }
 
   return (
-  <Dialog isOpen={show} onClose={onClose}>
+  <Dialog isOpen={show} onClose={null}>
     <DialogContent className="max-w-6xl h-[85vh] w-[85vw] flex flex-col overflow-hidden">
         {/* 头部 - 固定 */}
         <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">

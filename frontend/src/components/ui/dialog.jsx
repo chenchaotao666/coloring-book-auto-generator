@@ -6,7 +6,7 @@ const Dialog = ({ isOpen, onClose, children, title, maxWidth = 'max-w-6xl' }) =>
   // 按ESC键关闭弹窗
   useEffect(() => {
     const handleEsc = (event) => {
-      if (event.keyCode === 27 && isOpen) {
+      if (event.keyCode === 27 && isOpen && onClose) {
         onClose()
       }
     }
@@ -35,7 +35,7 @@ const Dialog = ({ isOpen, onClose, children, title, maxWidth = 'max-w-6xl' }) =>
       {/* 背景遮罩 */}
       <div
         className="absolute inset-0 bg-black bg-opacity-50 transition-opacity"
-        onClick={onClose}
+        onClick={onClose ? onClose : undefined}
       />
 
       {/* 弹窗内容 */}
