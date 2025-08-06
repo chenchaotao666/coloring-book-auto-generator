@@ -2,25 +2,6 @@
   "name": "coloring-book-auto-generator",
   "version": "1.0.0",
   "description": "AI涂色书内容生成器",
-  "scripts": {
-    "dev:backend": "cd backend && npm run dev",
-    "dev:frontend": "cd frontend && npm run dev",
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "build:backend": "cd backend && npm run build",
-    "build:frontend": "cd frontend && npm run build",
-    "build": "npm run build:backend && npm run build:frontend",
-    "install:all": "cd backend && npm install && cd ../frontend && npm install",
-    "pm2:start": "npx pm2 start backend/ecosystem.config.js",
-    "pm2:start:prod": "npx pm2 start backend/ecosystem.config.js --env production",
-    "pm2:restart": "npx pm2 restart all",
-    "pm2:stop": "npx pm2 stop all",
-    "pm2:delete": "npx pm2 delete all",
-    "pm2:logs": "npx pm2 logs",
-    "pm2:monit": "npx pm2 monit",
-    "pm2:status": "npx pm2 status",
-    "deploy:setup": "npm run install:all && npm run build",
-    "deploy:prod": "npm run build && npm run pm2:start:prod"
-  },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "pm2": "^6.0.8"

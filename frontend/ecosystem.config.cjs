@@ -2,9 +2,9 @@ module.exports = {
   apps: [
     {
       name: 'coloring-book-frontend',
-      script: 'serve',
-      args: '-s dist -l 3001',
-      cwd: './frontend',
+      script: 'npx',
+      args: 'serve -s dist -p 3001',
+      cwd: './',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -17,9 +17,9 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3001
       },
-      error_file: '/dev/null',
-      out_file: '/dev/null',
-      log_file: '/dev/null',
+      error_file: './logs/frontend-err.log',
+      out_file: './logs/frontend-out.log',
+      log_file: './logs/frontend-combined.log',
       time: true,
       log_date_format: 'YYYY-MM-DD HH:mm Z',
       merge_logs: true,
