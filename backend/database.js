@@ -16,13 +16,19 @@ const dbConfig = {
 const pool = mysql.createPool({
   ...dbConfig,
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 15,        // 增加连接数
   queueLimit: 0,
-  acquireTimeout: 10000,  // 10秒获取连接超时
-  timeout: 10000,         // 10秒查询超时
-  reconnect: true,        // 自动重连
-  idleTimeout: 300000,    // 5分钟空闲超时
-  maxIdle: 10             // 最大空闲连接数
+  acquireTimeout: 30000,      // 30秒获取连接超时
+  timeout: 30000,             // 30秒查询超时
+  reconnect: true,            // 自动重连
+  idleTimeout: 300000,        // 5分钟空闲超时
+  maxIdle: 10,                // 最大空闲连接数
+  // 添加重连配置
+  reconnectTimeout: 2000,     // 重连间隔2秒
+  maxReconnects: 3,           // 最大重连次数
+  // 启用keep-alive
+  keepAliveInitialDelay: 0,
+  enableKeepAlive: true
 })
 
 // 测试数据库连接
@@ -38,16 +44,38 @@ async function testConnection() {
   }
 }
 
-// 执行查询的通用方法
-async function executeQuery(sql, params = []) {
-  try {
-    // 使用query而不是execute来解决参数问题
-    const [rows] = await pool.query(sql, params)
-    return rows
-  } catch (error) {
-    console.error('数据库查询错误:', error)
-    throw error
+// 执行查询的通用方法（带重试机制）
+async function executeQuery(sql, params = [], maxRetries = 3) {
+  let lastError
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // 使用query而不是execute来解决参数问题
+      const [rows] = await pool.query(sql, params)
+      return rows
+    } catch (error) {
+      lastError = error
+      console.error(`数据库查询错误 (尝试 ${attempt}/${maxRetries}):`, error.message)
+      
+      // 如果是连接超时或网络错误，尝试重试
+      if (attempt < maxRetries && (
+        error.code === 'ETIMEDOUT' || 
+        error.code === 'ECONNRESET' || 
+        error.code === 'ENOTFOUND' ||
+        error.code === 'ECONNREFUSED'
+      )) {
+        console.log(`等待 ${attempt * 1000}ms 后重试...`)
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000))
+        continue
+      }
+      
+      // 其他错误或达到最大重试次数，直接抛出
+      break
+    }
   }
+  
+  console.error('数据库查询最终失败:', lastError)
+  throw lastError
 }
 
 // 执行事务

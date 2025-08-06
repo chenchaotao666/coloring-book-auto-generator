@@ -1,4 +1,4 @@
-const { pool } = require('../database.js')
+const { pool, executeQuery } = require('../database.js')
 
 class PostModel {
   // 获取所有博客文章
@@ -298,7 +298,7 @@ class PostModel {
       params.push(excludePostId)
     }
     
-    const [rows] = await pool.execute(query, params)
+    const rows = await executeQuery(query, params)
     return rows[0].count === 0
   }
 
