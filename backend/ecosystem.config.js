@@ -15,9 +15,9 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3002
       },
-      error_file: './backend/logs/backend-err.log',
-      out_file: './backend/logs/backend-out.log',
-      log_file: './backend/logs/backend-combined.log',
+      error_file: './logs/backend-err.log',
+      out_file: './logs/backend-out.log',
+      log_file: './logs/backend-combined.log',
       time: true,
       log_date_format: 'YYYY-MM-DD HH:mm Z',
       merge_logs: true,
