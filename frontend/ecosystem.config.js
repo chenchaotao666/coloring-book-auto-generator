@@ -2,8 +2,8 @@ module.exports = {
   apps: [
     {
       name: 'coloring-book-frontend',
-      script: 'npm',
-      args: 'start',
+      script: 'serve',
+      args: '-s dist -l 3001',
       cwd: './frontend',
       instances: 1,
       autorestart: true,
@@ -23,21 +23,14 @@ module.exports = {
       time: true,
       log_date_format: 'YYYY-MM-DD HH:mm Z',
       merge_logs: true,
-      // 进程管理配置
       min_uptime: '10s',
       max_restarts: 10,
-      // 健康检查
       health_check_grace_period: 3000,
       health_check_fatal_exceptions: true,
-      // 优雅关闭
       kill_timeout: 5000,
       wait_ready: false,
       listen_timeout: 3000,
-      // 静态文件服务配置
-      exec_mode: 'fork',
-      // 集群模式配置（可选，静态文件服务通常不需要）
-      // instances: 'max',
-      // exec_mode: 'cluster'
+      exec_mode: 'fork'
     }
   ],
 
